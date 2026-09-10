@@ -30,6 +30,7 @@
     // controls
     steerSpeed: 'normal', // slow | normal | fast (keyboard steering ramp)
     touch: 'auto', // auto (after the first screen touch) | on | off
+    botLevel: 'normal', // easy | normal | hard (single-player bots)
     keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', reset: 'KeyR', cam: 'KeyC' },
   };
   const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', reset: 'Reset car', cam: 'Change camera' };

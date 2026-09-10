@@ -347,6 +347,11 @@
         else if (rs.thr > 0.5 && speed < 8 && Math.random() < dt * 14) fx.emit('puff', ex, ey, ez, -sinH * 1.5, 0.2, -cosH * 1.5, 0.8);
       }
       if (rs.overheat && Math.random() < dt * 25) fx.emit('steam', rs.x + sinH * 1.5, y + 1, rs.z + cosH * 1.5, 0, 0.5, 0, 1);
+      // a battered car shows it: dark smoke from under the bonnet
+      if (rs.body > 0.3 && Math.random() < dt * rs.body * 16) {
+        const [hx, hy, hz] = W(0, 0.85, m.len * 0.28);
+        fx.emit('puff', hx, hy, hz, rs.vx * 0.3, 0.8, rs.vz * 0.3, 0.8 + rs.body, [0.22, 0.22, 0.24]);
+      }
       if (rs.wallHit > 800) {
         for (let k = 0; k < 6; k++) fx.emit('spark', rs.x, y + 0.5, rs.z, (Math.random() - 0.5) * 8, 2 + Math.random() * 3, (Math.random() - 0.5) * 8, 1);
       }

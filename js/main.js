@@ -267,9 +267,45 @@
     },
 
     // --------------------------------------------------------------- drive
-    quickRace() {
+    // Quick race: a REAL race (laps, finish, results, play-money prize) —
+    // not endless practice.
+    quickRace(trackId) {
       const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag');
-      this.startDrive({ trackId: ids[Math.floor(Math.random() * ids.length)], bots: 5, quick: true });
+      const pick = trackId || ids[Math.floor(Math.random() * ids.length)];
+      this.startDrive({ trackId: pick, bots: 5, quick: true });
+    },
+    quickAgain(nextTrack) {
+      const d = this.drive;
+      if (!d) return this.quickRace();
+      const cur = this.sim.track.id;
+      this._applyDriveWear();
+      if (!nextTrack) return this.startDrive(d.opts);
+      const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag' && id !== cur);
+      this.quickRace(ids[Math.floor(Math.random() * ids.length)]);
+    },
+    _applyDriveWear() {
+      const d = this.drive, me = this.sim && this.sim.byId.me;
+      if (!d || !me || d.test || d.direct || G.Game.role || d.wearApplied) return;
+      d.wearApplied = true;
+      this.host.applyWear('me', { tyre: me.st.tyreWear, engine: me.st.engineWear, body: me.st.body });
+    },
+    _quickResults() {
+      const sim = this.sim, d = this.drive;
+      const res = sim.results();
+      const meRow = res.find((r) => r.id === 'me');
+      const PRIZES = [1500, 1100, 850, 650, 500, 400, 300, 250];
+      const prize = meRow.finished ? PRIZES[meRow.pos - 1] || 200 : 0;
+      const fuel = Math.round(sim.byId.me.st.fuel);
+      const me = this.host.player('me');
+      if (me && !G.Game.role) {
+        me.money = Math.max(0, me.money + prize - fuel);
+        this.host.touch();
+      }
+      d.results = {
+        track: sim.track, pos: meRow.pos, finished: meRow.finished, total: res.length, prize, fuel, best: meRow.bestLap, pb: this.getPB(sim.track.id, sim.byId.me.carId),
+        rows: res.map((r) => ({ id: r.id, pos: r.pos, name: sim.byId[r.id].name, carId: sim.byId[r.id].carId, color: sim.byId[r.id].color, ms: r.ms, finished: r.finished, best: r.bestLap })),
+      };
+      G.UI.show('qresults', d.results);
     },
 
     // opts: {trackId, bots, test: candidateGarage, carId, parts, auto, direct}
@@ -285,17 +321,25 @@
       G.UI.show('drivebar'); // show first: unmounting the garage stops its preview
       this.world.loadTrack(track);
       const ents = [{ id: 'me', name: me.name, carId, color: me.color, parts, wear, tune, look, bot: opts.auto ? { skill: 0.95 } : null }];
+      // bot difficulty (Settings / practice screen): skill = how close to the
+      // grip limit they dare to corner. Hard bots also bring better parts.
+      const lvl = G.Settings.s.botLevel;
+      const [lo, hi] = lvl === 'easy' ? [0.8, 0.86] : lvl === 'hard' ? [0.95, 1.0] : [0.87, 0.95];
       for (let k = 0; k < (opts.bots || 0); k++) {
-        const L = [{}, { compound: 'medium', suspension: 'sport' }, { induction: 'sc' }, { aero: 'a1', weight: 'w1' }, { brakes: 'sport', exhaust: 'sport' }];
-        ents.push({ id: 'bot' + k, name: G.BOT_NAMES[k], carId: G.Parts.CAR_ORDER[(k + 1) % 4], color: G.CarModel.PALETTE[(k + 1) % 8], parts: L[k % L.length], wear: {}, look: botLook('bot' + k + track.id), bot: { skill: 0.86 + 0.1 * Math.random() } });
+        const L = lvl === 'hard'
+          ? [{ compound: 'medium', suspension: 'sport', brakes: 'sport' }, { induction: 'sc', compound: 'medium' }, { aero: 'a2', weight: 'w1', compound: 'medium' }, { induction: 't1', cooling: 'radiator' }, { ecu: 'stage1', exhaust: 'sport', weight: 'w1' }]
+          : [{}, { compound: 'medium', suspension: 'sport' }, { induction: 'sc' }, { aero: 'a1', weight: 'w1' }, { brakes: 'sport', exhaust: 'sport' }];
+        ents.push({ id: 'bot' + k, name: G.BOT_NAMES[k], carId: G.Parts.CAR_ORDER[(k + 1) % 4], color: G.CarModel.PALETTE[(k + 1) % 8], parts: L[k % L.length], wear: {}, look: botLook('bot' + k + track.id), bot: { skill: lo + (hi - lo) * Math.random() } });
       }
-      this.sim = new G.RaceSim(track, ents, { countdown: 2.5, practice: true });
+      const quick = !!opts.quick;
+      if (quick && ents.length > 3) ents.splice(3, 0, ents.shift()); // you start mid-pack
+      this.sim = new G.RaceSim(track, ents, { countdown: quick ? 3.5 : 2.5, practice: !quick });
       this.attract = null;
       this.world.setCars(ents);
       this.world.cam.snap = true;
       this.hud.setTrack(track);
       this.hud.show(true);
-      this.drive = { test: !!test, direct: !!opts.direct, t: 0, limit: test ? 60 : 0, restartAt: null, opts };
+      this.drive = { test: !!test, direct: !!opts.direct, quick, t: 0, limit: test ? 60 : 0, restartAt: null, doneT: 0, results: null, opts };
       this.acc = 0;
       this.paused = false;
       this.mode = 'drive';
@@ -309,7 +353,8 @@
       if (!this.drive) return '';
       if (this.drive.test) return `<b>TEST DRIVE</b> candidate build · no wear · ${Math.max(0, Math.ceil(this.drive.limit - this.drive.t))} s left`;
       const pb = this.drive.direct ? null : this.getPB(this.sim.track.id, this.sim.byId.me.carId);
-      return `<b>${this.drive.opts.quick ? 'QUICK RACE' : 'FREE PRACTICE'}</b> ${U.esc(this.sim.track.name)} · ${this.paused ? 'PAUSED' : 'wear counts'}${pb ? ` · <b>PB ${U.fmtTime(pb)}</b>` : ''}`;
+      const lvl = { easy: 'Easy', normal: 'Normal', hard: 'Hard' }[G.Settings.s.botLevel] || 'Normal';
+      return `<b>${this.drive.quick ? 'QUICK RACE' : 'FREE PRACTICE'}</b> ${U.esc(this.sim.track.name)} · ${this.paused ? 'PAUSED' : this.drive.quick ? lvl + ' bots · 1st pays $1,500' : 'wear counts'}${pb ? ` · <b>PB ${U.fmtTime(pb)}</b>` : ''}`;
     },
 
     // Personal-best laps per track + car (single-player practice / quick race).
@@ -333,8 +378,7 @@
     endDrive(silent) {
       if (this.mode !== 'drive') return;
       const d = this.drive;
-      const me = this.sim.byId.me;
-      if (!d.test && !d.direct && !G.Game.role) this.host.applyWear('me', { tyre: me.st.tyreWear, engine: me.st.engineWear, body: me.st.body });
+      this._applyDriveWear();
       this.sim = null;
       this.drive = null;
       this.paused = false;
@@ -375,9 +419,19 @@
       const evs = sim.popEvents();
       G.RaceView.events(evs, 'me', this.hud, this.world, G.Audio);
       const d = this.drive;
-      if (!d.test && !d.direct) for (const e of evs) if (e.type === 'lap' && e.id === 'me') this._checkPB(sim.track.id, sim.byId.me.carId, e.ms);
+      if (!d.test && !d.direct) {
+        for (const e of evs) {
+          if (e.id !== 'me') continue;
+          if (e.type === 'lap' || (e.type === 'finish' && !sim.track.closed)) this._checkPB(sim.track.id, sim.byId.me.carId, e.ms); // sprints: the run time
+        }
+      }
       if (sim.phase === 'race') d.t += dt;
       if (d.limit && d.t >= d.limit) return this.endDrive();
+      // quick race over: results screen a moment after the flag
+      if (d.quick && sim.phase === 'done' && !d.results) {
+        d.doneT += dt;
+        if (d.doneT > 2.5) this._quickResults();
+      }
       // open tracks: back to the start line after the finish
       if (!sim.track.closed) {
         const me = sim.byId.me;
