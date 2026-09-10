@@ -152,11 +152,14 @@
       if (this.mapBg) c.drawImage(this.mapBg, 0, 0);
       const draw = (car, me) => {
         const [x, y] = this.mapXY(car.x, car.z);
-        const a = -car.h + Math.PI; // screen angle (mirrored X, Y down)
         const r = me ? 7.5 : 5.5;
         c.save();
         c.translate(x, y);
-        c.rotate(-a + Math.PI);
+        // The arrow is drawn pointing up (screen −y = world +Z). World forward
+        // is (sin h, cos h); on this map +X is mirrored to the LEFT, so the
+        // screen direction is (−sin h, −cos h) = "up" rotated by −h. (It used
+        // to rotate by +h, which pointed sideways-travelling cars backwards.)
+        c.rotate(-car.h);
         c.beginPath();
         c.moveTo(0, -r);
         c.lineTo(r * 0.75, r * 0.8);
