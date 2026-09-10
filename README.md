@@ -10,7 +10,9 @@ There's nothing to install: it's plain HTML/JS. Three.js and PeerJS load from th
 - **Local:** double-click `index.html`. It uses classic `<script>` tags, so it works from `file://`, unless an admin policy blocks local files.
 - **Dev server:** `python tools/serve.py 8765` serves with caching disabled.
 
-**To host:** enter your name and click **Host**, then read out the 5-letter room code. **To join:** click **Join**. Your single-player car choice and paint come with you.
+**To host:** enter your name and click **Host**, then read out the 5-letter room code, or click **🔗 Copy invite link**. A friend who opens the link gets the Join box with the code already filled in. **To join:** click **Join**; the last room code you used is remembered. Your single-player car choice and paint come with you.
+
+In the lobby, the host can type any number of races from 1 to 30, set the bot count, and **✖ Kick** a player (they can't rejoin that room). On the final standings, the host can click **🔁 Play again** to restart in the same room: everyone keeps their car and paint and gets fresh money and parts.
 
 ### Controls
 
@@ -28,7 +30,7 @@ All driving keys are rebindable in **Settings → Controls**. The arrow keys alw
 | M | Sound on/off (off by default) |
 | F3 | FPS and netcode stats |
 
-Gamepads work too: left stick, RT/LT, A handbrake, Y reset, RB camera, Start menu. The ☰ 🔊 ⛶ buttons in the top-right corner are on every screen. When spectating, 1–8 or Tab picks a car to follow, WASD/Q/E moves a free camera, and the mouse wheel zooms.
+Gamepads work too: left stick, RT/LT, A handbrake, Y reset, RB camera, Start menu. **Touchscreens:** on-screen ◀ ▶, GAS, BRAKE, HANDBRAKE, reset and camera buttons appear once you touch the screen. Set them to Always or Off in Settings → Controls. The ☰ 🔊 ⛶ buttons in the top-right corner are on every screen. When spectating, 1–8 or Tab picks a car to follow, WASD/Q/E moves a free camera, and the mouse wheel zooms.
 
 ## What's in the game
 
@@ -40,6 +42,7 @@ Gamepads work too: left stick, RT/LT, A handbrake, Y reset, RB camera, Start men
   - **Car:** switch chassis. It's free before race 1; between races it's an $800 swap, and your parts move over to the new car.
   - **Service:** repairs.
 - **Single-player persistence:** your single-player car, parts, setup, paint and play money are saved between visits.
+- **Personal bests:** practice and quick races save a best lap per track and car. It's shown on the track picker and in the drive bar, with a "NEW PERSONAL BEST" banner when you beat it.
 - **Settings:**
   - **Graphics:** quality tier, resolution scale, shadows, particles, scenery detail, weather, FPS counter.
   - **Audio:** master, engines, effects, interface and music volumes.
@@ -112,7 +115,7 @@ The overall score is the **lowest** category: **7/10**.
 
 | Category | Score | Main evidence | Main gap |
 |---|---|---|---|
-| Car feel | 7 | A keyboard proxy with ABS never locks the fronts (was about 12 s per 2 laps). With the assist it spends 74 s off-track across 7 runs (was 102 s). Slides are unchanged: Vandal 13°, handbrake 42°. | Never driven by a human. The stock Mule still runs wide (24 s off-track in about 115 s). |
+| Car feel | 7 | A keyboard proxy with ABS never locks the fronts (was about 12 s per 2 laps). With the assist it spends 74 s off-track across 7 runs (was 102 s). Slides are unchanged: Vandal 13°, handbrake 42°. The Mule was rebalanced (46 → 33 s off-track across 3 tracks). | Never driven by a human. The Mule is still the car most likely to run wide. |
 | Upgrade drama | 8 | Road brakes go from 38 m cold to 49 m hot, while the big brake kit and carbon stay at 38 m. A stiff rear bar cuts stability from 8.5 to 6.8 and spins the bot for 2.5 s. Full boost on a Street Turbo overheats in 8 s. Calipers, tips, wing angle and liveries are all visible. | Pressures and camber are subtle (±0.02 g). The straight pipe barely moves lap times. |
 | Economic balance | 8 | 3 simulated sessions with the new parts: lowest cash $3,435, leader 1.24–1.33× the median. | Bot evidence only. The last-placed bot finishes at about 0.6× the median. |
 | Casino balance | 9 | Blackjack edge 0.44% ± 0.26%, roulette 2.63%, all rule tests pass. Stakes are capped, with a $300 floor. | Variance can still favour a lucky player. |
