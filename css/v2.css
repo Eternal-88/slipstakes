@@ -190,6 +190,19 @@ body.touchui .hud-br { right: 50%; bottom: 6px; transform: translateX(50%) scale
 body.touchui #toasts { left: 50%; right: auto; bottom: auto; top: 112px; transform: translateX(-50%); align-items: center; }
 body.touchui .hud-help { display: none !important; }
 
+/* quick-race results */
+.qr-head { display: flex; align-items: center; gap: 18px; margin-bottom: 12px; }
+.qr-head h1 { font-size: 34px; color: var(--yellow); }
+.qr-pos { font-family: var(--display); font-size: 64px; line-height: 1; min-width: 110px; text-align: center; color: var(--ink); }
+.qr-pos.gold { color: var(--yellow); -webkit-text-stroke: 2px #1a1300; }
+.qr-pos.pod { color: #d9dde6; }
+.qr-pos.neg { color: var(--red); }
+.qr-money { margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 14px; }
+.qr-money .box { background: rgba(255,255,255,.05); border-radius: 12px; padding: 10px 12px; }
+.qr-money .ln { display: flex; justify-content: space-between; padding: 2px 0; }
+.qr-money .ln.tot { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 5px; font-weight: 900; }
+.qr-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; flex-wrap: wrap; }
+
 /* keep screen headers clear of the corner buttons */
 .g-head, .cz-head { margin-right: 132px; }
 .cs-head { padding-right: 132px; }
