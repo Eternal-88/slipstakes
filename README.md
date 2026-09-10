@@ -34,7 +34,11 @@ Gamepads work too: left stick, RT/LT, A handbrake, Y reset, RB camera, Start men
 
 ## What's in the game
 
-- **Main menu:** Quick race (you against 5 bots on a random track), Host / Join, Resume / Rejoin, Free practice (track picker with map thumbnails and a car picker), Garage, Casino (practice chips), Settings, How to play.
+- **Main menu:**
+  - **Quick race:** a real 3-lap race against 5 bots on a random track. You start mid-pack; results show gaps and best laps, and the prize (1st $1,500) minus fuel goes to your garage money. Then Race again, Next track, Garage or Menu.
+  - **Bot difficulty:** Easy, Normal or Hard (Hard bots also bring upgrades).
+  - Host / Join, Resume / Rejoin, Free practice (track picker with map thumbnails, car picker, 🎲 Random track), Garage, Casino (practice chips), Settings, How to play.
+- **Tracks and sound:** multiplayer track order is shuffled every session (every track before any repeat, never the same format twice in a row). Nearby cars can be heard: their own engines, turbo whistle or supercharger whine, Doppler as they pass, tyre squeal, backfires and crashes. Each chassis has a distinct engine note, and supercharger, street turbo and big turbo each have a distinct sound. Badly damaged cars smoke.
 - **Garage, in 5 tabs:**
   - **Parts:** 12 slots, including Brakes, Exhaust, Engine map, Cooling and Differential. Every option lists its upside and its downside.
   - **Tuning:** a free setup sheet with tyre pressures, camber, anti-roll bars, ride height, brake bias, diff lock, final drive, wing angle and boost. The live preview car and the stat bars show the result before you press Apply.
