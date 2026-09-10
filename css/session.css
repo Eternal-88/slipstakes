@@ -1,0 +1,80 @@
+/* Multiplayer screens: lobby, car select, race overlay, results. */
+.lobby { position: absolute; inset: 0; display: grid; grid-template-columns: minmax(360px, 560px) minmax(280px, 380px); gap: 16px; align-content: center; justify-content: center; padding: 20px; background: rgba(14,19,34,.45); }
+.lb-main, .lb-chat { padding: 18px 20px; }
+.lb-code { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 14px; margin-bottom: 14px; }
+.lb-code span { grid-column: 1 / 4; font-size: 11px; letter-spacing: 2px; font-weight: 900; color: var(--muted); }
+.lb-code > b { font-family: var(--display); font-size: 54px; font-weight: 400; color: var(--yellow); letter-spacing: 8px; }
+.lb-code p { grid-column: 1 / 4; margin: 2px 0 0; }
+.lb-players { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; max-height: 40vh; overflow: auto; }
+.pl { display: flex; align-items: center; gap: 9px; background: rgba(255,255,255,.05); border-radius: 10px; padding: 8px 10px; }
+.pl.off { opacity: .45; }
+.pl i { width: 14px; height: 14px; border-radius: 4px; flex: none; }
+.pl b { flex: 0 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pl .car { margin-left: auto; color: var(--muted); font-size: 13px; }
+.pl em, .tag-fast { font-style: normal; font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 5px; letter-spacing: .5px; }
+.tag-host { background: var(--yellow); color: #1a1300; }
+.tag-bot { background: var(--panel3); color: var(--muted); }
+.tag-off { background: var(--red); color: #fff; }
+.tag-fast { background: #b08cff; color: #150a2e; margin-left: 6px; }
+.lb-set { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin-bottom: 14px; }
+.lb-btns { display: flex; justify-content: space-between; gap: 10px; }
+.lb-chat { display: flex; flex-direction: column; max-height: 70vh; }
+.chat-log { flex: 1; overflow: auto; min-height: 180px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; padding-right: 4px; }
+.cm { line-height: 1.35; }
+.cm.sys { color: var(--muted); font-size: 12px; font-style: italic; }
+.chat-in { display: flex; gap: 6px; margin-top: 10px; }
+.chat-in input { flex: 1; font-size: 14px; padding: 8px 10px; }
+
+.carsel { position: absolute; inset: 0; display: flex; flex-direction: column; gap: 14px; padding: 20px; background: rgba(14,19,34,.55); }
+.cs-head { display: flex; justify-content: space-between; align-items: baseline; }
+.cs-head h1 { font-size: 34px; color: var(--yellow); }
+.cs-timer { font-size: 16px; }
+.cs-cars { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; flex: 1; min-height: 0; }
+.cs-car { background: rgba(18,24,43,.92); border-radius: 18px; padding: 16px; cursor: pointer; box-shadow: inset 0 0 0 3px transparent; display: flex; flex-direction: column; gap: 6px; overflow: auto; }
+.cs-car:hover { box-shadow: inset 0 0 0 3px rgba(255,204,0,.4); }
+.cs-car.on { box-shadow: inset 0 0 0 3px var(--yellow); background: rgba(40,34,10,.92); }
+.cs-name { font-family: var(--display); font-size: 24px; }
+.cs-tag { color: var(--cyan); font-size: 12px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
+.cs-car p { margin: 2px 0 6px; font-size: 13px; color: var(--muted); line-height: 1.35; }
+.mini { display: grid; grid-template-columns: 104px 1fr; align-items: center; gap: 8px; font-size: 11px; font-weight: 900; color: #cfd6ea; }
+.mini div { height: 7px; background: rgba(255,255,255,.08); border-radius: 4px; overflow: hidden; }
+.mini i { display: block; height: 100%; background: var(--cyan); border-radius: 4px; }
+.cs-who { display: flex; gap: 4px; margin-top: auto; min-height: 14px; }
+.cs-who i { width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 0 2px rgba(0,0,0,.4); }
+.cs-foot { display: flex; align-items: center; gap: 18px; padding: 12px 16px; flex-wrap: wrap; }
+.cs-sw { display: flex; gap: 6px; }
+.sw { width: 30px; height: 30px; border-radius: 9px; border: 0; cursor: pointer; box-shadow: 0 3px 0 rgba(0,0,0,.35); }
+.sw.on { outline: 3px solid #fff; outline-offset: 2px; }
+.sw.taken { opacity: .2; cursor: not-allowed; }
+.cs-ready { display: flex; gap: 6px; flex-wrap: wrap; flex: 1; }
+.rd { font-size: 12px; padding: 4px 8px; border-radius: 8px; border-left: 4px solid; background: rgba(255,255,255,.06); }
+.rd.y { background: rgba(47,224,122,.15); }
+.cs-btns { display: flex; gap: 8px; }
+
+.raceui { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; }
+.ru-top:not(:empty) { background: rgba(14,19,34,.78); padding: 7px 14px; border-radius: 12px; font-size: 13px; }
+.ru-top b { color: var(--yellow); margin-right: 4px; }
+.ru-top span { color: var(--cyan); }
+.ru-net:not(:empty) { background: rgba(60,10,10,.85); padding: 6px 12px; border-radius: 10px; font-size: 13px; }
+.bad { color: #ff8a80; }
+#ui.scr-raceui > * { pointer-events: none; }
+
+.results { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(14,19,34,.55); padding: 20px; }
+.rs-card { width: min(820px, 96vw); padding: 20px 24px; max-height: 94vh; overflow: auto; }
+.rs-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
+.rs-head h1 { font-size: 32px; color: var(--yellow); }
+.rs-table table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.rs-table th { text-align: left; font-size: 11px; color: var(--muted); letter-spacing: 1px; font-weight: 900; padding: 4px 8px; }
+.rs-table td { padding: 8px; border-top: 1px solid var(--line); }
+.rs-table td i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 8px; }
+.rs-table td.p { font-family: var(--display); font-size: 20px; width: 34px; }
+.rs-table tr.me td { background: rgba(255,204,0,.1); }
+.rs-table td.gd { color: var(--muted); font-size: 13px; }
+.rs-table td.pay { font-family: var(--display); color: var(--green); text-align: right; }
+.rs-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; gap: 12px; }
+.g-extra { font-size: 13px; color: var(--muted); white-space: nowrap; }
+
+@media (max-width: 1000px) {
+  .lobby { grid-template-columns: 1fr; align-content: start; overflow: auto; }
+  .cs-cars { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
