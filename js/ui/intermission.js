@@ -130,11 +130,12 @@
         `<h1 class="fin-t">FINAL STANDINGS</h1><div class="podium">${podium}</div>
          <div class="awards">${aw.map((a) => `<div class="aw"><span>${a[0]}</span><b>${U.esc(a[1])}</b><em>${a[2]}</em></div>`).join('')}</div>
          <table class="stand"><tr><th>#</th><th>Driver</th><th>Net worth</th><th>Wins</th><th>Pods</th><th>Prize money</th><th>Parts</th><th>Fuel+repairs</th><th>Bets</th><th>Casino</th></tr>${table}</table>
-         <div class="fin-btns"><button class="btn primary big" data-act="menu">Back to menu</button></div>`
+         <div class="fin-btns">${G.Game.role === 'host' ? '<button class="btn primary big" data-act="again">🔁 Play again — same room</button>' : '<span class="muted">The host can start a rematch in this room — stay here, or</span>'}<button class="btn ghost big" data-act="menu">Back to menu</button></div>`
       );
     },
     acts: {
       menu() { G.Game.leave(); },
+      again() { G.Client.act({ t: 'rematch' }); },
     },
   };
   UI.register('final', Final);

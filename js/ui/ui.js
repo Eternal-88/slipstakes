@@ -39,12 +39,24 @@
       });
       r.addEventListener('change', (e) => {
         const el = e.target.closest('[data-change]');
-        if (el && this.cur && this.cur.change) this.cur.change(el.dataset.change, el, e);
+        if (!el || !this.cur || !this.cur.change) return;
+        if (el._entered === el.value) return; // already committed by Enter
+        el._entered = null;
+        this.cur.change(el.dataset.change, el, e);
       });
       r.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           const el = e.target.closest('[data-enter]');
           if (el) this.dispatch(el.dataset.enter, el, e);
+          // Enter commits a number / text field (race count, race number)
+          // and leaves it, so the screen can update again.
+          const ch = e.target.closest('input[data-change]');
+          if (ch && ch.type !== 'color') {
+            e.preventDefault();
+            ch._entered = ch.value;
+            if (this.cur && this.cur.change) this.cur.change(ch.dataset.change, ch, e);
+            ch.blur();
+          }
         }
       });
     },
@@ -95,10 +107,40 @@
       else if (this.globalActs[act]) this.globalActs[act](el, e);
     },
 
-    // Only touch the DOM when the markup actually changed.
+    // Only touch the DOM when the markup actually changed — and never replace
+    // a text box / dropdown the player is using. (Every state update used to
+    // re-render the menu, swapping out the name field after each letter typed
+    // and closing open dropdowns and colour pickers.) The new markup is held
+    // back until focus leaves the field.
     patch(el, html) {
       if (!el) return;
-      if (el._html === html) return;
+      if (el._html === html) {
+        el._deferred = null;
+        return;
+      }
+      const a = document.activeElement;
+      const editing = a && a !== document.body && el.contains(a) && (a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || (a.tagName === 'INPUT' && !['button', 'checkbox', 'radio', 'range', 'submit'].includes(a.type)));
+      if (editing) {
+        el._deferred = html;
+        if (!el._deferHook) {
+          el._deferHook = true;
+          el.addEventListener(
+            'focusout',
+            () =>
+              setTimeout(() => {
+                el._deferHook = false;
+                if (el._deferred != null) {
+                  const h = el._deferred;
+                  el._deferred = null;
+                  this.patch(el, h);
+                }
+              }, 0),
+            { once: true }
+          );
+        }
+        return;
+      }
+      el._deferred = null;
       el._html = html;
       el.innerHTML = html;
     },

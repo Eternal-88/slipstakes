@@ -75,12 +75,35 @@
           <div class="m-card">
             <div class="logo">SLIP<span>STAKES</span></div>
             <div class="tagline">Race. Upgrade. Gamble. Regret.</div>
+            <label class="fld m-name"><span>Your name</span><input data-input="name" maxlength="16" placeholder="Driver" autocomplete="off" spellcheck="false"></label>
             <div class="m-body"></div>
           </div>
           <div class="m-side"></div>
         </div>`;
       this.body = root.querySelector('.m-body');
       this.side = root.querySelector('.m-side');
+      // The name field is built ONCE and never re-rendered (it used to be part
+      // of the re-rendered body: every letter typed replaced the input).
+      this.nameBox = root.querySelector('.m-name');
+      this.nameBox.querySelector('input').value = U.store.get('ss.name', '') || '';
+    },
+
+    async openJoin(prefill) {
+      const lc = G.Game.lastClient();
+      const code = String(prefill || (lc ? lc.code : '') || '').toUpperCase().slice(0, 5);
+      const r = await UI.modal(
+        'Join a session',
+        `<label class="fld"><span>Room code</span><input name="code" maxlength="5" autocomplete="off" value="${U.esc(code)}" style="text-transform:uppercase;letter-spacing:6px;font-size:26px;text-align:center"></label><p class="muted small">Joining as <b>${U.esc(G.App.name())}</b> — change your name on the menu first if you like. Your car choice and paint come with you.</p>`,
+        [{ label: 'Cancel', value: 0, cls: 'ghost' }, { label: 'Join', value: 1, cls: 'primary' }]
+      );
+      if (!r.value) return;
+      UI.toast('Connecting…');
+      try {
+        await G.Game.join(r.inputs.code, G.App.name());
+      } catch (e) {
+        G.Game.role = null;
+        UI.toast(e.message, 'bad');
+      }
     },
 
     render() {
@@ -89,7 +112,6 @@
       const K = G.Settings.s.keys, kn = G.Settings.keyName;
       if (this.tab === 'home') {
         h = `
-          <label class="fld"><span>Your name</span><input data-input="name" maxlength="16" value="${U.esc(me ? me.name : '')}" placeholder="Driver"></label>
           <div class="m-grid">
             <button class="btn big primary span2" data-act="quick">🏁 Quick race <small>you vs 5 bots on a random track</small></button>
             ${G.App.menuButtons ? G.App.menuButtons() : ''}
@@ -102,15 +124,19 @@
           <div class="m-help">${kn(K.up)}/↑ throttle · ${kn(K.down)}/↓ brake & reverse · ${kn(K.left)}/${kn(K.right)} steer · ${kn(K.hb)} handbrake · ${kn(K.reset)} reset · ${kn(K.cam)} camera · Esc menu</div>`;
       } else if (this.tab === 'practice') {
         const tracks = G.TrackDefs.TRACKS;
+        const pbCar = me ? me.carId : 'vandal';
         h = `<h2>Free practice</h2><div class="trk-grid">${tracks
-          .map((t) => `<div class="trk ${t.id === this.track ? 'on' : ''}" data-act="pickTrack" data-id="${t.id}"><img src="${thumb(t.id)}" alt=""><div><b>${U.esc(t.name)}</b><em class="fmt fmt-${t.format}">${t.format.toUpperCase()}</em><p>${U.esc(t.blurb)}</p></div></div>`)
+          .map((t) => {
+            const pb = G.App.getPB(t.id, pbCar);
+            return `<div class="trk ${t.id === this.track ? 'on' : ''}" data-act="pickTrack" data-id="${t.id}"><img src="${thumb(t.id)}" alt=""><div><b>${U.esc(t.name)}</b><em class="fmt fmt-${t.format}">${t.format.toUpperCase()}</em>${pb ? `<span class="pb" title="Your personal best in this car">PB ${U.fmtTime(pb)}</span>` : ''}<p>${U.esc(t.blurb)}</p></div></div>`;
+          })
           .join('')}</div>
           <div class="m-row">
             <div class="m-cars">${Parts.CAR_ORDER.map((id) => `<button class="chipb ${me && me.carId === id ? 'on' : ''}" data-act="pickCar" data-id="${id}">${Parts.CARS[id].name}</button>`).join('')}</div>
             <label class="fld inline"><span>Bots</span><select data-input="bots">${[0, 1, 3, 5, 7].map((n) => `<option ${n === this.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
           </div>
           <p class="muted small">Driving your garage car with its parts, setup and paint. Wear counts (it's play money).</p>
-          <div class="m-btns row"><button class="btn ghost" data-act="home">← Back</button><button class="btn primary big" data-act="drive">Drive ▶</button></div>`;
+          <div class="m-btns row"><button class="btn ghost" data-act="home">← Back</button><button class="btn big" data-act="randomTrack">🎲 Random track</button><button class="btn primary big" data-act="drive">Drive ▶</button></div>`;
       } else if (this.tab === 'help') {
         h = `<h2>How to play</h2>
           <div class="help">
@@ -124,6 +150,10 @@
           <div class="m-btns row"><button class="btn ghost" data-act="home">← Back</button></div>`;
       }
       UI.patch(this.body, h);
+      this.nameBox.style.display = this.tab === 'home' ? '' : 'none';
+      // the track picker needs room: widen the card and hide the side panel
+      this.body.parentElement.classList.toggle('wide', this.tab === 'practice');
+      this.side.style.display = this.tab === 'practice' ? 'none' : '';
       // side card: your car + a tip
       if (me) {
         const c = Parts.CARS[me.carId];
@@ -166,20 +196,8 @@
           UI.toast('Could not host: ' + e.message, 'bad');
         });
       },
-      async join() {
-        const r = await UI.modal(
-          'Join a session',
-          `<label class="fld"><span>Room code</span><input name="code" maxlength="5" autocomplete="off" style="text-transform:uppercase;letter-spacing:6px;font-size:26px;text-align:center"></label><p class="muted small">Joining as <b>${U.esc(G.App.name())}</b> — change your name on the menu first if you like. Your car choice and paint come with you.</p>`,
-          [{ label: 'Cancel', value: 0, cls: 'ghost' }, { label: 'Join', value: 1, cls: 'primary' }]
-        );
-        if (!r.value) return;
-        UI.toast('Connecting…');
-        try {
-          await G.Game.join(r.inputs.code, G.App.name());
-        } catch (e) {
-          G.Game.role = null;
-          UI.toast(e.message, 'bad');
-        }
+      join() {
+        this.openJoin();
       },
       resume() {
         G.Game.resume().catch((e) => {
@@ -237,6 +255,12 @@
         G.Client.act({ t: 'setCar', carId: el.dataset.id });
       },
       drive() {
+        G.App.startDrive({ trackId: this.track, bots: this.bots || 0 });
+      },
+      randomTrack() {
+        const ids = G.TrackDefs.TRACKS.map((t) => t.id).filter((id) => id !== this.track);
+        this.track = ids[Math.floor(Math.random() * ids.length)];
+        U.store.set('ss.lastTrack', this.track);
         G.App.startDrive({ trackId: this.track, bots: this.bots || 0 });
       },
     },

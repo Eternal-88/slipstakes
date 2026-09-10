@@ -44,16 +44,23 @@
       const st = G.Client.state;
       if (!st) return;
       const isHost = G.Client.meId === st.hostId;
-      UI.patch(this.el.code, `<span>ROOM CODE</span><b>${U.esc(st.code || '')}</b><button class="btn small ghost" data-act="copy">Copy</button><p class="muted small">Friends open this page, click <b>Join</b> and type the code. Up to 8 drivers.</p>`);
-      UI.patch(this.el.pl, st.order.map((id) => st.players[id]).filter(Boolean).map((p) => playerRow(p, st)).join(''));
+      UI.patch(this.el.code, `<span>ROOM CODE</span><b>${U.esc(st.code || '')}</b><button class="btn small ghost" data-act="copy" title="Copy a link that opens the Join box with this code filled in">🔗 Copy invite link</button><p class="muted small">Friends open the game, click <b>Join</b> and type the code — or just open your invite link. Up to 8 drivers.</p>`);
+      UI.patch(
+        this.el.pl,
+        st.order
+          .map((id) => st.players[id])
+          .filter(Boolean)
+          .map((p) => playerRow(p, st, isHost && !p.isBot && p.id !== st.hostId ? `<button class="btn small ghost kick" data-act="kick" data-id="${p.id}" title="Remove from the room">✖ Kick</button>` : ''))
+          .join('')
+      );
       const s = st.settings;
       UI.patch(
         this.el.set,
         isHost
-          ? `<label class="fld inline"><span>Races</span><select data-input="races">${[4, 6, 8, 10, 12].map((n) => `<option ${n === s.races ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+          ? `<label class="fld inline"><span>Races</span><input class="num-in" type="number" min="1" max="30" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 30, then press Enter"></label>
              <label class="fld inline"><span>Bots</span><select data-input="bots">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option ${n === s.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
              <span class="muted small">~${Math.round(s.races * 6)} min session · bots fill empty grid slots</span>`
-          : `<span class="muted">${s.races} races · ${s.bots} bots · waiting for the host to start</span>`
+          : `<span class="muted">${s.races} race${s.races === 1 ? '' : 's'} · ${s.bots} bots · waiting for the host to start</span>`
       );
       UI.patch(this.el.btns, `<button class="btn ghost" data-act="leave">Leave</button><button class="btn" data-act="garage">🎨 Car, tune & paint</button>${isHost ? '<button class="btn primary big" data-act="start">Start session →</button>' : ''}`);
       const log = chatHtml(st);
@@ -63,8 +70,18 @@
       }
     },
     input(k, el) {
-      if (k === 'races') G.Client.act({ t: 'settings', races: +el.value });
       if (k === 'bots') G.Client.act({ t: 'settings', bots: +el.value });
+    },
+    // number field: act on Enter / leaving the field, not on every keystroke
+    change(k, el) {
+      if (k !== 'races') return;
+      const n = Math.round(+el.value);
+      if (!(n >= 1 && n <= 30)) {
+        UI.toast('Races: pick a number from 1 to 30.', 'bad');
+        el.value = G.Client.state.settings.races;
+        return;
+      }
+      G.Client.act({ t: 'settings', races: n });
     },
     acts: {
       send() {
@@ -74,7 +91,17 @@
       },
       copy() {
         const c = G.Client.state && G.Client.state.code;
-        if (c && navigator.clipboard) navigator.clipboard.writeText(c).then(() => UI.toast('Room code copied.', 'good'), () => {});
+        if (!c) return;
+        const link = location.href.split(/[?#]/)[0] + '?join=' + c;
+        const done = () => UI.toast('Invite link copied — paste it to your friends.', 'good');
+        const fail = () => UI.modal('Invite link', `<p>Copy this link:</p><input readonly value="${U.esc(link)}" style="width:100%" onfocus="this.select()">`, [{ label: 'Close', value: 0, cls: 'primary' }]);
+        if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(link).then(done, fail);
+        else fail();
+      },
+      async kick(el) {
+        const p = G.Client.state.players[el.dataset.id];
+        if (!p) return;
+        if (await UI.confirm('Kick ' + p.name + '?', 'They are disconnected and cannot rejoin this room.', 'Kick', true)) G.Client.act({ t: 'kick', pid: p.id });
       },
       start() { G.Client.act({ t: 'start' }); },
       garage() { G.App.openCarTab('car'); },
