@@ -59,7 +59,9 @@
       // GPU frame on the test machine); plain PCF on anything but "high".
       this.renderer.shadowMap.type = q === 'high' ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
       this.scene = new THREE.Scene();
-      this.camera = new THREE.PerspectiveCamera(40, 1, 2, 1400);
+      // near plane 3 m (the closest camera — the paint showroom — is ~9 m
+      // away): 50% more depth precision than 2 m, less distant flicker
+      this.camera = new THREE.PerspectiveCamera(40, 1, 3, 1400);
       this.hemi = new THREE.HemisphereLight(0xe6f4ff, 0x7a8f5a, 1.6);
       this.sun = new THREE.DirectionalLight(0xfff1d8, 2.3);
       this.sun.castShadow = true;

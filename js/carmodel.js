@@ -152,30 +152,34 @@
         }
       };
       const rimDark = cols.rim.clone().multiplyScalar(0.55);
+      const lip = cols.rim.clone().multiplyScalar(1.12);
       for (const sx of [-1, 1]) {
-        const x = sx * hw;
-        ring(x, R * 0.8, R, cols.tyre, sx);
-        ring(x * 1.002, R * 0.73, R * 0.8, cols.tyre, sx);
-        ring(x * 1.004, R * 0.745, R * 0.775, cols.stripe, sx);
-        ring(x * 1.0, R * 0.64, R * 0.73, cols.tyre, sx);
-        ring(x * 1.01, R * 0.6, R * 0.64, cols.rim.clone().multiplyScalar(1.12), sx); // lip
-        const fx = x * 0.9; // rim face slightly inset
+        // Every layer sits at an ABSOLUTE offset, millimetres apart, and
+        // layers never share a plane where they overlap. (The old x*1.002 /
+        // x*1.004 layers were a fraction of a millimetre apart and flickered:
+        // z-fighting on the tyre stripe and rims.)
+        const o = (d) => sx * (hw + d);
+        ring(o(0), R * 0.64, R, cols.tyre, sx); // sidewall
+        ring(o(0.006), R * 0.745, R * 0.775, cols.stripe, sx); // compound ring, 6 mm proud
+        ring(o(0.004), R * 0.6, R * 0.64, lip, sx); // rim lip (no overlap with the sidewall)
+        const f = (d) => sx * (hw - 0.016 + d); // rim face plane, inset 16 mm
+        const fx = f(0);
         const nrm = [sx, 0, 0];
         const D = (r, a) => [fx, Math.cos(a) * r, Math.sin(a) * r];
         // brake disc behind the face
-        this.disc([x * 0.35, 0, 0], [0, 1, 0], [0, 0, 1], nrm, R * 0.5, 10, cols.disc);
+        this.disc([sx * hw * 0.35, 0, 0], [0, 1, 0], [0, 0, 1], nrm, R * 0.5, 10, cols.disc);
         if (style === 'dish' || style === 'rally' || style === 'turbine') {
-          this.disc([fx, 0, 0], [0, 1, 0], [0, 0, 1], nrm, R * 0.6, n, style === 'turbine' ? rimDark : cols.rim);
+          this.disc([style === 'turbine' ? f(-0.006) : fx, 0, 0], [0, 1, 0], [0, 0, 1], nrm, R * 0.6, n, style === 'turbine' ? rimDark : cols.rim);
           if (style === 'dish') {
-            ring(fx * 1.002, R * 0.5, R * 0.58, rimDark, sx);
+            ring(f(0.005), R * 0.5, R * 0.58, rimDark, sx);
             for (let k = 0; k < 5; k++) {
               const a = (k / 5) * Math.PI * 2;
-              this.disc([fx * 1.004, Math.cos(a) * R * 0.18, Math.sin(a) * R * 0.18], [0, 1, 0], [0, 0, 1], nrm, R * 0.035, 5, rimDark);
+              this.disc([f(0.008), Math.cos(a) * R * 0.18, Math.sin(a) * R * 0.18], [0, 1, 0], [0, 0, 1], nrm, R * 0.035, 5, rimDark);
             }
           } else if (style === 'rally') {
             for (let k = 0; k < 8; k++) {
               const a = (k / 8) * Math.PI * 2;
-              this.disc([fx * 1.004, Math.cos(a) * R * 0.4, Math.sin(a) * R * 0.4], [0, 1, 0], [0, 0, 1], nrm, R * 0.085, 6, cols.tyre);
+              this.disc([f(0.006), Math.cos(a) * R * 0.4, Math.sin(a) * R * 0.4], [0, 1, 0], [0, 0, 1], nrm, R * 0.085, 6, cols.tyre);
             }
           } else {
             for (let k = 0; k < 12; k++) {
@@ -188,12 +192,13 @@
           const w0 = style === 'mesh' ? 0.07 : 0.2, w1 = style === 'mesh' ? 0.05 : 0.13;
           for (let i = 0; i < k; i++) {
             const a = (i / k) * Math.PI * 2;
-            this.quadN(D(R * 0.14, a - w0), D(R * 0.6, a - w1), D(R * 0.6, a + w1), D(R * 0.14, a + w0), cols.rim, nrm);
+            // spokes stop where the outer rim ring starts (no overlap)
+            this.quadN(D(R * 0.14, a - w0), D(R * 0.55, a - w1), D(R * 0.55, a + w1), D(R * 0.14, a + w0), cols.rim, nrm);
           }
           ring(fx, R * 0.55, R * 0.6, cols.rim, sx);
-          if (style === 'mesh') ring(fx * 1.001, R * 0.3, R * 0.34, cols.rim, sx);
+          if (style === 'mesh') ring(f(0.005), R * 0.3, R * 0.34, cols.rim, sx);
         }
-        this.disc([fx * 1.01, 0, 0], [0, 1, 0], [0, 0, 1], nrm, R * 0.15, 6, cols.rim.clone().multiplyScalar(1.1)); // centre cap
+        this.disc([f(0.012), 0, 0], [0, 1, 0], [0, 0, 1], nrm, R * 0.15, 6, cols.rim.clone().multiplyScalar(1.1)); // centre cap
       }
     }
     geometry() {
@@ -374,7 +379,7 @@
         for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) {
           if ((i + k) % 2) continue;
           const x0 = -w / 2 + (i * w) / nx, zz = z0 + (k * (z1 - z0)) / nz;
-          gb.quadN([x0, y + 0.052, zz], [x0 + w / nx, y + 0.052, zz], [x0 + w / nx, y + 0.052, zz + (z1 - z0) / nz], [x0, y + 0.052, zz + (z1 - z0) / nz], black, [0, 1, 0]);
+          gb.quadN([x0, y + 0.056, zz], [x0 + w / nx, y + 0.056, zz], [x0 + w / nx, y + 0.056, zz + (z1 - z0) / nz], [x0, y + 0.056, zz + (z1 - z0) / nz], black, [0, 1, 0]);
         }
       }
       // pillars: A (windscreen edges), C (rear window edges), B (door frame)
@@ -415,7 +420,7 @@
       zs.push(z1);
       for (let i = 0; i < zs.length - 1; i++) {
         const za = zs[i], zb = zs[i + 1];
-        const ya = topY(za) + (lift || 0.007), yb = topY(zb) + (lift || 0.007);
+        const ya = topY(za) + (lift || 0.012), yb = topY(zb) + (lift || 0.012);
         gb.quadN([x0, ya, za], [x1, ya, za], [x1, yb, zb], [x0, yb, zb], col, [0, 1, 0]);
       }
     };
@@ -423,13 +428,15 @@
     const zones = [[hoodZ0, fz - 0.04]];
     if (B.cockpit) zones.push([rz + 0.05, -1.08]);
     else if (c0.z - rz > 0.2) zones.push([rz + 0.05, c0.z - 0.02]);
-    if (carbonHood) band(zones[0][0], zones[0][1], -0.62, 0.62, carbon, 0.005);
+    // Layer heights above the paint, ≥ 1 cm apart so they never z-fight at
+    // chase-camera distance: carbon 1 cm, stripes 2 cm, roundels 3 cm.
+    if (carbonHood) band(zones[0][0], zones[0][1], -0.62, 0.62, carbon, 0.01);
     const stripes = L.livery === 'stripes' || L.livery === 'race' ? [[0.09, 0.25], [-0.25, -0.09]] : L.livery === 'single' ? [[-0.2, 0.2]] : [];
     for (const [x0, x1] of stripes) {
-      for (const [z0, z1] of zones) band(z0, z1, x0, x1, acc, 0.009);
+      for (const [z0, z1] of zones) band(z0, z1, x0, x1, acc, 0.02);
       if (B.roof) {
         const [rz0, rz1, ry0] = B.roof;
-        if (L.livery !== 'checker') gb.quadN([x0, ry0 + 0.052, rz0 - 0.03], [x1, ry0 + 0.052, rz0 - 0.03], [x1, ry0 + 0.052, rz1 + 0.03], [x0, ry0 + 0.052, rz1 + 0.03], acc, [0, 1, 0]);
+        if (L.livery !== 'checker') gb.quadN([x0, ry0 + 0.056, rz0 - 0.03], [x1, ry0 + 0.056, rz0 - 0.03], [x1, ry0 + 0.056, rz1 + 0.03], [x0, ry0 + 0.056, rz1 + 0.03], acc, [0, 1, 0]);
       }
     }
 
@@ -441,7 +448,7 @@
       for (const sx of [-1, 1]) {
         for (let i = 0; i < zs.length - 1; i++) {
           const A = secAt(B, zs[i]), Bq = secAt(B, zs[i + 1]);
-          const o = lift || 0.006;
+          const o = lift || 0.01;
           const p = (s, y) => [sx * (surfX(s, y) + o), y, s.z];
           gb.quadN(p(A, y0), p(Bq, y0), p(Bq, y1), p(A, y1), col, [sx, 0, 0]);
         }
@@ -452,13 +459,13 @@
     if (L.livery === 'side' || L.livery === 'race') {
       // runs between the wheel arches, like the real thing
       const [wf, wr] = B.wheelZ;
-      for (const [a, b] of [[rz + 0.1, wr - 0.47], [wr + 0.47, wf - 0.47], [wf + 0.47, fz - 0.1]]) if (b - a > 0.1) sideBand(midS.ym + 0.03, midS.ym + (L.livery === 'side' ? 0.13 : 0.07), acc, a, b, 0.008);
+      for (const [a, b] of [[rz + 0.1, wr - 0.47], [wr + 0.47, wf - 0.47], [wf + 0.47, fz - 0.1]]) if (b - a > 0.1) sideBand(midS.ym + 0.03, midS.ym + (L.livery === 'side' ? 0.13 : 0.07), acc, a, b, 0.022);
     }
     const [dzF, dzR] = B.doors;
     const seam = (z) => {
       const s = secAt(B, z);
       for (const sx of [-1, 1]) {
-        const p = (y, dz) => [sx * (surfX(s, y) + 0.005), y, z + dz];
+        const p = (y, dz) => [sx * (surfX(s, y) + 0.015), y, z + dz];
         const ya = s.yb + 0.09, ym = s.ym, yt = s.yt - 0.03;
         gb.quadN(p(ya, -0.012), p(ya, 0.012), p(ym, 0.012), p(ym, -0.012), dark, [sx, 0, 0]);
         gb.quadN(p(ym, -0.012), p(ym, 0.012), p(yt, 0.012), p(yt, -0.012), dark, [sx, 0, 0]);
@@ -469,16 +476,23 @@
     const hs = secAt(B, dzR + 0.18);
     for (const sx of [-1, 1]) gb.box(sx * (surfX(hs, hs.ym + 0.09) + 0.012), hs.ym + 0.09, dzR + 0.2, 0.03, 0.035, 0.16, dark);
     if ((L.livery === 'race' || L.livery === 'side') && L.num > 0) {
+      // Door roundels lie ON the upper side panel, tilted to match its slope.
+      // (A vertical disc floated several cm off the curved flank and looked
+      // like a part stuck on in the wrong place.) Lifted 3 cm: above stripes.
       const zc = (dzF + dzR) / 2 + (car.body === 'roadster' ? 0.05 : 0);
       const s = secAt(B, zc);
-      const yc = s.ym + 0.03;
-      const size = Math.min(0.24, (s.yt - s.yb) * 0.42);
-      roundel(gb, L.num, [surfX(s, yc) + 0.012, yc, zc], [0, 0, -1], [0, 1, 0], [1, 0, 0], size, white, black);
-      roundel(gb, L.num, [-(surfX(s, yc) + 0.012), yc, zc], [0, 0, 1], [0, 1, 0], [-1, 0, 0], size, white, black);
+      const dx = s.wt - s.wm, dy = s.yt - s.ym, fl = Math.hypot(dx, dy);
+      const size = Math.min(0.15, fl * 0.46);
+      const xm = (s.wm + s.wt) / 2, ymid = (s.ym + s.yt) / 2;
+      for (const sx of [1, -1]) {
+        const n = [(sx * dy) / fl, -dx / fl, 0]; // outward panel normal
+        const ev = [(sx * dx) / fl, dy / fl, 0]; // "up" along the panel
+        roundel(gb, L.num, [sx * xm + n[0] * 0.03, ymid + n[1] * 0.03, zc], [0, 0, -sx], ev, n, size, white, black);
+      }
     }
     if (L.livery === 'race' && L.num > 0) {
-      if (B.roof) roundel(gb, L.num, [0, B.roof[2] + 0.056, (B.roof[0] + B.roof[1]) / 2], [-1, 0, 0], [0, 0, 1], [0, 1, 0], 0.3, white, black);
-      else roundel(gb, L.num, [0, topY(1.2) + 0.012, 1.25], [-1, 0, 0], [0, 0, 1], [0, 1, 0], 0.26, white, black);
+      if (B.roof) roundel(gb, L.num, [0, B.roof[2] + 0.064, (B.roof[0] + B.roof[1]) / 2], [-1, 0, 0], [0, 0, 1], [0, 1, 0], 0.3, white, black);
+      else roundel(gb, L.num, [0, topY(1.2) + 0.032, 1.25], [-1, 0, 0], [0, 0, 1], [0, 1, 0], 0.26, white, black);
     }
 
     // ---- mirrors
@@ -496,20 +510,23 @@
     gb.box(0, fy - 0.14, fz - 0.025, grilleW, 0.15, 0.06, dark);
     for (let k = 0; k < 3; k++) gb.box(0, fy - 0.19 + k * 0.05, fz + 0.008, grilleW - 0.06, 0.012, 0.02, car.body === 'muscle' ? chrome : carbon);
     gb.box(0, fS.yb + 0.07, fz - 0.03, fS.wb * 2 - 0.1, 0.12, 0.08, dark); // lower bumper
-    gb.box(0, fS.yb + 0.16, fz + 0.012, 0.44, 0.1, 0.02, white); // plate
-    gb.box(0, fS.yb + 0.16, fz + 0.018, 0.4, 0.06, 0.01, C(0xc9d2dc));
-    // headlights: bezel + lens + DRL strip
+    // plate: white back plate, then the lighter face 1 cm proud (was 1 mm)
+    gb.box(0, fS.yb + 0.16, fz + 0.015, 0.44, 0.1, 0.02, white);
+    gb.box(0, fS.yb + 0.16, fz + 0.03, 0.4, 0.06, 0.01, C(0xc9d2dc));
+    // headlights: bezel + lens + DRL strip. The bezel's face used to sit
+    // exactly ON the nose (same plane = z-fighting); now every layer stands
+    // proud of the one behind it, and the DRL no longer overlaps the lens.
     const hlX = car.body === 'hatch' || car.body === 'muscle' ? 0.6 : 0.56;
     for (const sx of [-1, 1]) {
-      gb.box(sx * hlX, fy + 0.01, fz - 0.03, 0.4, 0.14, 0.06, dark);
-      gb.box(sx * hlX, fy + 0.01, fz - 0.01, 0.34, 0.1, 0.05, light);
-      gb.box(sx * (hlX + 0.02), fy - 0.045, fz - 0.005, 0.28, 0.018, 0.04, white);
+      gb.box(sx * hlX, fy, fz - 0.02, 0.4, 0.16, 0.06, dark);
+      gb.box(sx * hlX, fy + 0.02, fz, 0.34, 0.08, 0.05, light);
+      gb.box(sx * (hlX + 0.02), fy - 0.05, fz, 0.28, 0.02, 0.04, white);
     }
     // rear: diffuser + fins, plate, exhaust tips, tail lights (dynamic range)
     gb.box(0, rS.yb + 0.06, rz + 0.02, rS.wb * 2 - 0.2, 0.1, 0.1, dark);
     for (const x of [-0.3, 0, 0.3]) gb.box(x, rS.yb + 0.03, rz + 0.05, 0.02, 0.09, 0.14, black);
-    gb.box(0, ry - 0.14, rz - 0.012, 0.44, 0.1, 0.02, white);
-    gb.box(0, ry - 0.14, rz - 0.018, 0.4, 0.06, 0.01, C(0xc9d2dc));
+    gb.box(0, ry - 0.14, rz - 0.015, 0.44, 0.1, 0.02, white);
+    gb.box(0, ry - 0.14, rz - 0.03, 0.4, 0.06, 0.01, C(0xc9d2dc));
     const exKind = P.exhaust;
     const exR = (P.induction === 't2' ? 0.075 : P.induction === 'na' ? 0.045 : 0.06) + (exKind === 'straight' ? 0.03 : exKind === 'sport' ? 0.012 : 0);
     const exY = rS.yb + 0.08;
@@ -538,43 +555,52 @@
           const a0 = 0.15 + (k / K) * (Math.PI - 0.3), a1 = 0.15 + ((k + 1) / K) * (Math.PI - 0.3);
           const pt = (r, a) => {
             const y = wheelY + Math.sin(a) * r, z = wz + Math.cos(a) * r;
-            return [sx * (surfX(secAt(B, z), Math.max(y, secAt(B, z).yb)) + 0.004), y, z];
+            return [sx * (surfX(secAt(B, z), Math.max(y, secAt(B, z).yb)) + 0.008), y, z];
           };
           gb.quadN(pt(0.34, a0), pt(0.44, a0), pt(0.44, a1), pt(0.34, a1), rubber, [sx, 0, 0]);
         }
-        // brake caliper, visible through the spokes
-        const bc = G.Parts.opt('brakes', P.brakes).caliper;
-        gb.box(sx * (wheelX + 0.02), wheelY + 0.12, wz - 0.07, 0.07, 0.15, 0.13, C(bc));
       }
     }
+    // (brake calipers are built below as their own mesh on the NON-rolling
+    // group: in the body mesh they leaned with the body and slid up and down
+    // out of the wheels in every corner)
     // fuel cap
     const fcz = (B.wheelZ[1] + rz) / 2 + 0.1, fcs = secAt(B, fcz);
     gb.disc([-(surfX(fcs, fcs.ym + 0.12) + 0.006), fcs.ym + 0.12, fcz], [0, 1, 0], [0, 0, 1], [-1, 0, 0], 0.07, 8, dark);
 
     // ---- induction visuals
-    const [hz0, hz1, hy] = B.hood;
-    const hoodTop = (z) => topY(z);
+    const [hz0, hz1] = B.hood;
+    // A box that sits ON the sloping hood: its bottom follows the hood's top
+    // surface front-to-back (sunk 1 cm so no gap shows). Flat boxes used to
+    // float at one end and sink at the other on every sloped bonnet.
+    const topBox = (x, zc, w, len, h, col, lift) => {
+      const z0 = zc - len / 2, z1 = zc + len / 2, l = (lift || 0) - 0.01;
+      const y0 = topY(z0) + l, y1 = topY(z1) + l;
+      const v = [[x - w / 2, y0, z0], [x + w / 2, y0, z0], [x + w / 2, y1, z1], [x - w / 2, y1, z1], [x - w / 2, y0 + h, z0], [x + w / 2, y0 + h, z0], [x + w / 2, y1 + h, z1], [x - w / 2, y1 + h, z1]];
+      const cy = (y0 + y1) / 2 + h / 2;
+      for (const q of [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4], [3, 2, 6, 7], [0, 3, 7, 4], [1, 2, 6, 5]]) gb.quad(v[q[0]], v[q[1]], v[q[2]], v[q[3]], col, x, cy, zc);
+    };
     if (P.induction === 'sc') {
-      const z = hz0 + 0.45, y = hoodTop(z);
-      gb.box(0, y + 0.14, z, 0.46, 0.26, 0.6, chrome);
-      gb.box(0, y + 0.3, z, 0.36, 0.08, 0.32, black);
-      for (const x of [-0.12, 0, 0.12]) gb.box(x, y + 0.37, z, 0.08, 0.06, 0.28, chrome); // injector hats
+      const z = hz0 + 0.45;
+      topBox(0, z, 0.46, 0.6, 0.27, chrome);
+      topBox(0, z, 0.36, 0.32, 0.08, black, 0.26);
+      for (const x of [-0.12, 0, 0.12]) topBox(x, z, 0.08, 0.28, 0.06, chrome, 0.33); // injector hats
     } else if (P.induction === 't1') {
       const z = (hz0 + hz1) / 2;
-      gb.box(0, hoodTop(z) + 0.04, z, 0.6, 0.06, 0.5, black);
-      for (let k = 0; k < 4; k++) gb.box(0, hoodTop(z) + 0.075, z - 0.18 + k * 0.12, 0.5, 0.012, 0.03, carbon);
+      topBox(0, z, 0.6, 0.5, 0.07, black);
+      for (let k = 0; k < 4; k++) topBox(0, z - 0.18 + k * 0.12, 0.5, 0.03, 0.015, carbon, 0.065);
     } else if (P.induction === 't2') {
       const z = (hz0 + hz1) / 2 - 0.1;
-      gb.box(0, hoodTop(z) + 0.11, z, 0.7, 0.2, 0.9, carbonHood ? carbon : body);
-      gb.box(0, hoodTop(z) + 0.15, z + 0.46, 0.56, 0.12, 0.05, black);
+      topBox(0, z, 0.7, 0.9, 0.22, carbonHood ? carbon : body);
+      topBox(0, z + 0.455, 0.56, 0.02, 0.12, black, 0.06); // scoop mouth
       gb.box(0, fy - 0.12, fz + 0.03, 1.1, 0.2, 0.06, chrome); // intercooler
       for (let k = 0; k < 5; k++) gb.box(0, fy - 0.2 + k * 0.04, fz + 0.065, 1.04, 0.01, 0.01, dark);
     }
     if (P.cooling === 'race') {
       gb.box(0, fS.yb + 0.1, fz + 0.02, 1.2, 0.1, 0.05, black); // big duct
-      for (const sx of [-1, 1]) gb.box(sx * 0.3, hoodTop(hz1 - 0.3) + 0.02, hz1 - 0.3, 0.3, 0.03, 0.35, black); // hood vents
+      for (const sx of [-1, 1]) topBox(sx * 0.3, hz1 - 0.3, 0.3, 0.35, 0.028, black); // hood vents
     } else if (P.cooling === 'radiator') gb.box(0, fS.yb + 0.1, fz + 0.015, 0.8, 0.08, 0.04, carbon);
-    if (P.ecu === 'stage2') for (const sx of [-1, 1]) gb.box(sx * 0.55, hoodTop(hz0 + 0.3) + 0.015, hz0 + 0.3, 0.14, 0.02, 0.3, black); // hood pins
+    if (P.ecu === 'stage2') for (const sx of [-1, 1]) topBox(sx * 0.55, hz0 + 0.3, 0.14, 0.3, 0.025, black); // hood pins
 
     // ---- aero visuals
     const ty = B.trunkY, tz = B.trunkZ;
@@ -655,9 +681,16 @@
       wheelMesh.setMatrixAt(i, wheelDummy.matrix);
     }
     tilt.add(wheelMesh);
+    // brake calipers: one small mesh on the tilt group (moves with the wheels,
+    // not with body roll), coloured by the brake part, seen through the spokes
+    const cgb = new GB();
+    const bcol = C(G.Parts.opt('brakes', P.brakes).caliper);
+    for (let i = 0; i < 4; i++) cgb.box(xs[i] + Math.sign(xs[i]) * 0.02, 0.33 + 0.12, zs[i] - 0.07, 0.07, 0.15, 0.13, bcol);
+    const calMesh = new THREE.Mesh(cgb.geometry(), mat);
+    tilt.add(calMesh);
     const exhaust = exXs.map((x) => [x, exY + rideH, rz - 0.18]);
     return {
-      root, tilt, pivot, body: bodyMesh, wheels, wheelMesh, wheelDummy, carId, color: paint,
+      root, tilt, pivot, body: bodyMesh, wheels, wheelMesh, wheelDummy, calMesh, carId, color: paint,
       exhaust,
       wheelLocal: xs.map((x, i) => [x, zs[i]]),
       tailLocal: [[0.56, ry + rideH, rz - 0.05], [-0.56, ry + rideH, rz - 0.05]],
@@ -696,6 +729,7 @@
 
   function dispose(model) {
     model.body.geometry.dispose();
+    if (model.calMesh) model.calMesh.geometry.dispose();
     // wheel geometry is shared via _wheelCache — kept alive for reuse
   }
 

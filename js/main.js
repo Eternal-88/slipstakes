@@ -40,22 +40,17 @@
       G.Overlay.init();
       G.Touch.init();
       G.Client = new G.ClientSession();
-      // The single-player sandbox is just a session hosted locally. Its car,
-      // parts, setup, paint and play money persist between visits.
+      // The single-player sandbox is just a session hosted locally. It is
+      // deliberately NOT saved: every visit starts fresh (stock car, $25,000).
+      // Money earned in quick races carries between races within a visit only.
+      // (Remembered across visits: settings, your name, personal-best laps.)
       this.host = new G.HostSession({ sandbox: true });
-      const me = this.host.addPlayer({ id: 'me', name: U.store.get('ss.name', 'Driver') || 'Driver', color: G.CarModel.PALETTE[0], carId: 'vandal' });
-      const saved = U.store.get('ss.sandbox', null);
-      if (saved && saved.garage && G.Parts.CARS[saved.carId]) {
-        me.carId = saved.carId;
-        me.garage = G.Parts.fixGarage(saved.garage);
-        me.garage.carId = saved.carId;
-        if (typeof saved.money === 'number') me.money = saved.money;
-      }
+      this.host.addPlayer({ id: 'me', name: U.store.get('ss.name', 'Driver') || 'Driver', color: G.CarModel.PALETTE[0], carId: 'vandal' });
+      U.store.del('ss.sandbox'); // clear what an earlier version saved
       G.Client.connectLocal(this.host, 'me');
       G.Client.on('state', () => {
         if (this.mode === 'session') G.Game.syncScreen();
         else G.UI.refresh();
-        if (!G.Game.role) this._saveSandbox();
       });
       window.addEventListener('keydown', (e) => this._key(e));
       const p = new URLSearchParams(location.search);
@@ -98,14 +93,6 @@
         }
         G.Overlay.escape();
       }
-    },
-
-    _saveSandbox() {
-      const now = performance.now();
-      if (now - (this._savedAt || 0) < 1500) return;
-      this._savedAt = now;
-      const me = this.host.player('me');
-      if (me) U.store.set('ss.sandbox', { carId: me.carId, garage: me.garage, money: me.money });
     },
 
     // Browsers stop requestAnimationFrame for hidden tabs AND for occluded /
