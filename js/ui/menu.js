@@ -113,7 +113,7 @@
       if (this.tab === 'home') {
         h = `
           <div class="m-grid">
-            <button class="btn big primary span2" data-act="quick">🏁 Quick race <small>you vs 5 bots on a random track</small></button>
+            <button class="btn big primary span2" data-act="quick">🏁 Quick race <small>you vs 5 ${U.esc(({ easy: 'easy', normal: 'normal', hard: 'hard' })[G.Settings.s.botLevel] || 'normal')} bots · random track · win garage money</small></button>
             ${G.App.menuButtons ? G.App.menuButtons() : ''}
             <button class="btn" data-act="practice">🛣 Free practice</button>
             <button class="btn" data-act="garage">🔧 Garage <small>parts · tuning · paint</small></button>
@@ -134,6 +134,7 @@
           <div class="m-row">
             <div class="m-cars">${Parts.CAR_ORDER.map((id) => `<button class="chipb ${me && me.carId === id ? 'on' : ''}" data-act="pickCar" data-id="${id}">${Parts.CARS[id].name}</button>`).join('')}</div>
             <label class="fld inline"><span>Bots</span><select data-input="bots">${[0, 1, 3, 5, 7].map((n) => `<option ${n === this.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+            <label class="fld inline"><span>Bot skill</span><select data-input="botLevel">${[['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']].map(([v, l]) => `<option value="${v}" ${v === G.Settings.s.botLevel ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
           </div>
           <p class="muted small">Driving your garage car with its parts, setup and paint. Wear counts (it's play money).</p>
           <div class="m-btns row"><button class="btn ghost" data-act="home">← Back</button><button class="btn big" data-act="randomTrack">🎲 Random track</button><button class="btn primary big" data-act="drive">Drive ▶</button></div>`;
@@ -186,6 +187,7 @@
         U.store.set('ss.name', v);
         if (G.App.setName) G.App.setName(v);
       } else if (k === 'bots') this.bots = +el.value;
+      else if (k === 'botLevel') G.Settings.set('botLevel', el.value);
     },
 
     acts: {
@@ -266,6 +268,45 @@
     },
   };
   UI.register('menu', Menu);
+
+  // Quick-race results: finishing order, your prize, and what next.
+  const QResults = {
+    mount(root, r) {
+      this.r = r;
+      root.innerHTML = `<div class="results"><div class="panel rs-card qr"><div class="qr-head"></div><div class="rs-table"></div><div class="qr-money"></div><div class="qr-btns"></div></div></div>`;
+      const $ = (s) => root.querySelector(s);
+      this.el = { head: $('.qr-head'), table: $('.rs-table'), money: $('.qr-money'), btns: $('.qr-btns') };
+      if (G.Audio) r.finished && r.pos <= 3 ? G.Audio.win() : G.Audio.lose();
+    },
+    render() {
+      const r = this.r;
+      if (!r) return;
+      const win = r.rows.find((x) => x.finished);
+      const place = r.finished ? U.ordinal(r.pos) : 'DNF';
+      const cls = !r.finished ? 'neg' : r.pos === 1 ? 'gold' : r.pos <= 3 ? 'pod' : '';
+      UI.patch(this.el.head, `<div class="qr-pos ${cls}">${place}</div><div><h1>${r.pos === 1 && r.finished ? 'YOU WIN!' : r.finished && r.pos <= 3 ? 'PODIUM!' : 'RACE OVER'}</h1><div class="muted">${U.esc(r.track.name)} <em class="fmt fmt-${r.track.format}">${r.track.format.toUpperCase()}</em> · ${U.esc({ easy: 'Easy', normal: 'Normal', hard: 'Hard' }[G.Settings.s.botLevel] || 'Normal')} bots</div></div>`);
+      const rows = r.rows
+        .map((x) => {
+          const time = !x.finished ? 'DNF' : x === win ? U.fmtTime(x.ms) : '+' + ((x.ms - win.ms) / 1000).toFixed(3) + 's';
+          return `<tr class="${x.id === 'me' ? 'me' : ''}"><td class="p">${x.pos}</td><td><i style="background:${UI.colorHex(x.color)}"></i>${U.esc(x.name)}</td><td class="muted">${Parts.CARS[x.carId].name}</td><td>${time}</td><td>${U.fmtTime(x.best)}</td></tr>`;
+        })
+        .join('');
+      UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Car</th><th>Time</th><th>Best lap</th></tr>${rows}</table>`);
+      const me = G.Client.me;
+      UI.patch(this.el.money, `<div class="box"><div class="ln"><span>Prize (${place})</span><b>${U.fmtSigned(r.prize)}</b></div><div class="ln"><span>Fuel</span><b>${U.fmtSigned(-r.fuel)}</b></div><div class="ln tot"><span>Garage money</span><b>${me ? U.fmtMoney(me.money) : ''}</b></div></div>${r.pb ? `<div class="box"><div class="ln"><span>Your best lap here</span><b>${U.fmtTime(r.best)}</b></div><div class="ln"><span>Personal best (this car)</span><b>${U.fmtTime(r.pb)}</b></div></div>` : ''}`);
+      UI.patch(this.el.btns, `<button class="btn primary big" data-act="again">↻ Race again</button><button class="btn big" data-act="next">🎲 Next track</button><button class="btn" data-act="garage">🔧 Garage</button><button class="btn ghost" data-act="menu">⌂ Menu</button>`);
+    },
+    acts: {
+      again() { G.App.quickAgain(false); },
+      next() { G.App.quickAgain(true); },
+      garage() {
+        G.App.endDrive(true);
+        G.App.openGarage();
+      },
+      menu() { G.App.endDrive(); },
+    },
+  };
+  UI.register('qresults', QResults);
 
   // Thin overlay while driving practice / test drives.
   const DriveBar = {
