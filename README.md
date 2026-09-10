@@ -45,7 +45,7 @@ Gamepads work too: left stick, RT/LT, A handbrake, Y reset, RB camera, Start men
   - **Paint:** 24 paints plus a custom colour picker, 8 liveries, an accent colour, a race number on 7-segment roundels, 5 rim styles and colours, window tint and underglow. It's free and cosmetic, with a turntable view.
   - **Car:** switch chassis. It's free before race 1; between races it's an $800 swap, and your parts move over to the new car.
   - **Service:** repairs.
-- **Single-player persistence:** your single-player car, parts, setup, paint and play money are saved between visits.
+- **Every visit starts fresh:** single-player isn't saved. Each visit starts with a stock car and $25,000; quick-race winnings carry between races within that visit only. Every new multiplayer session starts fresh too ($3,000 and stock parts each). Only settings, your name and personal-best laps are remembered. The host's 30-second autosave exists only so a crashed session can be resumed.
 - **Personal bests:** practice and quick races save a best lap per track and car. It's shown on the track picker and in the drive bar, with a "NEW PERSONAL BEST" banner when you beat it.
 - **Settings:**
   - **Graphics:** quality tier, resolution scale, shadows, particles, scenery detail, weather, FPS counter.
@@ -95,6 +95,11 @@ After the last race comes a final standings screen with awards.
 - **Snapshots:** 20 Hz. Other cars are interpolated 100 ms behind; your own car is predicted and replayed.
 - **Setups and paint** travel with the race entrants, so the host and every client build identical physics.
 - **Robustness:** rejoin with the same seat, host crash → Resume, a Worker ticker keeps the host alive in a hidden tab, and version-mismatch rejection (protocol 4).
+- **Connecting (v3.2):**
+  - **Reverse dial:** if a joiner's connection hasn't opened after 5 s, the host calls the joiner instead, and whichever direction opens first is used. This targets the "PC can join the Chromebook, but the Chromebook can't join the PC" case.
+  - **Timings:** a joiner now waits 22 s, and a host gives a half-open handshake 25 s (it used to cut it at 10 s).
+  - **Relays:** STUN now uses Google and Cloudflare. PeerJS's built-in TURN relays no longer exist (their DNS names don't resolve), so no relay is configured. Two devices whose networks block every direct path (for example, a school Wi-Fi that isolates devices) need a TURN relay, which you add to `TURN` in `js/net.js`.
+  - **Test:** add `?forcerev=1` to a joiner's URL to exercise the reverse dial on one machine.
 
 ## Test tools (not loaded by the game)
 
@@ -129,6 +134,6 @@ The overall score is the **lowest** category: **7/10**.
 
 ## Assumptions
 
-- PeerJS's free public signalling server is used only for introductions. Some school or corporate firewalls block WebRTC entirely.
+- PeerJS's free public signalling server is used only for introductions. Some school or corporate firewalls block WebRTC entirely, or allow it only through a relay; without a TURN relay configured, those players can't connect.
 - The host is a player too; bots fill empty slots. There's no host migration: if the host's browser dies, they reopen the page and click **Resume**.
 - Sound is off by default, as the original brief required. A toast says so on every visit, and M or the 🔊 button turns it on.
