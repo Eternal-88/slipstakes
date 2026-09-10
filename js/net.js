@@ -206,6 +206,12 @@
       }
     }
 
+    // Host kicked a player: close their link.
+    dropPid(pid) {
+      const L = this.byPid.get(pid);
+      if (L) this._drop(L, 'kicked');
+    }
+
     // Called every frame: drop links that have gone silent.
     tick(now) {
       for (const L of Array.from(this.links.values())) {

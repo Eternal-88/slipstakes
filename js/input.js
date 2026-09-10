@@ -60,6 +60,15 @@
         if (this.down('down')) b = 1;
         if (this.down('hb')) hb = 1;
       }
+      // on-screen touch buttons (ui/touch.js) behave exactly like keys
+      const T = G.Touch && G.Touch.visible ? G.Touch.state : null;
+      if (T && !Input.blocked) {
+        if (T.l) kb -= 1;
+        if (T.r) kb += 1;
+        if (T.t) t = 1;
+        if (T.b) b = 1;
+        if (T.hb) hb = 1;
+      }
       // Keyboard steering ramps in (~0.22 s to full lock) and snaps back
       // faster, so a TAP gives a partial steer. With instant full lock,
       // keyboard players could only saw between 0 and 100% and ran wide
@@ -108,6 +117,10 @@
         return true;
       }
       return false;
+    },
+    // Simulate a key tap (touch buttons).
+    press(code) {
+      pressed[code] = true;
     },
     // Edge-triggered for a bindable action ('reset', 'cam').
     hitAction(action) {

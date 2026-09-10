@@ -107,6 +107,7 @@
     publicState() {
       const s = U.deepClone(this.state);
       for (const id in s.players) delete s.players[id].token;
+      delete s.banned; // tokens again
       if (s.casino && s.casino.bj) {
         delete s.casino.bj.shoe;
         delete s.casino.bj.hole;
@@ -143,6 +144,7 @@
     join(name, token) {
       const st = this.state;
       name = String(name || 'Driver').trim().slice(0, 16) || 'Driver';
+      if (token && (st.banned || []).includes(token)) return { ok: false, reason: 'The host removed you from this room.' };
       const ex = token ? Object.values(st.players).find((p) => !p.isBot && p.token === token) : null;
       if (ex) {
         ex.connected = true;
@@ -212,7 +214,7 @@
     on_settings(p, m) {
       if (!this.isHost(p) || this.state.phase !== 'lobby') return;
       const s = this.state.settings;
-      if (m.races != null) s.races = U.clamp(Math.round(+m.races), 3, 16);
+      if (m.races != null && isFinite(+m.races)) s.races = U.clamp(Math.round(+m.races), 1, 30);
       if (m.bots != null) s.bots = U.clamp(Math.round(+m.bots), 0, 7);
       this.syncBots();
       this.touch();
@@ -261,12 +263,28 @@
       this.setPhase('carselect', T.carselect);
     }
 
-    // Rotate formats so no single build dominates: the rotation list never puts
-    // the same format back-to-back, and we cycle every track before repeating.
+    // Random order every session, with the old guarantees kept: every track
+    // is used before any repeats (a shuffled "bag"), and the same FORMAT is
+    // never raced twice in a row (so no build can dominate a stretch).
     makeSchedule(n) {
-      const R = G.TrackDefs.ROTATION;
+      const all = G.TrackDefs.ROTATION.slice();
+      const fmt = (id) => G.getTrack(id).format;
       const out = [];
-      for (let i = 0; i < n; i++) out.push(R[i % R.length]);
+      let bag = [];
+      while (out.length < n) {
+        if (!bag.length) {
+          bag = all.slice();
+          for (let i = bag.length - 1; i > 0; i--) {
+            const j = U.cryptoInt(i + 1);
+            [bag[i], bag[j]] = [bag[j], bag[i]];
+          }
+        }
+        const prev = out.length ? out[out.length - 1] : null;
+        let k = bag.findIndex((id) => id !== prev && (!prev || fmt(id) !== fmt(prev)));
+        if (k < 0) k = bag.findIndex((id) => id !== prev);
+        if (k < 0) k = 0;
+        out.push(bag.splice(k, 1)[0]);
+      }
       return out;
     }
     nextTrackId() {
@@ -524,6 +542,47 @@
       if (!m.look || typeof m.look !== 'object') return;
       p.garage.look = Parts.cleanLook(p.garage.look, m.look);
       this.touch();
+    }
+
+    // Host removes a player. Their token is banned for this room, so the
+    // auto-reconnect / Rejoin button can't bring them straight back.
+    on_kick(p, m) {
+      if (!this.isHost(p)) return;
+      const t = this.player(m.pid);
+      if (!t || t.isBot || t.id === p.id) return;
+      if (t.token) (this.state.banned = this.state.banned || []).push(t.token);
+      delete this.state.players[t.id];
+      this.state.order = this.state.order.filter((x) => x !== t.id);
+      this.sys(`${t.name} was removed by the host.`);
+      this.emit('kick', t.id);
+      this.syncBots();
+      this.touch();
+    }
+
+    // Final standings -> "Play again": same room, same people (and their cars
+    // and paint), fresh money, parts and stats. Nobody has to rejoin.
+    on_rematch(p) {
+      const st = this.state;
+      if (!this.isHost(p) || st.phase !== 'final') return;
+      for (const id of Object.keys(st.players)) {
+        const q = st.players[id];
+        if (!q.isBot && !q.connected && id !== st.hostId) {
+          delete st.players[id];
+          st.order = st.order.filter((x) => x !== id);
+          continue;
+        }
+        const look = q.garage.look;
+        q.money = START_MONEY;
+        q.garage = Parts.newGarage(q.carId);
+        q.garage.look = look;
+        q.stats = newPlayer({}).stats;
+        q.ready = !!q.isBot;
+        q.entry = null;
+      }
+      Object.assign(st, { raceNo: 0, schedule: [], race: null, results: null, final: null, bets: [], sideBets: [], odds: {}, stipend: [], casino: null });
+      this.syncBots();
+      this.sys(`${p.name} started a rematch: fresh cars and ${U.fmtMoney(START_MONEY)} each.`);
+      this.setPhase('lobby', 0);
     }
 
     on_setColor(p, m) {

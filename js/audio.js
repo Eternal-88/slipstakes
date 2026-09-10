@@ -28,11 +28,15 @@
 
   // Engine character per chassis. cyl sets the firing frequency; lope =
   // uneven-firing amplitude wobble (the V8 burble); rasp = distortion.
+  //   vandal: smooth straight-six — clean, little rasp, strong 2nd harmonic
+  //   brick : rally four — gravelly distortion, boxer-style burble (lope at f0/2)
+  //   sting : high-revving four — thin, bright, screams at the top
+  //   mule  : V8 — deep sub, heavy lumpy lope, dark filter
   const PROFILES = {
-    vandal: { cyl: 6, cut: 1.0, rasp: 3, lope: 0.08, sub: 0.55, h2: 0.3 },
-    brick: { cyl: 4, cut: 1.2, rasp: 6, lope: 0.0, sub: 0.3, h2: 0.45 },
-    sting: { cyl: 4, cut: 1.45, rasp: 4, lope: 0.0, sub: 0.25, h2: 0.55 },
-    mule: { cyl: 8, cut: 0.72, rasp: 2, lope: 0.45, sub: 1.0, h2: 0.22 },
+    vandal: { cyl: 6, cut: 1.05, rasp: 1.6, lope: 0.04, lopeDiv: 4, sub: 0.45, h2: 0.45 },
+    brick: { cyl: 4, cut: 1.15, rasp: 7.5, lope: 0.3, lopeDiv: 2, sub: 0.35, h2: 0.3 },
+    sting: { cyl: 4, cut: 1.7, rasp: 4.5, lope: 0.0, lopeDiv: 4, sub: 0.16, h2: 0.8 },
+    mule: { cyl: 8, cut: 0.68, rasp: 2.4, lope: 0.62, lopeDiv: 4, sub: 1.15, h2: 0.18 },
   };
   const vol = (v) => Math.pow(U.clamp(v, 0, 100) / 100, 1.6);
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
@@ -76,7 +80,7 @@
       this.master.connect(comp);
       comp.connect(c.destination);
       this.bus = {};
-      for (const k of ['engine', 'sfx', 'ui', 'music']) {
+      for (const k of ['engine', 'others', 'sfx', 'ui', 'music']) {
         this.bus[k] = c.createGain();
         this.bus[k].connect(this.master);
       }
@@ -95,6 +99,7 @@
       const t = this.ctx.currentTime;
       this.master.gain.setTargetAtTime(vol(s.vMaster) * 0.9, t, 0.05);
       this.bus.engine.gain.setTargetAtTime(vol(s.vEngine), t, 0.05);
+      this.bus.others.gain.setTargetAtTime(vol(s.vOthers == null ? 70 : s.vOthers), t, 0.05);
       this.bus.sfx.gain.setTargetAtTime(vol(s.vSfx), t, 0.05);
       this.bus.ui.gain.setTargetAtTime(vol(s.vUi), t, 0.05);
       this.bus.music.gain.setTargetAtTime(vol(s.vMusic) * 0.55, t, 0.05);
@@ -172,17 +177,30 @@
       e.tw = this._osc('sine', 2000);
       e.twg = this._gain(0);
       e.tw.connect(e.twg).connect(E);
+      // supercharger: two rev-locked gear-whine partials through a nasal bandpass
+      e.swf = this._filt('bandpass', 2500, 1.2);
+      e.swf.connect(E);
       e.sw = this._osc('triangle', 900);
       e.swg = this._gain(0);
-      e.sw.connect(e.swg).connect(E);
-      for (const o of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw]) o.start();
+      e.sw.connect(e.swg).connect(e.swf);
+      e.sw2 = this._osc('sine', 1800);
+      e.sw2g = this._gain(0);
+      e.sw2.connect(e.sw2g).connect(e.swf);
+      // turbo intake whoosh (high-passed noise, follows boost)
+      e.hs = c.createBufferSource();
+      e.hs.buffer = this.noise;
+      e.hs.loop = true;
+      e.hf = this._filt('highpass', 2600, 0.8);
+      e.hg = this._gain(0);
+      e.hs.connect(e.hf).connect(e.hg).connect(E);
+      for (const o of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs]) o.start();
       this.eng = e;
       this._startEnv();
     },
     _stopEngine() {
       const e = this.eng;
       if (e) {
-        for (const n of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw]) {
+        for (const n of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs]) {
           try {
             n.stop();
           } catch (x) {}
@@ -238,28 +256,58 @@
       this.env = null;
     },
 
+    // Another car: engine (two oscillators, rasp, lowpass) + its own tyre
+    // screech, both through a stereo panner into the "others" bus.
     _voice(prof) {
-      const v = { prof };
+      const v = { prof, id: null };
       v.o1 = this._osc('sawtooth');
       v.o2 = this._osc('square');
-      v.f = this._filt('lowpass', 700, 1.2);
+      v.o3 = this._osc('sawtooth');
+      v.o3.detune.value = 11;
+      v.m3 = this._gain(0.3);
+      v.f = this._filt('lowpass', 700, 1.4);
       v.g = this._gain(0);
       v.p = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
       v.o1.connect(v.f);
       v.o2.connect(v.f);
+      v.o3.connect(v.m3).connect(v.f);
       v.f.connect(v.g);
-      if (v.p) v.g.connect(v.p).connect(this.bus.engine);
-      else v.g.connect(this.bus.engine);
+      const out = v.p || this.bus.others;
+      if (v.p) v.p.connect(this.bus.others);
+      v.g.connect(out);
+      // screech
+      v.n = this.ctx.createBufferSource();
+      v.n.buffer = this.noise;
+      v.n.loop = true;
+      v.nf = this._filt('bandpass', 1100, 6);
+      v.ng = this._gain(0);
+      v.n.connect(v.nf).connect(v.ng).connect(out);
+      // their turbo whistle / supercharger whine
+      v.w = this._osc('sine', 2000);
+      v.wg = this._gain(0);
+      v.w.connect(v.wg).connect(out);
       v.o1.start();
       v.o2.start();
+      v.o3.start();
+      v.w.start();
+      v.n.start(0, Math.random() * 1.5);
       return v;
     },
     _killVoice(v) {
       try {
         v.o1.stop();
         v.o2.stop();
+        v.o3.stop();
+        v.n.stop();
+        v.w.stop();
         v.g.disconnect();
+        v.ng.disconnect();
       } catch (e) {}
+    },
+    // 0..1 loudness for a sound at (x, z) relative to the listener (camera focus).
+    near(x, z) {
+      if (this._lx == null) return 0.5;
+      return 1 / (1 + Math.hypot(x - this._lx, z - this._lz) / 14);
     },
 
     // ------------------------------------------------------- per frame
@@ -272,6 +320,8 @@
           this.eng.lfoG.gain.setTargetAtTime(0, t, 0.08);
           this.eng.twg.gain.setTargetAtTime(0, t, 0.08);
           this.eng.swg.gain.setTargetAtTime(0, t, 0.08);
+          this.eng.sw2g.gain.setTargetAtTime(0, t, 0.08);
+          this.eng.hg.gain.setTargetAtTime(0, t, 0.08);
           if (this.env) for (const k of ['scr1', 'scr2', 'road', 'loose', 'grass', 'wet', 'wind', 'kerb', 'scrape']) this.env[k].g.gain.setTargetAtTime(0, t, 0.06);
           this.env && this.env.klg.gain.setTargetAtTime(0, t, 0.06);
         }
@@ -293,7 +343,7 @@
       e.o1.frequency.setTargetAtTime(f0, t, 0.025);
       e.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.025);
       e.o3.frequency.setTargetAtTime(f0 * 2, t, 0.025);
-      e.lfo.frequency.setTargetAtTime(f0 / 4, t, 0.05);
+      e.lfo.frequency.setTargetAtTime(f0 / (prof.lopeDiv || 4), t, 0.05);
       const loud = parts.exhaust === 'straight' ? 1.35 : parts.exhaust === 'sport' ? 1.15 : 1;
       e.f.frequency.setTargetAtTime((350 + rpm * 2300 * prof.cut + thr * 1300) * (0.8 + 0.2 * loud), t, 0.04);
       let g = (0.04 + thr * 0.075) * loud * master;
@@ -312,14 +362,25 @@
       }
       e.amp.gain.setTargetAtTime(g, t, 0.03);
       e.lfoG.gain.setTargetAtTime(g * prof.lope, t, 0.05);
-      // turbo whistle / supercharger whine
+      // Forced induction — deliberately different characters:
+      //  supercharger: whine LOCKED to engine speed (it's belt-driven), there
+      //                the instant you touch the throttle, no blow-off
+      //  street turbo: whistle that follows BOOST (so it lags the revs),
+      //                intake whoosh, "pssh" blow-off when you lift
+      //  big turbo   : deeper, louder whoosh and a "stu-tu-tu" flutter on lift
       const b = rs.boost || 0;
       const kind = G.Parts.opt('induction', parts.induction).kind;
-      e.tw.frequency.setTargetAtTime(1500 + b * 2900, t, 0.08);
-      e.twg.gain.setTargetAtTime(kind === 'turbo' ? b * 0.028 * master : 0, t, 0.06);
-      e.sw.frequency.setTargetAtTime(f0 * 3.3, t, 0.03);
-      e.swg.gain.setTargetAtTime(kind === 'sc' ? (0.006 + thr * 0.02) * rpm * master : 0, t, 0.04);
-      if (kind === 'turbo' && this._lastBoost > 0.45 && b < 0.25) this.blowoff(master);
+      const big = parts.induction === 't2';
+      e.tw.frequency.setTargetAtTime((big ? 1100 : 1750) + b * (big ? 2300 : 3100), t, 0.08);
+      e.twg.gain.setTargetAtTime(kind === 'turbo' ? b * (big ? 0.036 : 0.026) * master : 0, t, 0.06);
+      e.hg.gain.setTargetAtTime(kind === 'turbo' ? b * (0.3 + 0.7 * thr) * (big ? 0.055 : 0.03) * master : 0, t, 0.06);
+      e.sw.frequency.setTargetAtTime(f0 * 3.3, t, 0.02);
+      e.sw2.frequency.setTargetAtTime(f0 * 6.6, t, 0.02);
+      e.swf.frequency.setTargetAtTime(1200 + rpm * 3200, t, 0.03);
+      const scg = kind === 'sc' ? (0.012 + thr * 0.034) * (0.3 + 0.7 * rpm) * master : 0;
+      e.swg.gain.setTargetAtTime(scg, t, 0.03);
+      e.sw2g.gain.setTargetAtTime(scg * 0.5, t, 0.03);
+      if (kind === 'turbo' && this._lastBoost > 0.45 && b < 0.25) big ? this.flutter(master) : this.blowoff(master);
       this._lastBoost = b;
       // overrun crackle (free-flowing exhausts), backfire pops on shifts
       const pops = G.Parts.opt('exhaust', parts.exhaust).pops || 0;
@@ -370,39 +431,103 @@
     silenceOthers() {
       if (!this.ctx) return;
       const t = this.ctx.currentTime;
-      for (const v of this.others) v.g.gain.setTargetAtTime(0, t, 0.1);
+      for (const v of this.others) {
+        v.g.gain.setTargetAtTime(0, t, 0.1);
+        v.ng.gain.setTargetAtTime(0, t, 0.06);
+      }
     },
-    othersUpdate(cars, lx, lz, lyaw) {
+    // The nearest (up to 4) other cars within 120 m of the listener get a
+    // voice: their own engine character, throttle, Doppler pitch shift as
+    // they pass, stereo position, tyre screech, and backfire pops. Roughly
+    // half your own car's level up close (plus its own volume slider).
+    // cars: [{id, rs, carId}], lx/lz/lyaw = listener position + facing,
+    // lvx/lvz = listener velocity (your car's, when you're racing).
+    othersUpdate(cars, lx, lz, lyaw, lvx, lvz) {
       if (!this.ok()) return;
       const t = this.ctx.currentTime;
+      this._lx = lx;
+      this._lz = lz;
       const near = cars
         .map((c) => ({ c, d: Math.hypot(c.rs.x - lx, c.rs.z - lz) }))
-        .filter((o) => o.d < 90)
+        .filter((o) => o.d < 120)
         .sort((a, b) => a.d - b.d)
-        .slice(0, 2);
+        .slice(0, 4);
       while (this.others.length < near.length) this.others.push(this._voice(PROFILES.vandal));
+      // keep each car on the same voice while it stays near (no pitch jumps)
+      const byId = {};
+      for (const o of near) byId[o.c.id] = o;
+      const free = [];
+      for (const v of this.others) {
+        if (v.id != null && byId[v.id]) {
+          v.o = byId[v.id];
+          delete byId[v.id];
+        } else free.push(v);
+      }
+      for (const id in byId) {
+        const v = free.shift();
+        if (!v) break;
+        v.id = id;
+        v.o = byId[id];
+        v.bf = false;
+      }
+      for (const v of free) {
+        v.id = null;
+        v.o = null;
+      }
       const rx = Math.cos(lyaw), rz = -Math.sin(lyaw); // listener's "left" (+x of heading frame)
-      this.others.forEach((v, i) => {
-        const o = near[i];
+      for (const v of this.others) {
+        const o = v.o;
         if (!o) {
           v.g.gain.setTargetAtTime(0, t, 0.1);
-          return;
+          v.ng.gain.setTargetAtTime(0, t, 0.06);
+          v.wg.gain.setTargetAtTime(0, t, 0.06);
+          continue;
         }
+        const rs = o.c.rs;
         const car = G.Parts.CARS[o.c.carId] || G.Parts.CARS.vandal;
         const prof = PROFILES[car.id] || PROFILES.vandal;
-        const rpm = U.clamp(o.c.rs.rpm || 0.14, 0.1, 1.05);
-        const f0 = ((rpm * car.redline) / 60) * (prof.cyl / 2);
+        const rpm = U.clamp(rs.rpm || 0.14, 0.1, 1.05);
+        const dx = rs.x - lx, dz = rs.z - lz, d = o.d || 1;
+        // Doppler: closing speed along the line between car and listener
+        const closing = -(((rs.vx || 0) - (lvx || 0)) * dx + ((rs.vz || 0) - (lvz || 0)) * dz) / d;
+        const dop = U.clamp(343 / (343 - closing), 0.82, 1.22);
+        const f0 = ((rpm * car.redline) / 60) * (prof.cyl / 2) * dop;
         v.o1.frequency.setTargetAtTime(f0, t, 0.04);
         v.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.04);
-        v.f.frequency.setTargetAtTime(300 + rpm * 1700 * prof.cut, t, 0.05);
-        const thr = o.c.rs.thr ? 1 : 0.55;
-        v.g.gain.setTargetAtTime((0.05 * thr) / (1 + o.d / 9), t, 0.06);
+        v.o3.frequency.setTargetAtTime(f0 * 2, t, 0.04);
+        v.f.frequency.setTargetAtTime((320 + rpm * 1900 * prof.cut) * (0.8 + 0.2 * dop), t, 0.05);
+        const thr = rs.thr ? U.clamp(rs.thr, 0.5, 1) : 0.45;
+        const fall = 1 / (1 + d / 11);
+        v.g.gain.setTargetAtTime((0.035 + 0.06 * thr) * fall, t, 0.06);
+        let slip = 0;
+        if (rs.slip) for (let i = 0; i < 4; i++) {
+          const sf = G.SURF[(rs.surf && rs.surf[i]) || 0];
+          if (sf && sf.fx === 'smoke') slip = Math.max(slip, rs.slip[i]);
+        }
+        v.ng.gain.setTargetAtTime(Math.max(0, slip - 0.28) * 0.14 * fall, t, 0.04);
+        v.nf.frequency.setTargetAtTime(950 + slip * 450, t, 0.05);
         if (v.p) {
-          const dx = o.c.rs.x - lx, dz = o.c.rs.z - lz;
-          const side = (dx * rx + dz * rz) / (o.d || 1); // + = to the listener's left
+          const side = (dx * rx + dz * rz) / d; // + = to the listener's left
           v.p.pan.setTargetAtTime(U.clamp(-side, -0.9, 0.9), t, 0.05);
         }
-      });
+        // their induction: supercharger whine on the revs, turbo whistle on boost
+        const ind = (o.c.parts && o.c.parts.induction) || 'na';
+        const okind = G.Parts.opt('induction', ind).kind;
+        const bst = rs.boost || 0;
+        if (okind === 'sc') {
+          if (v.w.type !== 'triangle') v.w.type = 'triangle';
+          v.w.frequency.setTargetAtTime(f0 * 3.3, t, 0.03);
+          v.wg.gain.setTargetAtTime((0.008 + 0.022 * thr) * rpm * fall, t, 0.04);
+        } else if (okind === 'turbo') {
+          if (v.w.type !== 'sine') v.w.type = 'sine';
+          v.w.frequency.setTargetAtTime(((ind === 't2' ? 1100 : 1750) + bst * (ind === 't2' ? 2300 : 3100)) * dop, t, 0.08);
+          v.wg.gain.setTargetAtTime(bst * 0.024 * fall, t, 0.06);
+          if (v.lb > 0.45 && bst < 0.25 && fall > 0.15) ind === 't2' ? this.flutter(fall, 'others') : this.blowoff(fall, 'others');
+        } else v.wg.gain.setTargetAtTime(0, t, 0.06);
+        v.lb = bst;
+        if (rs.backfire > 0 && !v.bf && fall > 0.12) this.pop(fall * 0.8, 'others');
+        v.bf = rs.backfire > 0;
+      }
     },
 
     // Called by RaceView.apply every frame of a race view.
@@ -414,7 +539,7 @@
       if (!this.env) this._startEnv();
       const c = world.cam;
       const others = v.cars.filter((x) => !me || x.id !== me.id);
-      this.othersUpdate(others.map((x) => ({ rs: x.rs, carId: x.carId })), c.fx, c.fz, c.yaw);
+      this.othersUpdate(others.map((x) => ({ id: x.id, rs: x.rs, carId: x.carId, parts: x.parts })), c.fx, c.fz, c.yaw, me ? me.rs.vx : 0, me ? me.rs.vz : 0);
     },
 
     // --------------------------------------------------------- one-shots
@@ -480,9 +605,9 @@
       this.noiseHit(0.35, 2600, 0.22 * k, 'bandpass', 'sfx', 0, 900, 4);
       for (const f of [431, 587, 757]) this.tone(f * (0.9 + Math.random() * 0.2), 0.16, 'square', 0.03 * k, f * 0.6);
     },
-    pop(m) {
-      this.noiseHit(0.07, 950, 0.34 * (m || 1), 'bandpass', 'sfx', 0, 0, 1.2);
-      this.tone(90, 0.06, 'square', 0.12 * (m || 1), 50);
+    pop(m, bus) {
+      this.noiseHit(0.07, 950, 0.34 * (m || 1), 'bandpass', bus || 'sfx', 0, 0, 1.2);
+      this.tone(90, 0.06, 'square', 0.12 * (m || 1), 50, bus || 'sfx');
     },
     crackle(amount, m) {
       const n = 2 + Math.round(amount * 4);
@@ -491,8 +616,12 @@
         setTimeout(() => this.pop(0.35 + Math.random() * 0.5 * (m || 1)), w * 1000);
       }
     },
-    blowoff(m) {
-      this.noiseHit(0.38, 5200, 0.16 * (m || 1), 'highpass', 'sfx', 0, 1400);
+    blowoff(m, bus) {
+      this.noiseHit(0.38, 5200, 0.16 * (m || 1), 'highpass', bus || 'sfx', 0, 1400);
+    },
+    // big-turbo compressor surge: a fast falling "stu-tu-tu-tu"
+    flutter(m, bus) {
+      for (let i = 0; i < 7; i++) this.noiseHit(0.04, 1500 - i * 110, 0.14 * (m || 1) * (1 - i * 0.11), 'bandpass', bus || 'sfx', i * 0.052, 0, 3);
     },
     lap() {
       this.tone(1318, 0.14, 'triangle', 0.1);

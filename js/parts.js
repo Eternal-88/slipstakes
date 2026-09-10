@@ -29,8 +29,12 @@
     mule: {
       id: 'mule', name: 'Mule V8', tag: 'RWD muscle', drive: 'RWD',
       blurb: 'Heavy V8 muscle. Monster straight-line shove, lazy nose, long braking zones.',
-      mass: 1440, powerKW: 178, redline: 6300, rearBias: 1.0, wheelbase: 2.8, weightFront: 0.52,
-      cgH: 0.54, track: 1.66, cdA: 0.98, vTop: 57, inertiaK: 1.06, body: 'muscle', len: 4.75, wid: 1.96,
+      // weightFront 0.52 -> 0.50, inertiaK 1.06 -> 0.98: a keyboard-proxy
+      // driver ran wide 46 s over three tracks (worst car by far) -> 33 s,
+      // and bot laps moved ~1 s closer to the field (it was slowest
+      // everywhere but drags). Spins 0 -> 2.2 s; full-lock slide 27° -> 21°.
+      mass: 1440, powerKW: 178, redline: 6300, rearBias: 1.0, wheelbase: 2.8, weightFront: 0.5,
+      cgH: 0.54, track: 1.66, cdA: 0.98, vTop: 57, inertiaK: 0.98, body: 'muscle', len: 4.75, wid: 1.96,
     },
   };
   const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule'];

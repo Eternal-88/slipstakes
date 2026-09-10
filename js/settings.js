@@ -16,7 +16,7 @@
     showFps: false,
     // audio
     sound: false, // the original brief: OFF until the player turns it on
-    vMaster: 80, vEngine: 80, vSfx: 85, vUi: 60, vMusic: 45,
+    vMaster: 80, vEngine: 80, vOthers: 70, vSfx: 85, vUi: 60, vMusic: 45,
     raceMusic: false,
     // camera / HUD
     cam: 'follow', // follow | near | far | fixed
@@ -29,6 +29,7 @@
     hints: true,
     // controls
     steerSpeed: 'normal', // slow | normal | fast (keyboard steering ramp)
+    touch: 'auto', // auto (after the first screen touch) | on | off
     keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', reset: 'KeyR', cam: 'KeyC' },
   };
   const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', reset: 'Reset car', cam: 'Change camera' };

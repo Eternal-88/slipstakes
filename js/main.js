@@ -38,6 +38,7 @@
       this.hud.show(false);
       G.UI.init();
       G.Overlay.init();
+      G.Touch.init();
       G.Client = new G.ClientSession();
       // The single-player sandbox is just a session hosted locally. Its car,
       // parts, setup, paint and play money persist between visits.
@@ -66,7 +67,13 @@
         });
         this.startDrive({ trackId: p.get('track'), carId: p.get('car') || 'vandal', parts, bots: +(p.get('bots') || 0), auto: p.get('auto') === '1', direct: true });
       } else if (p.get('garage')) this.openGarage();
-      else this.showMenu();
+      else if (p.get('join')) {
+        // invite link: open the Join box with the code filled in
+        this.showMenu();
+        const code = p.get('join');
+        history.replaceState(null, '', location.pathname);
+        setTimeout(() => G.UI.screens.menu.openJoin(code), 400);
+      } else this.showMenu();
       // Sound stays OFF by default (original brief) — but say so, once per visit.
       if (!G.Settings.s.sound) setTimeout(() => G.UI.toast('🔇 Sound is off — press M or the speaker button (top right) for engines, effects and music.', 'info'), 1800);
       this.last = performance.now();
@@ -301,7 +308,25 @@
     driveInfo() {
       if (!this.drive) return '';
       if (this.drive.test) return `<b>TEST DRIVE</b> candidate build · no wear · ${Math.max(0, Math.ceil(this.drive.limit - this.drive.t))} s left`;
-      return `<b>${this.drive.opts.quick ? 'QUICK RACE' : 'FREE PRACTICE'}</b> ${U.esc(this.sim.track.name)} · your car · ${this.paused ? 'PAUSED' : 'wear counts'}`;
+      const pb = this.drive.direct ? null : this.getPB(this.sim.track.id, this.sim.byId.me.carId);
+      return `<b>${this.drive.opts.quick ? 'QUICK RACE' : 'FREE PRACTICE'}</b> ${U.esc(this.sim.track.name)} · ${this.paused ? 'PAUSED' : 'wear counts'}${pb ? ` · <b>PB ${U.fmtTime(pb)}</b>` : ''}`;
+    },
+
+    // Personal-best laps per track + car (single-player practice / quick race).
+    getPB(trackId, carId) {
+      return U.store.get('ss.pb', {})[trackId + '|' + carId] || null;
+    },
+    _checkPB(trackId, carId, ms) {
+      const all = U.store.get('ss.pb', {});
+      const k = trackId + '|' + carId;
+      const old = all[k];
+      if (old != null && ms >= old) return;
+      all[k] = Math.round(ms);
+      U.store.set('ss.pb', all);
+      if (old != null) {
+        this.hud.banner('NEW PERSONAL BEST', U.fmtTime(ms) + '  (−' + ((old - ms) / 1000).toFixed(3) + ' s)', 3, 'best');
+        if (G.Audio) G.Audio.win();
+      }
     },
 
     // silent = the caller is about to switch screens itself
@@ -347,8 +372,10 @@
         n++;
       }
       if (n >= 12) this.acc = 0;
-      G.RaceView.events(sim.popEvents(), 'me', this.hud, this.world, G.Audio);
+      const evs = sim.popEvents();
+      G.RaceView.events(evs, 'me', this.hud, this.world, G.Audio);
       const d = this.drive;
+      if (!d.test && !d.direct) for (const e of evs) if (e.type === 'lap' && e.id === 'me') this._checkPB(sim.track.id, sim.byId.me.carId, e.ms);
       if (sim.phase === 'race') d.t += dt;
       if (d.limit && d.t >= d.limit) return this.endDrive();
       // open tracks: back to the start line after the finish
@@ -417,6 +444,7 @@
         this.host.flush();
       }
       G.UI.update(dt);
+      G.Touch.update(this.mode === 'drive' || (this.mode === 'session' && G.Game.racing()));
       if (G.Audio && G.Audio.enabled) G.Audio.music(this.musicFor());
     },
   };

@@ -94,6 +94,10 @@
             world.shake(Math.min(1.6, e.j / 6000));
             if (audio) audio.thud(Math.min(1, e.j / 8000));
             if (e.j > 5000) hud.flash('hit');
+          } else if (audio && audio.near) {
+            // other cars banging wheels: audible, quieter with distance
+            const k = Math.min(1, e.j / 8000) * audio.near(e.x, e.z) * 0.8;
+            if (k > 0.08) audio.thud(k);
           }
           world.sparks(e.x, e.z, Math.min(14, 3 + e.j / 1500));
           if (e.j > 4000) world.debris(e.x, e.z, [world.colorOf(e.a), world.colorOf(e.b)], Math.min(16, Math.round(e.j / 900)));

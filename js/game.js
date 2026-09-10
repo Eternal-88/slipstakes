@@ -110,6 +110,11 @@
         this.hostRace = null;
       });
       s.on('phase', () => this._save());
+      s.on('kick', (pid) => {
+        if (!net) return;
+        net.sendCtrl(pid, { t: 'kicked', reason: 'The host removed you from the room.' });
+        setTimeout(() => net.dropPid(pid), 300);
+      });
       if (!net) return;
       net.on('hello', (L, d) => {
         const r = s.join(String(d.name || 'Driver'), String(d.token || ''));
