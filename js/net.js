@@ -31,9 +31,22 @@
   const U = G.U;
   const PREFIX = 'slipstakes-v1-';
   const PROTO = 4; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp in core state)
+  // ICE servers: how two devices find a path to each other.
+  //  * STUN tells each device its public address so a direct path can be
+  //    punched through both networks' routers.
+  //  * TURN (a relay) carries the traffic when no direct path exists, for
+  //    example two Chromebooks on a school Wi-Fi that isolates devices.
+  // PeerJS's built-in relays (eu-0/us-0.turn.peerjs.com) are DEAD: their names
+  // no longer resolve (checked Sept 2026), so a join that needed a relay just
+  // "timed out". Free relays need an account; to add one, put its entries in
+  // TURN, e.g. { urls: 'turn:HOST:443?transport=tcp', username: '…', credential: '…' }
+  const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }];
+  const TURN = [];
   // debug 0: we handle every PeerJS error ourselves; at debug 1 the reconnect
   // loop (a retry every 3 s for up to 5 min) filled the console with ERRORs.
-  const PEER_OPTS = { debug: 0 };
+  const PEER_OPTS = { debug: 0, config: { iceServers: STUN.concat(TURN) } };
+  const REVERSE_AFTER = 5000; // joiner's link not open by now -> host dials the joiner
+  const JOIN_TIMEOUT = 22000; // client gives up (covers both directions)
 
   function peerAvailable() {
     return typeof window.Peer === 'function';
@@ -99,20 +112,54 @@
     }
 
     _onConn(conn) {
+      if (conn.label !== 'ctrl' && conn.label !== 'fast') return conn.close();
       let L = this.links.get(conn.peer);
       if (!L || L.dead) {
-        L = { id: conn.peer, ctrl: null, fast: null, pid: null, lastSeen: performance.now(), rtt: 0, dead: false };
+        const now = performance.now();
+        L = { id: conn.peer, ctrl: null, fast: null, conns: [], rev: {}, pid: null, born: now, lastSeen: now, rtt: 0, dead: false };
         this.links.set(conn.peer, L);
       }
-      if (conn.label === 'ctrl') L.ctrl = conn;
-      else if (conn.label === 'fast') L.fast = conn;
-      else return conn.close();
+      this._wire(L, conn);
+      // REVERSE DIAL. In theory WebRTC connects the same whichever side calls,
+      // but real firewalls aren't symmetric. Players saw a PC join a
+      // Chromebook host fine while the Chromebook timed out joining the PC's
+      // room. So if the joiner's call hasn't opened after a few seconds, the
+      // host calls the joiner on the same channel; whichever opens first
+      // carries the traffic.
+      const label = conn.label;
+      setTimeout(() => {
+        if (this.closed || L.dead || L.rev[label] || (L[label] && L[label].open)) return;
+        try {
+          const r = this.peer.connect(conn.peer, { label, reliable: label === 'ctrl', serialization: 'json' });
+          if (r) this._wire(L, (L.rev[label] = r));
+        } catch (e) {}
+      }, REVERSE_AFTER);
+    }
+
+    // While a link is being set up it can hold two connections per channel
+    // (the joiner's call and our reverse call). L.ctrl / L.fast always point
+    // at the one that opened first; a spare failing is harmless.
+    _wire(L, conn) {
+      const label = conn.label;
+      L.conns.push(conn);
+      if (!L[label]) L[label] = conn;
+      conn.on('open', () => {
+        if (!L[label] || !L[label].open) L[label] = conn;
+      });
       conn.on('data', (d) => {
         L.lastSeen = performance.now();
-        this._onData(L, conn.label, d);
+        this._onData(L, label, d);
       });
-      conn.on('close', () => this._drop(L, 'close'));
-      conn.on('error', () => this._drop(L, 'error'));
+      const gone = (why) => {
+        conn._ssGone = true;
+        if (L[label] !== conn) return;
+        const alt = L.conns.find((c) => c !== conn && c.label === label && !c._ssGone && c.open);
+        if (alt) L[label] = alt;
+        else if (L.pid) this._drop(L, why);
+        else L[label] = L.conns.find((c) => c !== conn && c.label === label && !c._ssGone) || null; // still connecting: tick() times it out
+      };
+      conn.on('close', () => gone('close'));
+      conn.on('error', () => gone('error'));
     }
 
     _onData(L, label, d) {
@@ -193,12 +240,11 @@
     _drop(L, why) {
       if (L.dead) return;
       L.dead = true;
-      try {
-        if (L.ctrl) L.ctrl.close();
-      } catch (e) {}
-      try {
-        if (L.fast) L.fast.close();
-      } catch (e) {}
+      for (const c of L.conns) {
+        try {
+          c.close();
+        } catch (e) {}
+      }
       if (this.links.get(L.id) === L) this.links.delete(L.id);
       if (L.pid && this.byPid.get(L.pid) === L) {
         this.byPid.delete(L.pid);
@@ -212,10 +258,12 @@
       if (L) this._drop(L, 'kicked');
     }
 
-    // Called every frame: drop links that have gone silent.
+    // Called every frame: drop links that have gone silent (10 s), or that are
+    // still being set up after 25 s. (It used to be 10 s from the first knock
+    // for everyone, which killed slow handshakes before they could finish.)
     tick(now) {
       for (const L of Array.from(this.links.values())) {
-        if (now - L.lastSeen > 10000) this._drop(L, 'timeout');
+        if (L.pid ? now - L.lastSeen > 10000 : now - L.born > 25000) this._drop(L, 'timeout');
       }
     }
 
@@ -232,7 +280,9 @@
   // (ctrl is reliable by contract, so we only delay it — never reorder it).
   const SIMNET = (() => {
     const q = new URLSearchParams(location.search);
-    return { lag: +(q.get('lag') || 0), jitter: +(q.get('jitter') || 0), loss: +(q.get('loss') || 0) };
+    // forcerev: make this client's own calls unable to connect, to test the
+    // host's reverse dial on one machine.
+    return { lag: +(q.get('lag') || 0), jitter: +(q.get('jitter') || 0), loss: +(q.get('loss') || 0), forceRev: q.has('forcerev') };
   })();
   let _ctrlClock = 0; // keeps delayed ctrl messages in order
   function simDeliver(fast, fn) {
@@ -262,6 +312,7 @@
       return new Promise((resolve, reject) => {
         if (!peerAvailable()) return reject(new Error('PeerJS failed to load (offline?)'));
         let settled = false;
+        let found = false; // matchmaking server answered, and no "room not found"
         const fail = (msg) => {
           if (settled) return;
           settled = true;
@@ -269,21 +320,35 @@
           this.close();
           reject(new Error(msg));
         };
-        const to = setTimeout(() => fail('Timed out reaching the host'), 15000);
+        const to = setTimeout(
+          () =>
+            fail(
+              found
+                ? `Found room ${this.code}, but the network blocked the connection to the host. Try: host on the other device · both on the same Wi-Fi or a phone hotspot · turn off any VPN.`
+                : "Couldn't reach the matchmaking server (0.peerjs.com). The network may block it."
+            ),
+          JOIN_TIMEOUT
+        );
         const peer = new window.Peer(PEER_OPTS);
         this.peer = peer;
+        const target = PREFIX + this.code;
         peer.on('error', (err) => {
           if (err.type === 'peer-unavailable') fail('Room not found');
           else if (!settled) fail('Network error: ' + (err.type || 'unknown'));
           else console.warn('[net client] peer error', err.type);
         });
-        peer.on('open', () => {
-          const target = PREFIX + this.code;
-          this.ctrl = peer.connect(target, { label: 'ctrl', reliable: true, serialization: 'json' });
-          this.fast = peer.connect(target, { label: 'fast', reliable: false, serialization: 'json' });
-          let n = 0;
-          const onOpen = () => {
-            if (++n === 2 && !settled) {
+        // Wire one channel: our own call to the host, or the host's reverse
+        // call to us (see NetHost._onConn). The first 'ctrl' and the first
+        // 'fast' to open win; a late duplicate is closed.
+        const opened = { ctrl: false, fast: false };
+        const use = (c) => {
+          const label = c.label;
+          if (label !== 'ctrl' && label !== 'fast') return c.close();
+          c.on('open', () => {
+            if (opened[label] || (settled && !this.open)) return c.close();
+            opened[label] = true;
+            this[label] = c;
+            if (opened.ctrl && opened.fast && !settled) {
               settled = true;
               clearTimeout(to);
               this.open = true;
@@ -291,22 +356,32 @@
               this._startPing();
               resolve();
             }
-          };
-          for (const [label, c] of [['ctrl', this.ctrl], ['fast', this.fast]]) {
-            c.on('open', onOpen);
-            c.on('data', (d) =>
-              simDeliver(label === 'fast', () => {
-                this.lastHeard = performance.now();
-                if (!d || typeof d !== 'object') return;
-                if (label === 'ctrl' && d.t === 'pong') {
-                  this.rtt = U.lerp(this.rtt || performance.now() - d.c, performance.now() - d.c, 0.3);
-                  return;
-                }
-                this.emit(label, d);
-              })
-            );
-            c.on('close', () => this._lost('closed'));
-            c.on('error', () => this._lost('error'));
+          });
+          c.on('data', (d) =>
+            simDeliver(label === 'fast', () => {
+              this.lastHeard = performance.now();
+              if (!d || typeof d !== 'object') return;
+              if (label === 'ctrl' && d.t === 'pong') {
+                this.rtt = U.lerp(this.rtt || performance.now() - d.c, performance.now() - d.c, 0.3);
+                return;
+              }
+              this.emit(label, d);
+            })
+          );
+          c.on('close', () => this[label] === c && this._lost('closed'));
+          c.on('error', () => this[label] === c && this._lost('error'));
+        };
+        peer.on('connection', (c) => (c.peer === target ? use(c) : c.close()));
+        peer.on('open', () => {
+          found = true;
+          for (const label of ['ctrl', 'fast']) {
+            const c = peer.connect(target, { label, reliable: label === 'ctrl', serialization: 'json' });
+            if (SIMNET.forceRev && c.peerConnection) {
+              try {
+                c.peerConnection.setConfiguration({ iceServers: [], iceTransportPolicy: 'relay' });
+              } catch (e) {}
+            }
+            use(c);
           }
         });
       });
