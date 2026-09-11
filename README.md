@@ -2,6 +2,10 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v4.1 — "School Wi-Fi"
+
+Joining works when two devices can't link directly, for example two Chromebooks on a school Wi-Fi. The game falls back to a relay through public servers; see **Backup relay** under Netcode.
+
 ## What's new in v4.0
 
 The version is shown on the main menu, and a "What's new" panel opens once after every update (`js/version.js` holds the changelog).
@@ -121,7 +125,8 @@ After the last race comes a final standings screen with awards.
 - **Connecting (v3.2):**
   - **Reverse dial:** if a joiner's connection hasn't opened after 5 s, the host calls the joiner instead, and whichever direction opens first is used. This targets the "PC can join the Chromebook, but the Chromebook can't join the PC" case.
   - **Timings:** a joiner now waits 22 s, and a host gives a half-open handshake 25 s (it used to cut it at 10 s).
-  - **Relays:** STUN now uses Google and Cloudflare. PeerJS's built-in TURN relays no longer exist (their DNS names don't resolve), so no relay is configured. Two devices whose networks block every direct path (for example, a school Wi-Fi that isolates devices) need a TURN relay, which you add to `TURN` in `js/net.js`.
+  - **Relays:** STUN now uses Google and Cloudflare. PeerJS's built-in TURN relays no longer exist (their DNS names don't resolve), and no free account-less TURN server is left (openrelay, freestun and anyfirewall all failed a test in Sept 2026). A real TURN account can still go in `TURN` in `js/net.js`.
+  - **Backup relay (v4.1, `js/relay.js`):** for networks that block every direct path, such as a school Wi-Fi that isolates devices. The host also listens on three public MQTT brokers over secure WebSockets: shiftr.io (port 443), HiveMQ (8884) and Mosquitto (8081). A joiner that has no direct link after 8 s (or that the matchmaking server can't help) knocks on all of them, and the first broker the host answers on carries its traffic. A `RelayConn` looks like a PeerJS DataConnection, so the rest of the netcode is unchanged. The costs: 180–250 ms one way through the broker (about 350 ms round trip, measured), and the traffic is readable by anyone who guesses the topic (positions and driver names only). If the matchmaking server itself is blocked, the host opens the room on the relay alone. Test with `?forcerelay` on the joiner. broker.emqx.io was rejected because it rate-limits to about 12 messages/s.
   - **Test:** add `?forcerev=1` to a joiner's URL to exercise the reverse dial on one machine.
 
 ## Test tools (not loaded by the game)
@@ -200,6 +205,6 @@ The overall score is the **lowest** category: **7/10**.
 
 ## Assumptions
 
-- PeerJS's free public signalling server is used only for introductions. Some school or corporate firewalls block WebRTC entirely, or allow it only through a relay; without a TURN relay configured, those players can't connect.
+- PeerJS's free public signalling server is used only for introductions. Some school or corporate firewalls block WebRTC entirely; those players connect through the backup relay (public MQTT brokers) instead, with more lag. A network that also blocks those brokers can't connect.
 - The host is a player too; bots fill empty slots. There's no host migration: if the host's browser dies, they reopen the page and click **Resume**.
 - Sound is off by default, as the original brief required. A toast says so on every visit, and M or the 🔊 button turns it on.
