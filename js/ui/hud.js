@@ -301,7 +301,7 @@
       let cd = '';
       let lit = 0, green = false;
       if (v.phase === 'grid') {
-        cd = v.countdown > 3 ? 'READY' : String(Math.ceil(v.countdown));
+        cd = v.hold ? 'WAITING' : v.countdown > 3 ? 'READY' : String(Math.ceil(v.countdown)); // hold: a racer is still loading the track
         lit = U.clamp(Math.ceil((3 - v.countdown) / 0.6), 0, 5);
       } else if (v.phase === 'race' && v.raceTime < 1.2) {
         cd = 'GO!';
