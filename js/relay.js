@@ -45,6 +45,7 @@
     { id: 'mosquitto', url: 'wss://test.mosquitto.org:8081' },
   ];
   const NS = 'slipstakes/r1/'; // topics: NS+CODE+'/h' (to the host), NS+CODE+'/c/'+joinerId
+  const DIR = 'slipstakes/rooms/v1/'; // server list: one retained "room card" per room code
   const KEEPALIVE = 60; // s; we ping every 20 s, and any publish also counts
   const CONGESTED = 64 * 1024; // bytes waiting in the socket: drop 'fast' messages rather than build up lag
 
@@ -125,8 +126,12 @@
         };
         ws.onopen = () => {
           const b = this.b;
-          const flags = 0x02 | (b.user ? 0x80 : 0) | (b.pass ? 0x40 : 0); // clean session
+          let flags = 0x02 | (b.user ? 0x80 : 0) | (b.pass ? 0x40 : 0); // clean session
+          // Last Will: the broker publishes this if we vanish without saying
+          // goodbye. Hosts use it to wipe their room from the server list.
+          if (b.will) flags |= 0x04 | (b.will.retain ? 0x20 : 0);
           const parts = [new Uint8Array([0, 4, 77, 81, 84, 84, 4, flags, 0, KEEPALIVE]), mstr('ss-' + U.uid(12))];
+          if (b.will) parts.push(mstr(b.will.topic), mstr(b.will.payload || ''));
           if (b.user) parts.push(mstr(b.user));
           if (b.pass) parts.push(mstr(b.pass));
           this._send(packet(0x10, parts));
@@ -197,8 +202,10 @@
       this.pid = (this.pid % 65535) + 1;
       this._send(packet(0x82, [new Uint8Array([this.pid >> 8, this.pid & 255]), mstr(topic), new Uint8Array([0])]));
     }
-    publish(topic, s) {
-      return this._send(packet(0x30, [mstr(topic), enc.encode(s)]));
+    // retain: the broker keeps the message and hands it to anyone who
+    // subscribes later (the server list); an empty retained message clears it.
+    publish(topic, s, retain) {
+      return this._send(packet(0x30 | (retain ? 1 : 0), [mstr(topic), enc.encode(s)]));
     }
     backlog() {
       return this.ws ? this.ws.bufferedAmount : 0;
@@ -304,13 +311,30 @@
   // --------------------------------------------------------------- HOST side
   // Listens on the room's topic on every broker; emits 'connection' with a
   // RelayConn for each channel a joiner opens. Brokers that drop are retried.
+  // Also publishes the room's card for the server list (announce()), with a
+  // Last Will that clears it if this host drops off the internet.
   class RelayHost extends U.Emitter {
     constructor(code) {
       super();
+      this.code = code;
       this.base = NS + code;
+      this.dirTopic = DIR + code;
       this.routes = new Map(); // brokerId:joinerId -> Route
       this.ms = new Map(); // brokerId -> Mqtt
       this.closed = false;
+      this.card = ''; // current room card (JSON), '' = not listed
+    }
+    // info = room card object, or null to take the room off the list
+    announce(info) {
+      const s = info ? JSON.stringify(info) : '';
+      if (s === this.card && info) {
+        // unchanged: still refresh now and then so listers see it's alive
+        if (performance.now() - (this.cardAt || 0) < 25000) return;
+      }
+      if (!s && !this.card) return;
+      this.card = s;
+      this.cardAt = performance.now();
+      for (const m of this.ms.values()) m.publish(this.dirTopic, s, true);
     }
     start() {
       for (const b of BROKERS) this._keep(b, 0);
@@ -321,12 +345,13 @@
     }
     _keep(b, fails) {
       if (this.closed) return;
-      const m = new Mqtt(b);
+      const m = new Mqtt(Object.assign({}, b, { will: { topic: this.dirTopic, payload: '', retain: true } }));
       m.connect(8000)
         .then(() => {
           if (this.closed) return m.close();
           this.ms.set(b.id, m);
           m.subscribe(this.base + '/h');
+          if (this.card) m.publish(this.dirTopic, this.card, true);
           m.on('msg', (t, s) => this._in(m, s));
           m.on('close', () => {
             if (this.ms.get(b.id) === m) this.ms.delete(b.id);
@@ -373,9 +398,96 @@
     close() {
       this.closed = true;
       for (const R of this.routes.values()) R.flush();
-      for (const m of this.ms.values()) m.close();
+      for (const m of this.ms.values()) {
+        if (this.card) m.publish(this.dirTopic, '', true); // off the server list
+        m.close();
+      }
       this.routes.clear();
       this.ms.clear();
+    }
+  }
+
+  // --------------------------------------------------------- SERVER LIST
+  // Subscribes to every room card on every broker. A card is shown while it's
+  // fresh: either the host refreshed it while we were watching (hosts refresh
+  // every ~25 s), or its own timestamp is under 2 minutes old (retained cards
+  // arrive the instant we subscribe, so their age comes from the host's clock).
+  // After a host migration the same room (rid) gets a new code; the newest
+  // epoch wins.
+  const clip = (v, n) => String(v == null ? '' : v).slice(0, n);
+  const num = (v, lo, hi) => (Number.isFinite(+v) ? Math.min(hi, Math.max(lo, Math.round(+v))) : lo);
+  class RoomBoard extends U.Emitter {
+    constructor() {
+      super();
+      this.rooms = new Map(); // code -> {info, live}
+      this.ms = [];
+      this.tried = 0;
+      this.failed = 0;
+      this.closed = false;
+    }
+    start() {
+      for (const b of BROKERS) {
+        const m = new Mqtt(b);
+        this.tried++;
+        m.connect(7000)
+          .then(() => {
+            if (this.closed) return m.close();
+            this.ms.push(m);
+            const subAt = performance.now();
+            m.subscribe(DIR + '+');
+            m.on('msg', (t, s) => this._in(t, s, performance.now() - subAt > 1500));
+            m.on('close', () => (this.ms = this.ms.filter((x) => x !== m)));
+            this.emit('change');
+          })
+          .catch(() => {
+            this.failed++;
+            this.emit('change');
+          });
+      }
+      this.tick = setInterval(() => {
+        for (const m of this.ms) m.pump(performance.now());
+        this.emit('change'); // ages move on
+      }, 5000);
+      return this;
+    }
+    reached() {
+      return this.ms.length;
+    }
+    _in(topic, s, live) {
+      const code = topic.slice(DIR.length);
+      if (!/^[A-Z0-9]{5}$/.test(code)) return;
+      if (!s) {
+        if (this.rooms.delete(code)) this.emit('change');
+        return;
+      }
+      const o = parse(s);
+      if (!o || o.code !== code) return;
+      const info = {
+        code, rid: clip(o.rid, 16) || code, epoch: num(o.epoch, 0, 999), name: clip(o.name, 28), host: clip(o.host, 16),
+        vis: o.vis === 'public' ? 'public' : 'private', players: num(o.players, 0, 8), max: num(o.max, 1, 8), bots: num(o.bots, 0, 8),
+        phase: clip(o.phase, 14), race: num(o.race, 0, 99), races: num(o.races, 1, 99), ver: clip(o.ver, 8), proto: num(o.proto, 0, 999), at: +o.at || 0,
+      };
+      const old = this.rooms.get(code);
+      this.rooms.set(code, { info, live: live || (old && old.live) || false, seen: Date.now() });
+      this.emit('change');
+    }
+    // Fresh rooms, one per room id (newest epoch), busiest first.
+    list() {
+      const now = Date.now();
+      const best = new Map();
+      for (const r of this.rooms.values()) {
+        const fresh = r.live ? now - r.seen < 75000 : now - r.info.at < 120000;
+        if (!fresh) continue;
+        const b = best.get(r.info.rid);
+        if (!b || r.info.epoch > b.epoch || (r.info.epoch === b.epoch && r.info.at > b.at)) best.set(r.info.rid, r.info);
+      }
+      return Array.from(best.values()).sort((a, b) => b.players - a.players || a.name.localeCompare(b.name));
+    }
+    close() {
+      this.closed = true;
+      clearInterval(this.tick);
+      for (const m of this.ms) m.close();
+      this.ms = [];
     }
   }
 
@@ -476,5 +588,5 @@
     }
   }
 
-  G.Relay = { BROKERS, Mqtt, RelayHost, RelayJoin };
+  G.Relay = { BROKERS, Mqtt, RelayHost, RelayJoin, RoomBoard };
 })(window.G);

@@ -153,11 +153,10 @@
 
     // Extra menu buttons for multiplayer (rendered by menu.js).
     menuButtons() {
-      const sv = G.Game.savedSession();
       const lc = G.Game.lastClient();
-      let h = `<button class="btn big pink" data-act="host">👥 Host <small>you + up to 7 friends</small></button>
+      let h = `<button class="btn big pink span2" data-act="rooms">🌐 Server list <small>find a room from any classroom — or host your own</small></button>
+               <button class="btn big pink" data-act="host">👥 Host <small>open a room · up to 8 drivers</small></button>
                <button class="btn big pink" data-act="join">🔗 Join <small>with a room code</small></button>`;
-      if (sv) h += `<button class="btn ghost span2" data-act="resume">↻ Resume hosted session <b>${U.esc(sv.code)}</b> <small>autosaved ${ago(sv.savedAt)} · race ${sv.state.raceNo}/${sv.state.settings.races}</small></button>`;
       if (lc) h += `<button class="btn ghost span2" data-act="rejoin">↻ Rejoin <b>${U.esc(lc.code)}</b> <small>as ${U.esc(lc.name)}</small></button>`;
       return h;
     },
@@ -532,7 +531,14 @@
       if (G.Game.role) G.Game.tick(dt);
       if (this.mode === 'drive') {
         const st = G.Game.role && G.Client.state;
-        if (st && st.phase === 'race') this.endDrive(); // a race started mid test-drive
+        // The round is starting (entry -> betting -> race): end the test
+        // drive now, so the player gets to choose race / sit out and bet.
+        // (It used to wait for the race itself, and they missed all of that.)
+        if (st && ['entry', 'betting', 'race', 'final'].includes(st.phase)) {
+          if (G.Overlay && G.Overlay.isOpen) G.Overlay.hide(); // a pause menu left open would block the controls
+          this.endDrive();
+          G.UI.toast('Test drive over — the next round is starting!', 'info');
+        }
         else this.frameDrive(dt);
       } else if (this.mode === 'session') G.Game.render(dt);
       else if (this.mode === 'garage') G.Preview.update(dt);

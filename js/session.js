@@ -32,35 +32,52 @@
       this.state = {
         v: 1, code: opts.code || null, createdAt: Date.now(), hostId: opts.hostId || null,
         phase: opts.sandbox ? 'sandbox' : 'lobby', phaseEnds: 0,
-        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 'mild' },
+        // vis: 'private' = listed with a lock, the host approves each new
+        // driver; 'public' = anyone on the server list walks in.
+        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 'mild', vis: 'private', maxPlayers: 8, name: '' },
+        // rid: this room's id on the server list (kept through host
+        // migrations); epoch: how many times the host has changed
+        rid: opts.rid || U.uid(10), epoch: 0, heirs: [],
         raceNo: 0, schedule: [], players: {}, order: [], chat: [], race: null, results: null,
         bets: [], sideBets: [], odds: {}, casino: null, final: null, seq: 0, nextId: 1,
       };
       this.dirty = true;
     }
 
-    // Rebuild a session from an autosave. Everyone but the host starts
-    // disconnected (they rejoin with their tokens); a race that was running
-    // when the host crashed is voided — no payouts, no wear — and we go to the
-    // intermission so the night continues.
-    static fromSave(saved) {
+    // HOST MIGRATION. The host keeps sending its full state (tokens
+    // included) to the first two heirs (heirList). When it drops, the first
+    // heir rebuilds the session from that copy and hosts it under the next
+    // room code (see game.js).
+    //  * Everyone else starts disconnected. Their games rejoin automatically
+    //    with their seat tokens and get their car, parts and money back. The
+    //    old host keeps a seat too.
+    //  * A race that was running is voided (no payouts, no wear, bets
+    //    refunded), and the session carries on from the garage.
+    // (This replaced the autosave: a session now lives as long as anyone is
+    // still in it, and nothing is stored between visits.)
+    static fromMigration(saved, newHostId, epoch, code, left) {
       const s = new HostSession({});
       s.state = U.deepClone(saved);
       const st = s.state;
+      const old = st.players[st.hostId];
+      st.hostId = newHostId;
+      st.epoch = epoch;
+      st.code = code;
+      st.heirs = [];
       for (const id in st.players) {
         const p = st.players[id];
-        p.connected = p.isBot || id === st.hostId;
-        p.ready = false;
-        Parts.fixGarage(p.garage); // saves from older versions lack the new slots / tune / look
+        p.connected = p.isBot || id === newHostId;
+        p.ready = !!p.isBot;
+        Parts.fixGarage(p.garage);
       }
       if (st.phase === 'race' || st.phase === 'entry' || st.phase === 'betting') {
-        // refund any open bets on the voided race
-        if (s.refundBets) s.refundBets('Race voided after host restart');
+        if (s.refundBets) s.refundBets('Race voided: the host changed');
         st.race = null;
         st.phase = 'intermission';
         st.phaseEnds = Date.now() + T.intermission;
-      }
-      s.sys('Session restored from autosave.');
+      } else if (st.phaseEnds) st.phaseEnds = Math.max(st.phaseEnds, Date.now() + 20000); // time for everyone to find the new host
+      const me = st.players[newHostId];
+      s.sys(`${me ? me.name : 'Someone'} is now the host${old ? ` — ${old.name} ${left ? 'left' : 'lost connection'} (their seat is saved)` : ''}.`);
       return s;
     }
 
@@ -99,6 +116,7 @@
       this.dirty = false;
       this.state.seq++;
       this.state.now = Date.now(); // host clock: clients derive countdowns from it
+      this.state.heirs = this.heirList();
       this.emit('state', this.publicState());
     }
     // Tokens are secrets (they prove identity on rejoin) — never broadcast.
@@ -153,23 +171,57 @@
         return { ok: true, pid: ex.id, rejoin: true };
       }
       if (st.phase === 'final') return { ok: false, reason: 'That session has finished.' };
-      if (this.humans().length >= MAX_PLAYERS) return { ok: false, reason: 'Session is full (8 drivers).' };
+      const cap = Math.min(MAX_PLAYERS, st.settings.maxPlayers || MAX_PLAYERS);
+      if (this.humans().filter((p) => p.connected).length >= cap) return { ok: false, reason: `The room is full (${cap} drivers).` };
+      if (this.humans().length >= MAX_PLAYERS && !this._freeSeat()) return { ok: false, reason: 'The room is full.' };
       if (Object.keys(st.players).length >= MAX_PLAYERS) this.removeBot();
+      // work out a late joiner's money BEFORE they're in the list
+      const late = st.phase !== 'lobby' && st.phase !== 'carselect' ? this.lateJoinMoney() : null;
       const id = 'p' + st.nextId++;
       const used = new Set(Object.values(st.players).map((p) => p.color));
       const color = G.CarModel.PALETTE.find((c) => !used.has(c)) || G.CarModel.PALETTE[0];
       const p = this.addPlayer({ id, name, token, color, carId: 'vandal' });
-      if (st.phase !== 'lobby' && st.phase !== 'carselect') p.money = this.lateJoinMoney();
-      this.sys(`${p.name} joined.`);
+      if (late != null) p.money = late;
+      this.sys(late != null ? `${p.name} joined with ${U.fmtMoney(late)} — they race from the next round.` : `${p.name} joined.`);
       return { ok: true, pid: id };
     }
 
-    // Late joiners start with the median bankroll so they aren't instantly
-    // eliminated from contention (but don't get the leader's money either).
+    // Private rooms: a NEW driver needs the host's OK. Someone reclaiming
+    // their own seat (same token) walks straight back in; a banned token is
+    // turned away by join() without bothering the host.
+    needsApproval(token) {
+      const st = this.state;
+      if (st.settings.vis !== 'private') return false;
+      if (token && (st.banned || []).includes(token)) return false;
+      return !(token && Object.values(st.players).some((p) => !p.isBot && p.token === token));
+    }
+
+    // All 8 seats taken but some are offline: free the one gone longest.
+    _freeSeat() {
+      const off = this.humans().filter((p) => !p.connected && p.id !== this.state.hostId).sort((a, b) => a.joinedAt - b.joinedAt)[0];
+      if (!off) return false;
+      delete this.state.players[off.id];
+      this.state.order = this.state.order.filter((x) => x !== off.id);
+      return true;
+    }
+
+    // Late joiners get 80% of the POOREST connected driver's net worth (cash
+    // plus half their parts' value). They can buy their way back into it,
+    // but never start ahead of anyone. Never less than normal starting money.
     lateJoinMoney() {
-      const m = this.humans().map((p) => p.money).sort((a, b) => a - b);
-      if (!m.length) return START_MONEY;
-      return Math.max(START_MONEY, Math.round(m[Math.floor(m.length / 2)] * 0.9));
+      const w = this.humans().filter((p) => p.connected).map((p) => this.netWorth(p));
+      if (!w.length) return START_MONEY;
+      return Math.max(START_MONEY, Math.round((Math.min(...w) * 0.8) / 100) * 100);
+    }
+
+    // Who takes over if the host drops: connected humans in the order they
+    // first joined (not the host). The first two are sent the full state.
+    heirList() {
+      return this.humans()
+        .filter((p) => p.connected && p.id !== this.state.hostId)
+        .sort((a, b) => a.joinedAt - b.joinedAt)
+        .slice(0, 2)
+        .map((p) => p.id);
     }
 
     leave(pid) {
@@ -212,18 +264,30 @@
 
     // --------------------------------------------------------------- lobby
     on_settings(p, m) {
-      if (!this.isHost(p) || this.state.phase !== 'lobby') return;
-      const s = this.state.settings;
-      if (m.races != null && isFinite(+m.races)) s.races = U.clamp(Math.round(+m.races), 1, 30);
-      if (m.bots != null) s.bots = U.clamp(Math.round(+m.bots), 0, 7);
-      if (m.catchup != null && G.Settings.CATCHUP[m.catchup] != null) s.catchup = m.catchup;
-      this.syncBots();
+      if (!this.isHost(p)) return;
+      const st = this.state, s = st.settings;
+      // any time: who can get in, and what the room is called on the list
+      if (m.vis === 'public' || m.vis === 'private') s.vis = m.vis;
+      if (m.maxPlayers != null && isFinite(+m.maxPlayers)) s.maxPlayers = U.clamp(Math.round(+m.maxPlayers), 2, MAX_PLAYERS);
+      if (m.name != null) s.name = String(m.name).replace(/\s+/g, ' ').trim().slice(0, 28);
+      // bots: any time but mid-race (they join or leave between races)
+      if (m.bots != null && isFinite(+m.bots) && st.phase !== 'race') s.bots = U.clamp(Math.round(+m.bots), 0, 7);
+      // the shape of the session: lobby only
+      if (st.phase === 'lobby') {
+        if (m.races != null && isFinite(+m.races)) s.races = U.clamp(Math.round(+m.races), 1, 30);
+        if (m.catchup != null && G.Settings.CATCHUP[m.catchup] != null) s.catchup = m.catchup;
+      }
+      if (st.phase !== 'race') this.syncBots();
       this.touch();
     }
 
     on_chat(p, m) {
       const text = String(m.text || '').replace(/\s+/g, ' ').trim().slice(0, 140);
       if (!text) return;
+      // chat is open on every screen now: one line per 0.6 s per player
+      const last = (this._chatT = this._chatT || {});
+      if (Date.now() - (last[p.id] || 0) < 600) return;
+      last[p.id] = Date.now();
       this.state.chat.push({ from: p.id, name: p.name, color: p.color, text, at: Date.now() });
       if (this.state.chat.length > 50) this.state.chat.shift();
       this.touch();

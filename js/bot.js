@@ -189,7 +189,10 @@
       }
       // speed pads: take one only with speed to spare for what comes next
       // (lastDv = target minus actual speed last frame); otherwise steer round
-      // it — a pad right before a hairpin fired bots into the wall
+      // it — a pad right before a hairpin fired bots into the wall.
+      // Drag strips: hold the lane. A pad there only ever adds speed, and a
+      // lane change at 215 km/h spun the Apex on the Mile (49 s instead of ~37).
+      if (track.format === 'drag') return lane;
       for (const p of track.pads) {
         const d = ahead(p.at);
         if (d < 0 || d > look * 1.2) continue;

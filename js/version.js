@@ -3,8 +3,18 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '4.2';
+  G.VERSION = '4.3';
   G.CHANGELOG = [
+    {
+      v: '4.3', name: 'Open Rooms', items: [
+        ['🌐', 'Server list', 'Find rooms from any classroom without passing codes around: Menu → 🌐 Server list. Hosts name their room and pick 🔒 Private (you let each new driver in) or 🌐 Public (anyone walks in), plus max drivers and bots, and can change them mid-session from the Esc menu.'],
+        ['👑', 'Host migration', 'If the host drops out (or leaves), the next driver who joined takes over and everyone reconnects automatically with their car and money. A host whose internet came back rejoins in their own seat. The old autosave is gone, so nothing is stored between visits.'],
+        ['🕐', 'Join any time', 'Late joiners watch the race in progress and drive from the next one, starting with 80% of the poorest driver\'s worth: enough to catch up, never enough to start ahead.'],
+        ['💬', 'Chat everywhere', 'Press T or Enter on any screen, even mid-race, to chat. New lines fade in the corner, and the 💬 button counts what you missed.'],
+        ['⚖', 'Balance pass', 'New traction control (Tuning → Assists, on by default): keyboard players on rear-drive cars no longer spin away 5 s off the line. Every car now wins somewhere and none wins more than a quarter of the tracks. Apex MR 140 kW and $3,800; Sting weaker on dirt and wet; Brick is the rally car; Dune toned down; tyres weaker and pricier; wings stronger; Big Turbo cheaper; brakes lose less bite when cold.'],
+        ['🔧', 'Fixes', 'Test drives end when the next round starts. Name tags stay on cars over hills. Bots no longer swerve for speed pads on drag strips.'],
+      ],
+    },
     {
       v: '4.2', name: 'Smooth Starts', items: [
         ['🏁', 'First-race desync fixed', 'A slower device (usually a Chromebook on its first race) could freeze for a moment. Its car then carried on with the last keys pressed, straight into a wall, and everyone else\'s car jumped back if the host froze. Now the host catches up after a short freeze instead of losing time, and a bot keeps a frozen player\'s car on the road (at reduced power) until they\'re back.'],

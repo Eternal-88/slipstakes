@@ -6,11 +6,22 @@
 'use strict';
 (function (G) {
   const U = G.U, P = G.Physics;
-  const HOST_PID = 'h';
-  const SAVE_KEY = 'ss.save';
+  const HOST_PID = 'h'; // the ORIGINAL host's player id (after a migration the host is whoever took over: Game.myPid)
   const CLIENT_KEY = 'ss.client';
-  const SAVE_EVERY = 30; // seconds
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  try {
+    U.store.del('ss.save'); // v4.3: no more host autosave (host migration replaced it) — clear old ones
+  } catch (e) {}
+
+  // Room code after the host has changed `epoch` times. Everyone in the room
+  // knows the room id and the epoch, so they all work out the same new code
+  // without being told: no server needed to find the new host.
+  function deriveCode(rid, epoch) {
+    const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s = '';
+    for (let i = 0; i < 5; i++) s += A[(U.hashStr(rid + ':' + epoch + ':' + i) >>> 0) % A.length];
+    return s;
+  }
 
   const Game = {
     role: null,
@@ -20,38 +31,35 @@
     clientRace: null,
     code: null,
     lastScreen: null,
-    saveT: 0,
     spectate: 0,
     lost: null,
+    myPid: null, // my player id in the session (host or client)
+    token: null, // my seat token: proves it's me when I come back (also after a host change)
+    requests: new Map(), // host: private-room join requests waiting for an answer
+    heirPkg: null, // client: the full state the host sends its heirs (see _lost)
+    deriveCode,
 
     // =============================================================== HOST
     async hostNew(name) {
       const s = new G.HostSession({ hostId: HOST_PID });
-      const hp = s.addPlayer({ id: HOST_PID, name: name || 'Host', color: G.CarModel.PALETTE[0], carId: G.App.myCar() });
+      // The host has a seat token too: if the room moves to a new host while
+      // we're offline, we come back into our own seat as a player.
+      this.token = U.uid(18);
+      const hp = s.addPlayer({ id: HOST_PID, name: name || 'Host', token: this.token, color: G.CarModel.PALETTE[0], carId: G.App.myCar() });
       hp.garage.carId = hp.carId;
       hp.garage.look = G.Parts.cleanLook(hp.garage.look, G.App.myLook() || {}); // your paint comes with you
       s.syncBots();
       await this._startHost(s, null);
     },
 
-    savedSession() {
-      const sv = U.store.get(SAVE_KEY, null);
-      if (!sv || !sv.state || Date.now() - sv.savedAt > 12 * 3600 * 1000) return null;
-      if (sv.state.phase === 'final') return null;
-      return sv;
-    },
-
-    async resume() {
-      const sv = this.savedSession();
-      if (!sv) return;
-      const s = G.HostSession.fromSave(sv.state);
-      await this._startHost(s, sv.code);
-    },
-
     async _startHost(s, wantCode) {
       this.role = 'host';
       this.session = s;
-      G.UI.toast(wantCode ? `Re-opening room ${wantCode}…` : 'Opening a room…');
+      this.myPid = s.state.hostId;
+      this.requests.clear();
+      this._hadOthers = false;
+      this._aloneSince = null;
+      if (!wantCode) G.UI.toast('Opening a room…');
       let net = null, code = wantCode;
       if (G.Net.available()) {
         // After a crash our old peer id can stay registered for a while; keep
@@ -89,8 +97,8 @@
       s.state.code = code;
       this.net = net;
       this._wireHost();
-      G.Client.connectLocal(s, HOST_PID);
-      this._save();
+      G.Client.connectLocal(s, this.myPid);
+      this._annKey = null;
       G.App.enterSession();
     },
 
@@ -100,18 +108,17 @@
         if (net) net.broadcastCtrl({ t: 'state', s: st });
       });
       s.on('toPlayer', (pid, m) => {
-        if (pid !== HOST_PID && net) net.sendCtrl(pid, m);
+        if (pid !== this.myPid && net) net.sendCtrl(pid, m);
       });
       s.on('broadcast', (m) => {
         if (net) net.broadcastCtrl(m);
       });
       s.on('raceStart', () => {
-        this.hostRace = new G.HostRace(s, net, HOST_PID);
+        this.hostRace = new G.HostRace(s, net, this.myPid);
       });
       s.on('raceEnd', () => {
         this.hostRace = null;
       });
-      s.on('phase', () => this._save());
       s.on('kick', (pid) => {
         if (!net) return;
         net.sendCtrl(pid, { t: 'kicked', reason: 'The host removed you from the room.' });
@@ -119,27 +126,180 @@
       });
       if (!net) return;
       net.on('hello', (L, d) => {
-        const r = s.join(String(d.name || 'Driver'), String(d.token || ''));
-        if (!r.ok) return net.reject(L, r.reason);
-        net.bind(L, r.pid);
-        net.sendCtrl(r.pid, { t: 'welcome', id: r.pid, code: this.code });
-        net.sendCtrl(r.pid, { t: 'state', s: s.publicState() });
-        s.touch();
+        // private room + a driver we don't know yet: the host decides
+        if (s.needsApproval(String(d.token || ''))) return this._ask(L, d);
+        this._admit(L, d);
       });
       net.on('ctrl', (pid, m) => s.handle(pid, m));
       net.on('fast', (pid, m) => {
         if (m.t === 'i' && this.hostRace) this.hostRace.onInput(pid, m);
       });
-      net.on('leave', (pid) => s.leave(pid));
+      net.on('leave', (pid, why) => {
+        s.leave(pid);
+        this._lastDrop = { t: performance.now(), why };
+      });
       net.on('signal', (st) => {
         if (st === 'lost') G.UI.toast('Lost the matchmaking server — racers already here are fine; reconnecting…', 'bad');
       });
     },
 
-    _save() {
-      if (this.role !== 'host' || !this.session) return;
-      U.store.set(SAVE_KEY, { code: this.code, savedAt: Date.now(), state: this.session.state });
-      this.saveT = 0;
+    _admit(L, d) {
+      const s = this.session, net = this.net;
+      L.waiting = false;
+      const r = s.join(String(d.name || 'Driver'), String(d.token || ''));
+      if (!r.ok) return net.reject(L, r.reason);
+      net.bind(L, r.pid);
+      net.sendCtrl(r.pid, { t: 'welcome', id: r.pid, code: this.code });
+      net.sendCtrl(r.pid, { t: 'state', s: s.publicState() });
+      s.touch();
+    },
+
+    // Private room: park the joiner (their link stays open and pinging) and
+    // ask the host. G.Requests (ui/rooms.js) shows Accept / Decline.
+    _ask(L, d) {
+      if (this.requests.has(L.id)) return;
+      const name = String(d.name || 'Driver').trim().slice(0, 16) || 'Driver';
+      L.waiting = true;
+      this.requests.set(L.id, { id: L.id, L, d, name, at: Date.now() });
+      this.net._sendRaw(L.ctrl, { t: 'wait', msg: `🔒 ${this.session.state.settings.name || 'This room'} is private — waiting for the host to let you in…` });
+      G.UI.toast(`${name} is asking to join`, 'money');
+      this.reqSeq = (this.reqSeq || 0) + 1;
+    },
+
+    // Host's answer to a join request.
+    answer(id, ok) {
+      const r = this.requests.get(id);
+      if (!r || !this.net) return;
+      this.requests.delete(id);
+      this.reqSeq = (this.reqSeq || 0) + 1;
+      if (r.L.dead) return;
+      if (ok) this._admit(r.L, r.d);
+      else this.net.reject(r.L, 'The host said no this time.');
+    },
+
+    // Host housekeeping, every frame: the server-list card, the heirs' copy
+    // of the state, stale join requests, and "did MY internet drop?".
+    _hostChores(now) {
+      if (!this.net) return;
+      this._announce(now);
+      this._sendHeirs(now);
+      for (const r of Array.from(this.requests.values())) {
+        if (r.L.dead || Date.now() - r.at > 120000) {
+          this.requests.delete(r.id);
+          this.reqSeq = (this.reqSeq || 0) + 1;
+          if (!r.L.dead) this.net.reject(r.L, "The host didn't answer — try again in a bit.");
+        }
+      }
+      this._aloneCheck(now);
+    },
+
+    // The room's card on the server list (relay.js RoomBoard). Re-sent when
+    // something on it changes, and every 25 s so listers know it's alive.
+    _announce(now) {
+      const net = this.net;
+      if (!net.relay || now - (this._annT || 0) < 2000) return;
+      this._annT = now;
+      const st = this.session.state;
+      const hp = st.players[st.hostId];
+      const all = Object.values(st.players);
+      const card =
+        st.phase === 'final'
+          ? null
+          : {
+              code: this.code, rid: st.rid, epoch: st.epoch || 0, name: st.settings.name || `${hp ? hp.name : 'Host'}'s room`, host: hp ? hp.name : '',
+              vis: st.settings.vis || 'private', players: all.filter((p) => !p.isBot && p.connected).length, max: st.settings.maxPlayers || 8,
+              bots: all.filter((p) => p.isBot).length, phase: st.phase, race: st.raceNo, races: st.settings.races, ver: G.VERSION, proto: G.Net.PROTO,
+            };
+      const key = JSON.stringify(card);
+      if (key === this._annKey && now - (this._annSent || 0) < 25000) return;
+      this._annKey = key;
+      this._annSent = now;
+      net.relay.announce(card ? Object.assign(card, { at: Date.now() }) : null);
+    },
+
+    // HOST MIGRATION, host side: the first two heirs (session.heirList) get
+    // the full state — seat tokens included — every 2 s while it changes.
+    _sendHeirs(now, force) {
+      const st = this.session.state;
+      if (!(st.heirs || []).length) return;
+      if (!force && now - (this._heirT || 0) < 2000) return;
+      if (!force && this._heirSeq === st.seq && now - this._heirT < 15000) return;
+      this._heirT = now;
+      this._heirSeq = st.seq;
+      const copy = JSON.parse(JSON.stringify(st));
+      for (const pid of st.heirs) this.net.sendCtrl(pid, { t: 'heir', s: copy, code: this.code });
+    },
+
+    // Did MY internet drop? Then every player timed out together and has
+    // moved to the heir's new room. Check once whether that room exists; if
+    // it does, rejoin it as a player in our own seat (car and money kept).
+    async _aloneCheck(now) {
+      const st = this.session.state;
+      const others = Object.values(st.players).filter((p) => !p.isBot && p.connected && p.id !== st.hostId).length;
+      if (others) {
+        this._hadOthers = true;
+        this._aloneSince = null;
+        return;
+      }
+      if (!this._hadOthers || this._probing) return;
+      if (this._aloneSince == null) this._aloneSince = now;
+      if (now - this._aloneSince < 7000) return;
+      this._hadOthers = false;
+      const d = this._lastDrop;
+      if (!d || !['timeout', 'close', 'error'].includes(d.why)) return; // they were kicked / replaced: nothing moved
+      this._probing = true;
+      const code = deriveCode(st.rid, (st.epoch || 0) + 1);
+      const probe = new G.Net.NetClient(code);
+      let found = false;
+      try {
+        await probe.connect();
+        found = true;
+      } catch (e) {}
+      try {
+        probe.close();
+      } catch (e) {}
+      this._probing = false;
+      if (!found || this.role !== 'host' || this.session.state !== st) return;
+      const me = st.players[st.hostId];
+      const tok = this.token;
+      G.UI.toast('Your connection dropped and the room carried on with a new host — rejoining as a player…', 'info');
+      this._closeHost();
+      try {
+        await this.join(code, me ? me.name : G.App.name(), tok);
+      } catch (e) {
+        G.UI.toast('Could not get back in: ' + e.message, 'bad');
+        this.leave();
+      }
+    },
+
+    _closeHost() {
+      if (this.net) this.net.close();
+      this.net = null;
+      this.session = null;
+      this.hostRace = null;
+      this.requests.clear();
+      this.role = null;
+      G.Client.disconnect();
+    },
+
+    // HOST MIGRATION, client side: I'm the heir and the host is gone. Rebuild
+    // the session from my copy and host it under the next room code; the
+    // others work out the same code and rejoin with their seat tokens.
+    async _takeOver(epoch, code, left) {
+      const pkg = this.heirPkg, me = G.Client.meId;
+      this.heirPkg = null;
+      try {
+        if (this.net) this.net.close();
+      } catch (e) {}
+      this.net = null;
+      this.lost = null;
+      this.clientRace = null;
+      G.UI.clearNotice();
+      G.UI.toast(left ? "The host left — you're the new host. The room carries on." : "The host dropped out — you're the new host. The room carries on.", 'info');
+      const s = G.HostSession.fromMigration(pkg.s, me, epoch, code, left);
+      const seat = s.state.players[me];
+      if (seat && seat.token) this.token = seat.token;
+      await this._startHost(s, code);
     },
 
     // ============================================================= CLIENT
@@ -217,16 +377,30 @@
         if (welcomed) this._onCtrl(m);
       });
       const welcome = await new Promise((res, rej) => {
-        const to = setTimeout(() => rej(new Error('The host did not answer.')), 8000);
+        let to = setTimeout(() => rej(new Error('The host did not answer.')), 8000);
+        const done = () => {
+          clearTimeout(to);
+          off();
+          G.UI.clearNotice();
+        };
         const off = net.on('ctrl', (m) => {
           if (m.t === 'welcome') {
-            clearTimeout(to);
-            off();
+            done();
             res(m);
           } else if (m.t === 'reject') {
-            clearTimeout(to);
-            off();
+            done();
             rej(new Error(m.reason || 'Rejected by host.'));
+          } else if (m.t === 'wait') {
+            // private room: the host has to let us in (we wait up to 2 min)
+            clearTimeout(to);
+            to = setTimeout(() => {
+              done();
+              rej(new Error("The host didn't answer your request."));
+            }, 125000);
+            G.UI.notice(U.esc(String(m.msg || 'Waiting for the host to let you in…')), () => {
+              done();
+              rej(new Error('Cancelled.'));
+            });
           }
         });
         net.sendCtrl({ t: 'hello', proto: G.Net.PROTO, name: this.name, token });
@@ -237,6 +411,7 @@
       });
       welcomed = welcome;
       this.net = net;
+      this.myPid = welcome.id;
       G.Client.connectRemote(net, welcome.id);
       net.on('fast', (m) => {
         if (m.t === 's' && this.clientRace) this.clientRace.onSnap(m);
@@ -246,6 +421,12 @@
     },
 
     _onCtrl(m) {
+      if (m.t === 'heir') {
+        // I'm next in line to host: keep the full state in case the host drops
+        this.heirPkg = { s: m.s, code: m.code, at: Date.now() };
+        return;
+      }
+      if (m.t === 'migrate') return this._lost('host-left'); // the host is leaving on purpose: hand over now
       if (m.t === 'kicked') {
         // Our seat was claimed by a newer connection with the same token
         // (the player reopened the game elsewhere). Don't fight over it.
@@ -261,34 +442,63 @@
 
     // Link to the host died. Keep the last state on screen and retry the full
     // handshake (same token => same seat) every few seconds for 5 minutes.
+    // HOST MIGRATION, everyone else: the public state says who the heirs
+    // are, plus the room id and epoch, so every player works out the same next
+    // room code. The first heir takes over at once. The rest try that code
+    // (and the old one, in case the host comes back). If the first heir never
+    // shows up, the second takes over under the code after that.
     async _lost(why) {
       if (this.role !== 'client' || this.lost) return;
       if (this.kicked) return this.leave();
       this.lost = { since: Date.now(), why, tries: 0 };
       this.clientRace = null;
-      G.UI.toast('Connection to the host lost — reconnecting…', 'bad');
+      try {
+        if (this.net) this.net.close();
+      } catch (e) {}
+      const st = G.Client.state || {};
+      const rid = st.rid || this.code, epoch = st.epoch || 0, heirs = st.heirs || [], me = this.myPid;
+      const oldCode = this.code;
+      const next1 = deriveCode(rid, epoch + 1), next2 = deriveCode(rid, epoch + 2);
+      if (heirs[0] === me && this.heirPkg) return this._takeOver(epoch + 1, next1, why === 'host-left');
+      G.UI.toast(why === 'host-left' ? 'The host left — finding the new host…' : 'Connection to the host lost — reconnecting…', 'bad');
+      const t0 = Date.now();
       while (this.role === 'client' && this.lost) {
-        await sleep(3000);
+        await sleep(heirs.length ? 1500 : 3000);
         if (this.role !== 'client' || !this.lost) return;
         this.lost.tries++;
-        try {
-          await this._connectClient();
-          G.UI.toast('Reconnected!', 'good');
-          this.lastScreen = null;
-          return;
-        } catch (e) {
-          if (Date.now() - this.lost.since > 5 * 60 * 1000) {
-            G.UI.toast('Could not get back into the session.', 'bad');
-            this.leave();
+        if (heirs[1] === me && this.heirPkg && Date.now() - t0 > 20000) return this._takeOver(epoch + 2, next2);
+        const codes = !heirs.length ? [oldCode] : Date.now() - t0 > 20000 ? [next2, next1, oldCode] : [next1, oldCode];
+        for (const c of codes) {
+          if (this.role !== 'client' || !this.lost) return;
+          this.code = c;
+          this.rejoinToken = this.token; // the same seat, whatever the code
+          try {
+            await this._connectClient();
+            G.UI.toast(c === oldCode ? 'Reconnected!' : 'Back in — the room has a new host.', 'good');
+            U.store.set(CLIENT_KEY, { code: c, name: this.name, token: this.token, at: Date.now() });
+            this.lastScreen = null;
             return;
-          }
+          } catch (e) {}
+        }
+        if (Date.now() - this.lost.since > 5 * 60 * 1000) {
+          G.UI.toast('Could not get back into the session.', 'bad');
+          this.leave();
+          return;
         }
       }
     },
 
     leave() {
-      if (this.net) this.net.close();
-      if (this.role === 'host' && this.session && this.session.state.phase === 'final') U.store.del(SAVE_KEY);
+      const net = this.net;
+      const st = this.role === 'host' && this.session ? this.session.state : null;
+      if (st && net && (st.heirs || []).length && st.phase !== 'final') {
+        // The host is leaving on purpose: send the freshest copy to the heirs
+        // and tell everyone to move over now (no 6 s timeout to wait out).
+        this._sendHeirs(performance.now(), true);
+        net.broadcastCtrl({ t: 'migrate' });
+        setTimeout(() => net.close(), 800);
+      } else if (net) net.close();
+      G.UI.clearNotice();
       this.role = null;
       this.session = null;
       this.net = null;
@@ -312,12 +522,12 @@
           const inp = drivingHere ? G.Input.read() : { s: 0, t: 0, b: 1, hb: 0 };
           if (drivingHere && G.Input.hitAction('reset')) inp.rs = 1;
           const ev = this.hostRace.update(dt, inp);
-          if (drivingHere && ev.length) G.RaceView.events(ev, HOST_PID, G.App.hud, G.App.world, G.Audio);
+          if (drivingHere && ev.length) G.RaceView.events(ev, this.myPid, G.App.hud, G.App.world, G.Audio);
         }
-        if (this.net) this.net.tick(performance.now());
+        const now = performance.now();
+        if (this.net) this.net.tick(now);
         s.flush();
-        this.saveT += dt;
-        if (this.saveT >= SAVE_EVERY) this._save();
+        this._hostChores(now);
       } else {
         if (this.net && this.net.pump) this.net.pump(performance.now()); // keep-alive, works when hidden
         if (this.clientRace && G.App.mode === 'session') {
@@ -365,7 +575,7 @@
       const app = G.App;
       if (st.phase === 'race' && (this.hostRace || this.clientRace)) {
         let view;
-        if (this.hostRace) view = G.RaceView.fromSim(this.hostRace.sim, HOST_PID, this.hostRace.acc / P.DT);
+        if (this.hostRace) view = G.RaceView.fromSim(this.hostRace.sim, this.myPid, this.hostRace.acc / P.DT);
         else view = this.clientRace.view();
         const meRacing = view.cars.some((c) => c.id === G.Client.meId);
         // Spectators: number keys / Tab pick who to follow; WASD = free camera.

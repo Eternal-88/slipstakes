@@ -17,14 +17,18 @@
     brick: {
       id: 'brick', name: 'Brick R', tag: 'AWD rally hatch', drive: 'AWD',
       blurb: 'All-wheel-drive hatch. Launches hard and digs in on dirt; pushes wide on tarmac.',
+      // v4.3: the rally car now (it won no track at all): +7% on dirt (was
+      // +3%) and +8% in the wet, so Rainline and Copper Canyon are its home.
       mass: 1330, powerKW: 125, redline: 7300, rearBias: 0.6, wheelbase: 2.5, weightFront: 0.6,
-      cgH: 0.56, track: 1.58, cdA: 0.95, vTop: 50.5, inertiaK: 0.97, body: 'hatch', len: 4.0, wid: 1.82, looseBonus: 1.03,
+      cgH: 0.56, track: 1.58, cdA: 0.95, vTop: 50.5, inertiaK: 0.97, body: 'hatch', len: 4.0, wid: 1.82, looseBonus: 1.07, wetBonus: 1.08,
     },
     sting: {
       id: 'sting', name: 'Sting S', tag: 'RWD roadster', drive: 'RWD',
       blurb: 'Light, low, darty roadster. Carries speed through corners; loses out on straights.',
+      // v4.3: a low road car's weaknesses (−8% on dirt, −5% in the wet). It
+      // was the fastest car on 5 of 12 tracks — dirt and wet included.
       mass: 980, powerKW: 104, redline: 7800, rearBias: 1.0, wheelbase: 2.4, weightFront: 0.49,
-      cgH: 0.45, track: 1.55, cdA: 0.78, vTop: 52, inertiaK: 0.92, body: 'roadster', len: 3.9, wid: 1.76,
+      cgH: 0.45, track: 1.55, cdA: 0.78, vTop: 52, inertiaK: 0.92, body: 'roadster', len: 3.9, wid: 1.76, looseBonus: 0.92, wetBonus: 0.95,
     },
     mule: {
       id: 'mule', name: 'Mule V8', tag: 'RWD muscle', drive: 'RWD',
@@ -41,13 +45,20 @@
     dune: {
       id: 'dune', name: 'Dune Runner', tag: 'AWD desert truck', drive: 'AWD', price: 2600,
       blurb: 'Long-travel desert pickup. Shrugs off dirt, mud and sand and shoves smaller cars aside. Heavy, tall and draggy on tarmac.',
-      mass: 1560, powerKW: 172, redline: 5900, rearBias: 0.58, wheelbase: 2.95, weightFront: 0.55,
-      cgH: 0.68, track: 1.74, cdA: 1.18, vTop: 49, inertiaK: 1.04, body: 'truck', len: 4.9, wid: 2.02, looseBonus: 1.14,
+      // v4.3: 172 -> 166 kW, dirt bonus 1.14 -> 1.10. Heavy, stable AWD is
+      // very forgiving of keyboard driving: it was the keyboard-proxy
+      // driver's fastest car on 5 of 12 tracks.
+      mass: 1560, powerKW: 166, redline: 5900, rearBias: 0.58, wheelbase: 2.95, weightFront: 0.55,
+      cgH: 0.68, track: 1.74, cdA: 1.18, vTop: 49, inertiaK: 1.04, body: 'truck', len: 4.9, wid: 2.02, looseBonus: 1.1,
     },
+    // v4.3: 182 -> 140 kW, $4,800 -> $3,800. With traction control it was
+    // fastest on 7 of 12 tracks and 7% clear on every drag (the Mule's only
+    // job). Now it's the sweeping-tarmac specialist: quickest on Harbour and
+    // Coastal Highway, level on Summit, behind on dirt and on the drags.
     apex: {
-      id: 'apex', name: 'Apex MR', tag: 'mid-engine RWD', drive: 'RWD', price: 4800,
-      blurb: 'Mid-engined supercar: the most grip and power in the paddock, and the least forgiving. Snaps on lift-off, hates dirt, costly to run.',
-      mass: 1180, powerKW: 182, redline: 8400, rearBias: 1.0, wheelbase: 2.55, weightFront: 0.41,
+      id: 'apex', name: 'Apex MR', tag: 'mid-engine RWD', drive: 'RWD', price: 3800,
+      blurb: 'Mid-engined supercar: the most grip in the paddock and a screaming 8,400 rpm engine. Fastest on sweeping tarmac, useless on dirt, twitchy on lift-off, costly to run.',
+      mass: 1180, powerKW: 140, redline: 8400, rearBias: 1.0, wheelbase: 2.55, weightFront: 0.41,
       cgH: 0.44, track: 1.68, cdA: 0.8, vTop: 60, inertiaK: 0.88, body: 'mid', len: 4.45, wid: 1.96, looseBonus: 0.9, wearK: 1.35,
     },
   };
@@ -62,7 +73,7 @@
         { id: 'na', name: 'Naturally Aspirated', price: 0, desc: 'Linear and predictable. Never overheats.', cons: 'No extra power.', boostGain: 0, boostLag: 0.1, boostOn: 0, heatRate: 0, fuelMult: 1, kind: 'none' },
         { id: 'sc', name: 'Supercharger', price: 2400, desc: '+32% power from low revs, instant response.', cons: 'Heat builds on long straights. Fuel ×1.6.', boostGain: 0.32, boostLag: 0.06, boostOn: 0, heatRate: 0.07, fuelMult: 1.6, kind: 'sc' },
         { id: 't1', name: 'Street Turbo', price: 3200, desc: '+55% power once spooled.', cons: '0.5 s lag, weak below half revs. Fuel ×1.9. Heat.', boostGain: 0.55, boostLag: 0.5, boostOn: 0.45, heatRate: 0.1, fuelMult: 1.9, kind: 'turbo' },
-        { id: 't2', name: 'Big Turbo', price: 5800, desc: '+105% power at the top end. Brutal.', cons: '1.1 s lag, nothing below 60% revs, then all at once. Violent heat, fuel ×2.7, engine wear.', boostGain: 1.05, boostLag: 1.1, boostOn: 0.6, heatRate: 0.155, fuelMult: 2.7, kind: 'turbo' },
+        { id: 't2', name: 'Big Turbo', price: 4200, desc: '+105% power at the top end. Brutal.', cons: '1.1 s lag, nothing below 60% revs, then all at once. Violent heat, fuel ×2.7, engine wear.', boostGain: 1.05, boostLag: 1.1, boostOn: 0.6, heatRate: 0.155, fuelMult: 2.7, kind: 'turbo' },
       ],
     },
     {
@@ -79,16 +90,22 @@
       options: [
         { id: 'none', name: 'Clean Body', price: 0, desc: 'Slippery. Best top speed.', cons: 'No downforce — light at speed.', clA: 0.15, cdA: 0 },
         { id: 'a1', name: 'Lip Spoiler', price: 1600, desc: 'Mild downforce at speed.', cons: 'Small drag penalty.', clA: 1.1, cdA: 0.1, kg: 8 },
-        { id: 'a2', name: 'GT Wing', price: 3600, desc: 'Real downforce in fast corners.', cons: 'Drag costs top speed. Useless in slow corners.', clA: 2.4, cdA: 0.27, kg: 20 },
-        { id: 'a3', name: 'Full Aero Kit', price: 6200, desc: 'Huge high-speed grip. Glued in fast sweepers.', cons: 'Massive drag — slow on straights, terrible for drags. Does nothing below ~60 km/h.', clA: 3.8, cdA: 0.6, kg: 45 },
+        // v4.3: more downforce (2.4 -> 3.2, 3.8 -> 5.2) and the kit $6,200 ->
+        // $5,200. The full kit bought 1.4 s on Harbour, half what a $1,500
+        // stripped interior did.
+        { id: 'a2', name: 'GT Wing', price: 3600, desc: 'Real downforce in fast corners.', cons: 'Drag costs top speed. Useless in slow corners.', clA: 3.2, cdA: 0.27, kg: 20 },
+        { id: 'a3', name: 'Full Aero Kit', price: 5200, desc: 'Huge high-speed grip. Glued in fast sweepers.', cons: 'Massive drag — slow on straights, terrible for drags. Does nothing below ~60 km/h.', clA: 5.2, cdA: 0.6, kg: 45 },
       ],
     },
     {
       id: 'compound', name: 'Tyre Compound', icon: '◎',
       options: [
         { id: 'hard', name: 'Hard', price: 0, desc: 'Durable. Lasts ~4 races.', cons: 'Least grip.', mu: 1.0, wear: 1.0, peak: 0.165, set: 250, stripe: 0xf4f4f4 },
-        { id: 'medium', name: 'Medium', price: 900, desc: '+6% grip.', cons: 'Wears ~1.8× faster.', mu: 1.06, wear: 1.8, peak: 0.155, set: 400, stripe: 0xffd21f },
-        { id: 'soft', name: 'Soft', price: 1900, desc: '+13% grip. Sticky.', cons: 'Wears ~3× faster — grip falls off within a race or two.', mu: 1.13, wear: 3.0, peak: 0.145, set: 600, stripe: 0xff3b30 },
+        // v4.3: grip was worth far more than anything else in the shop (Soft
+        // tyres took 8.4 s off Harbour for $1,900, a $3,200 turbo 1.2 s), so
+        // every build started with soft + wide. +13% -> +7%, +6% -> +3.5%.
+        { id: 'medium', name: 'Medium', price: 1000, desc: '+3.5% grip.', cons: 'Wears ~1.8× faster.', mu: 1.035, wear: 1.8, peak: 0.155, set: 400, stripe: 0xffd21f },
+        { id: 'soft', name: 'Soft', price: 2400, desc: '+7% grip. Sticky.', cons: 'Wears ~3× faster — grip falls off within a race or two.', mu: 1.07, wear: 3.0, peak: 0.145, set: 600, stripe: 0xff3b30 },
       ],
     },
     {
@@ -96,7 +113,7 @@
       options: [
         { id: 'std', name: 'Standard', price: 0, desc: 'All-rounder.', cons: '—', dry: 1.0, wetM: 1.0, loose: 1.0, cdA: 0, setMul: 1, vis: 1 },
         { id: 'narrow', name: 'Narrow Rally', price: 700, desc: '+14% wet grip, +10% on dirt/gravel.', cons: '−6% dry grip.', dry: 0.94, wetM: 1.14, loose: 1.1, cdA: -0.01, setMul: 0.9, vis: 0.8 },
-        { id: 'wide', name: 'Wide', price: 1500, desc: '+9% dry grip.', cons: 'Aquaplanes: −26% wet grip (worse with speed), −10% on dirt. Slight drag.', dry: 1.09, wetM: 0.74, loose: 0.9, cdA: 0.03, setMul: 1.35, vis: 1.3, aqua: 1 },
+        { id: 'wide', name: 'Wide', price: 1500, desc: '+5% dry grip.', cons: 'Aquaplanes: −26% wet grip (worse with speed), −10% on dirt. Slight drag.', dry: 1.05, wetM: 0.74, loose: 0.9, cdA: 0.03, setMul: 1.35, vis: 1.3, aqua: 1 },
       ],
     },
     {
@@ -128,10 +145,14 @@
     {
       id: 'brakes', name: 'Brakes', icon: '⛔',
       options: [
+        // v4.3: the cold-bite penalty made upgraded brakes SLOWER in every
+        // test, so it's much smaller now. (Letting ABS work closer to the limit
+        // was tried and rejected: full brake then left less grip to steer
+        // with, and keyboard drivers overshot corners, 2-4 s slower a race.)
         { id: 'stock', name: 'Road Brakes', price: 0, desc: 'Full bite from cold. Predictable.', cons: 'Fade after repeated heavy stops — braking zones grow late in a race.', bForce: 1.0, bCap: 1.0, bCold: 1.0, kg: 0, caliper: 0x8c939c },
-        { id: 'sport', name: 'Sport Pads', price: 900, desc: '+12% stopping power, 30% more heat capacity.', cons: 'Weak bite when cold: the first big stop of every race is long.', bForce: 1.12, bCap: 1.3, bCold: 0.8, kg: 0, caliper: 0xe8322b },
-        { id: 'bbk', name: 'Big Brake Kit', price: 2400, desc: '+25% clamping force, 4-piston calipers, very hard to fade.', cons: '+14 kg of unsprung weight: heavier, and it skips more over kerbs and bumps.', bForce: 1.25, bCap: 1.9, bCold: 0.95, kg: 14, bumpM: 1.12, caliper: 0xffc400 },
-        { id: 'carbon', name: 'Carbon-Ceramic', price: 4600, desc: '+32% stopping power, −6 kg, never fades.', cons: 'Almost no bite until warm: the first two stops of a race are scary.', bForce: 1.32, bCap: 3.0, bCold: 0.6, kg: -6, caliper: 0xd4a017 },
+        { id: 'sport', name: 'Sport Pads', price: 600, desc: '+12% stopping power, 30% more heat capacity.', cons: 'A touch less bite when cold on the first stop.', bForce: 1.12, bCap: 1.3, bCold: 0.95, kg: 0, caliper: 0xe8322b },
+        { id: 'bbk', name: 'Big Brake Kit', price: 1600, desc: '+25% clamping force, 4-piston calipers, very hard to fade.', cons: '+8 kg of unsprung weight: it skips a little more over kerbs and bumps.', bForce: 1.25, bCap: 1.9, bCold: 0.98, kg: 8, bumpM: 1.06, caliper: 0xffc400 },
+        { id: 'carbon', name: 'Carbon-Ceramic', price: 3200, desc: '+32% stopping power, −6 kg, never fades.', cons: 'Weak bite until warm: the first two stops of a race are long.', bForce: 1.32, bCap: 3.0, bCold: 0.85, kg: -6, caliper: 0xd4a017 },
       ],
     },
     // Exhaust + ECU reshape the torque curve (torqueAt below) rather than just
@@ -212,6 +233,9 @@
     { id: 'fd', grp: 'Gearing', name: 'Final drive', min: -8, max: 8, step: 1, def: 0, unit: '%', lo: 'Longer: higher top speed, softer acceleration', hi: 'Shorter: harder acceleration, earlier limiter' },
     { id: 'wing', grp: 'Aero', name: 'Wing angle', min: 1, max: 9, step: 1, def: 5, unit: '', need: { aero: ['a2', 'a3'] }, needTxt: 'Needs the GT Wing or Full Aero Kit', lo: 'Flat: less drag, less high-speed grip', hi: 'Steep: more downforce, more drag' },
     { id: 'boost', grp: 'Engine', name: 'Boost pressure', min: 1, max: 9, step: 1, def: 5, unit: '', need: { induction: ['sc', 't1', 't2'] }, needTxt: 'Needs a supercharger or turbo', lo: 'Low: cooler and kinder to the engine', hi: 'High: more power, much more heat and wear' },
+    // v4.3 driver aid: physics.js trims drive so the tyres never spin. On by
+    // default; off lets you powerslide (and spin) like before.
+    { id: 'tcs', grp: 'Assists', name: 'Traction control', min: 0, max: 1, step: 1, def: 1, unit: '', labels: ['Off', 'On'], lo: 'Off: full throttle can spin the driven wheels — slides are yours to catch', hi: 'On: power is trimmed so the tyres never spin — easiest on a keyboard' },
   ];
   const TUNE_MAP = {};
   TUNES.forEach((t) => (TUNE_MAP[t.id] = t));
@@ -364,7 +388,7 @@
     const loose = wd.loose * su.looseM * (c.looseBonus || 1);
     const surfMul = G.SURF.map((s) => {
       let m = s.grip;
-      if (s.wet || s.icy) m *= wd.wetM;
+      if (s.wet || s.icy) m *= wd.wetM * (c.wetBonus || 1);
       else if (s.loose) m *= loose;
       else m *= wd.dry;
       return m;
@@ -390,7 +414,7 @@
       lonF: camLon(cF) / camLon(-1), lonR: camLon(cR) / camLon(-1),
       peakF: pF.peak, peakR: pR.peak,
       latTauF: su.latTau * pF.tau, latTauR: su.latTau * pR.tau,
-      rollF, lsd, diffYaw,
+      rollF, lsd, diffYaw, tcs: T.tcs ? 1 : 0,
       loadSens: 0.16, fzNom: (1200 * G_ACC) / 4,
       tyreWearRate: cp.wear * ((pF.wear + pR.wear) / 2) * (1 + 0.05 * ((Math.abs(cF) + Math.abs(cR)) / 2 - 1)), tyreHealth,
       loadTau: su.loadTau * (1 - 0.015 * arbSum), latTau: su.latTau, rollGain: su.roll * (1 - 0.035 * arbSum),

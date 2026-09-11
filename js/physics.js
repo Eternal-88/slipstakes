@@ -394,6 +394,18 @@
       // grip longitudinally than laterally (FmaxL).
       const FmaxL = mu * Fz * TUNE.longGrip * (front ? s.lonF || 1 : s.lonR || 1);
       let Fx = _drv[i];
+      // Traction control (setup: Assists, on by default): trim DRIVE so the
+      // tyre stays inside its friction circle. It never goes past the spin
+      // point, and gets less drive mid-corner, where the tyre is also holding
+      // the car sideways. A keyboard's all-or-nothing throttle spun every
+      // rear-drive car off the line and out of corners, so the two AWD cars
+      // won almost every track for keyboard players (quarter mile 15.0-15.8 s
+      // vs 18.7-20.8 s for the RWD cars).
+      if (s.tcs && car.gear > 0 && Fx * Math.sign(wl || 1) > 0) {
+        const latUse = Math.min(0.95, Math.abs(car.fy[i]) / (Fmax || 1));
+        const cap = FmaxL * 0.93 * Math.sqrt(1 - latUse * latUse);
+        if (Math.abs(Fx) > cap) Fx = Math.sign(Fx) * cap;
+      }
       const bw = brakeTot * (front ? s.brakeFront : 1 - s.brakeFront) * 0.5;
       if (bw > 0) {
         // Near zero speed brakes act like a damper so the car doesn't jitter.

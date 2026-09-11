@@ -30,7 +30,7 @@
 (function (G) {
   const U = G.U;
   const PREFIX = 'slipstakes-v1-';
-  const PROTO = 5; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces)
+  const PROTO = 6; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup)
   // ICE servers: how two devices find a path to each other.
   //  * STUN tells each device its public address so a direct path can be
   //    punched through both networks' routers.
@@ -298,7 +298,9 @@
     // for everyone, which killed slow handshakes before they could finish.)
     tick(now) {
       for (const L of Array.from(this.links.values())) {
-        if (L.pid ? now - L.lastSeen > 10000 : now - L.born > 25000) this._drop(L, 'timeout');
+        // (a joiner waiting for the host to accept them — private rooms —
+        // keeps pinging, so it gets the same 10 s silence rule as a player)
+        if (L.pid || L.waiting ? now - L.lastSeen > 10000 : now - L.born > 25000) this._drop(L, 'timeout');
       }
       if (this.relay) this.relay.pump(now);
     }
