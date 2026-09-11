@@ -2,6 +2,14 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v4.2 — "Smooth Starts"
+
+Fixes a desync that hit one or two players on the first race. The cause was a freeze (a hitch) on a slower device, and a Chromebook's first race has the most of those: cold code and first-time loads. It was measured by emulating the freezes with one host and two joiners (`js/hostrace.js` has the details):
+- **Host freeze:** the host used to drop the lost time, which threw away the joiners' inputs, so a 1 s host freeze made every joiner's car jump 13.9 m. Now the host catches up by up to 1 s of real time, and sends at most one snapshot per frame.
+- **Joiner freeze:** the host used to keep applying the frozen player's last input. Their car drove into walls (56% damage, 260 m lost in the test) and then teleported. Now a stand-in bot drives it at 70% throttle after 0.25 s without input.
+- **Start hold:** the countdown waits, up to 8 s, until every connected human racer is sending input (they've finished building the track). The start lights say WAITING.
+- **Background tabs:** the hidden-tab ticker skips pings that queued behind a slow tick. Before, the backlog delayed network messages by up to 17 s.
+
 ## v4.1 — "School Wi-Fi"
 
 Joining works when two devices can't link directly, for example two Chromebooks on a school Wi-Fi. The game falls back to a relay through public servers; see **Backup relay** under Netcode.
