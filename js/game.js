@@ -53,7 +53,7 @@
       this.session = s;
       G.UI.toast(wantCode ? `Re-opening room ${wantCode}…` : 'Opening a room…');
       let net = null, code = wantCode;
-      if (G.Net.peerAvailable()) {
+      if (G.Net.available()) {
         // After a crash our old peer id can stay registered for a while; keep
         // trying the SAME code (clients are trying to reconnect to it).
         const tries = wantCode ? 25 : 6;
@@ -82,6 +82,8 @@
       if (!net) {
         code = code || 'OFFLINE';
         G.UI.toast('Could not reach the PeerJS server — playing offline (bots only).', 'bad');
+      } else if (net.relayOnly) {
+        G.UI.toast("The matchmaking server is blocked here, so this room is open through the backup relay only (a bit more lag).", 'info');
       }
       this.code = code;
       s.state.code = code;
@@ -202,7 +204,12 @@
       const code = this.code;
       const token = this._seatToken();
       const net = new G.Net.NetClient(code);
+      const quiet = !!this.lost; // the reconnect loop has its own messages
+      net.on('status', (s) => {
+        if (s === 'relay' && !quiet) G.UI.toast('No direct link to the host (school or office Wi-Fi?) — trying the backup relay…', 'info');
+      });
       await net.connect();
+      if (net.via === 'relay' && !quiet) G.UI.toast('Connected through the backup relay. Expect a little more lag than a direct link.', 'good');
       // Attach the general handler BEFORE hello so the state that follows the
       // welcome can't slip past us.
       let welcomed = null;

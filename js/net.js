@@ -38,15 +38,18 @@
   //    example two Chromebooks on a school Wi-Fi that isolates devices.
   // PeerJS's built-in relays (eu-0/us-0.turn.peerjs.com) are DEAD: their names
   // no longer resolve (checked Sept 2026), so a join that needed a relay just
-  // "timed out". Free relays need an account; to add one, put its entries in
-  // TURN, e.g. { urls: 'turn:HOST:443?transport=tcp', username: '…', credential: '…' }
+  // "timed out". No free account-less TURN is left, so relay.js carries the
+  // game over public MQTT brokers instead when no direct path exists (school
+  // Wi-Fi). A real TURN account can still go in TURN, e.g.
+  // { urls: 'turn:HOST:443?transport=tcp', username: '…', credential: '…' }
   const STUN = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }];
   const TURN = [];
   // debug 0: we handle every PeerJS error ourselves; at debug 1 the reconnect
   // loop (a retry every 3 s for up to 5 min) filled the console with ERRORs.
   const PEER_OPTS = { debug: 0, config: { iceServers: STUN.concat(TURN) } };
   const REVERSE_AFTER = 5000; // joiner's link not open by now -> host dials the joiner
-  const JOIN_TIMEOUT = 22000; // client gives up (covers both directions)
+  const RELAY_AFTER = 8000; // still no direct link (reverse dial included) -> joiner knocks on the backup relay
+  const JOIN_TIMEOUT = 22000; // client gives up (covers all three routes)
 
   function peerAvailable() {
     return typeof window.Peer === 'function';
@@ -63,31 +66,53 @@
       this.bytesOut = 0;
     }
 
-    // Resolves once the signalling server has registered our id. Rejects with
-    // 'taken' if the room code is in use (caller picks another code).
+    // Resolves once the signalling server has registered our id, then also
+    // listens on the backup relay (relay.js). Rejects with 'taken' if the room
+    // code is in use (caller picks another code). If the signalling server
+    // can't be reached at all, the room opens on the relay alone.
     open() {
       return new Promise((resolve, reject) => {
-        if (!peerAvailable()) return reject(new Error('offline'));
-        let settled = false;
+        let settled = false, to = null;
+        const fallback = (why) => {
+          if (settled) return;
+          settled = true;
+          clearTimeout(to);
+          if (!G.Relay) return reject(new Error(why));
+          if (this.peer) {
+            try {
+              this.peer.destroy();
+            } catch (e) {}
+            this.peer = null;
+          }
+          this.relayOnly = true;
+          const R = this._startRelay();
+          const t = setTimeout(() => {
+            off();
+            reject(new Error(why));
+          }, 9000);
+          const off = R.on('ready', () => {
+            clearTimeout(t);
+            off();
+            resolve();
+          });
+        };
+        if (!peerAvailable()) return fallback('offline');
         const peer = new window.Peer(PREFIX + this.code, PEER_OPTS);
         this.peer = peer;
-        const to = setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            reject(new Error('timeout'));
-          }
-        }, 12000);
+        to = setTimeout(() => fallback('timeout'), 12000);
         peer.on('open', () => {
           if (settled) return;
           settled = true;
           clearTimeout(to);
+          this._startRelay(); // the code is ours now, so answer relayed joiners too
           resolve();
         });
         peer.on('error', (err) => {
           if (!settled) {
+            if (err.type !== 'unavailable-id') return fallback(err.type || 'error');
             settled = true;
             clearTimeout(to);
-            reject(new Error(err.type === 'unavailable-id' ? 'taken' : err.type || 'error'));
+            reject(new Error('taken'));
             return;
           }
           // After open, errors are usually about individual links; log only.
@@ -111,6 +136,15 @@
       });
     }
 
+    _startRelay() {
+      if (!this.relay && G.Relay) {
+        this.relay = new G.Relay.RelayHost(this.code);
+        this.relay.on('connection', (c) => this._onConn(c)); // each relayed joiner is its own link
+        this.relay.start();
+      }
+      return this.relay;
+    }
+
     _onConn(conn) {
       if (conn.label !== 'ctrl' && conn.label !== 'fast') return conn.close();
       let L = this.links.get(conn.peer);
@@ -120,6 +154,7 @@
         this.links.set(conn.peer, L);
       }
       this._wire(L, conn);
+      if (conn.relay || !this.peer) return; // relayed channels are already open
       // REVERSE DIAL. In theory WebRTC connects the same whichever side calls,
       // but real firewalls aren't symmetric. Players saw a PC join a
       // Chromebook host fine while the Chromebook timed out joining the PC's
@@ -265,11 +300,13 @@
       for (const L of Array.from(this.links.values())) {
         if (L.pid ? now - L.lastSeen > 10000 : now - L.born > 25000) this._drop(L, 'timeout');
       }
+      if (this.relay) this.relay.pump(now);
     }
 
     close() {
       this.closed = true;
       for (const L of Array.from(this.links.values())) this._drop(L, 'host-closed');
+      if (this.relay) this.relay.close();
       if (this.peer) this.peer.destroy();
     }
   }
@@ -281,8 +318,9 @@
   const SIMNET = (() => {
     const q = new URLSearchParams(location.search);
     // forcerev: make this client's own calls unable to connect, to test the
-    // host's reverse dial on one machine.
-    return { lag: +(q.get('lag') || 0), jitter: +(q.get('jitter') || 0), loss: +(q.get('loss') || 0), forceRev: q.has('forcerev') };
+    // host's reverse dial on one machine. forcerelay: skip WebRTC entirely and
+    // join through the backup relay straight away.
+    return { lag: +(q.get('lag') || 0), jitter: +(q.get('jitter') || 0), loss: +(q.get('loss') || 0), forceRev: q.has('forcerev'), forceRelay: q.has('forcerelay') };
   })();
   let _ctrlClock = 0; // keeps delayed ctrl messages in order
   function simDeliver(fast, fn) {
@@ -307,57 +345,95 @@
       this.open = false;
     }
 
-    // Opens both channels to the host. Resolves when BOTH are open.
+    // Opens both channels to the host. Resolves when BOTH are open on the same
+    // route: the direct WebRTC link, or the backup relay (relay.js) if the
+    // direct link hasn't opened after RELAY_AFTER or the matchmaking server
+    // can't help. Emits 'status' 'relay' when it starts trying the relay;
+    // this.via says which route won ('direct' | 'relay').
     connect() {
       return new Promise((resolve, reject) => {
-        if (!peerAvailable()) return reject(new Error('PeerJS failed to load (offline?)'));
+        const usePeer = peerAvailable() && !SIMNET.forceRelay;
+        const relay = G.Relay ? new G.Relay.RelayJoin(this.code) : null;
+        if (!usePeer && !relay) return reject(new Error('PeerJS failed to load (offline?)'));
+        this.relayJ = relay;
         let settled = false;
         let found = false; // matchmaking server answered, and no "room not found"
         const fail = (msg) => {
           if (settled) return;
           settled = true;
           clearTimeout(to);
+          clearTimeout(knockT);
           this.close();
           reject(new Error(msg));
         };
-        const to = setTimeout(
-          () =>
-            fail(
-              found
-                ? `Found room ${this.code}, but the network blocked the connection to the host. Try: host on the other device · both on the same Wi-Fi or a phone hotspot · turn off any VPN.`
-                : "Couldn't reach the matchmaking server (0.peerjs.com). The network may block it."
-            ),
-          JOIN_TIMEOUT
-        );
-        const peer = new window.Peer(PEER_OPTS);
-        this.peer = peer;
-        const target = PREFIX + this.code;
-        peer.on('error', (err) => {
-          if (err.type === 'peer-unavailable') fail('Room not found');
-          else if (!settled) fail('Network error: ' + (err.type || 'unknown'));
-          else console.warn('[net client] peer error', err.type);
-        });
-        // Wire one channel: our own call to the host, or the host's reverse
-        // call to us (see NetHost._onConn). The first 'ctrl' and the first
-        // 'fast' to open win; a late duplicate is closed.
-        const opened = { ctrl: false, fast: false };
-        const use = (c) => {
+        const why = () => {
+          const relayOk = relay && relay.reached > 0;
+          if (found)
+            return relayOk
+              ? `Found room ${this.code}, but couldn't link to the host, directly or through the backup relay. Make sure you both have the latest version (reload the page), then try again.`
+              : `Found room ${this.code}, but this network blocks both the direct link and the backup relay. Try a phone hotspot, or turn off any VPN.`;
+          return relayOk
+            ? `Room ${this.code} didn't answer. Check the code, and that the host has reloaded to the latest version.`
+            : "Couldn't reach the matchmaking server (0.peerjs.com) or the backup relay. The network may block them.";
+        };
+        const to = setTimeout(() => fail(why()), JOIN_TIMEOUT);
+        const knock = () => {
+          if (!relay || settled || relay.knocking) return;
+          relay.knock();
+          this.emit('status', 'relay');
+        };
+        const knockT = setTimeout(knock, usePeer ? RELAY_AFTER : 0);
+
+        // Channels arrive from up to three places: our own WebRTC call and the
+        // host's reverse call (both route 'direct', see NetHost._onConn), and
+        // the relay (one route per broker). ctrl and fast must share a route,
+        // because the host keeps a separate link per route. The first route
+        // with both open wins; every other channel is closed.
+        const routes = {};
+        const all = [];
+        const win = (kind) => {
+          settled = true;
+          clearTimeout(to);
+          clearTimeout(knockT);
+          const r = routes[kind];
+          this.ctrl = r.ctrl;
+          this.fast = r.fast;
+          this.via = kind === 'direct' ? 'direct' : 'relay';
+          for (const c of all) {
+            if (c === r.ctrl || c === r.fast) continue;
+            try {
+              c.close();
+            } catch (e) {}
+          }
+          if (this.via === 'relay') {
+            relay.keep(r.ctrl.bid);
+            if (this.peer) {
+              try {
+                this.peer.destroy();
+              } catch (e) {}
+              this.peer = null;
+            }
+          } else if (relay) {
+            relay.close();
+            this.relayJ = null;
+          }
+          this.open = true;
+          this.lastHeard = performance.now();
+          this._startPing();
+          resolve();
+        };
+        const use = (c, kind) => {
           const label = c.label;
           if (label !== 'ctrl' && label !== 'fast') return c.close();
+          all.push(c);
+          const r = (routes[kind] = routes[kind] || { ctrl: null, fast: null });
           c.on('open', () => {
-            if (opened[label] || (settled && !this.open)) return c.close();
-            opened[label] = true;
-            this[label] = c;
-            if (opened.ctrl && opened.fast && !settled) {
-              settled = true;
-              clearTimeout(to);
-              this.open = true;
-              this.lastHeard = performance.now();
-              this._startPing();
-              resolve();
-            }
+            if (settled || r[label]) return c.close();
+            r[label] = c;
+            if (r.ctrl && r.fast) win(kind);
           });
-          c.on('data', (d) =>
+          c.on('data', (d) => {
+            if (this[label] !== c) return;
             simDeliver(label === 'fast', () => {
               this.lastHeard = performance.now();
               if (!d || typeof d !== 'object') return;
@@ -366,12 +442,34 @@
                 return;
               }
               this.emit(label, d);
-            })
-          );
+            });
+          });
           c.on('close', () => this[label] === c && this._lost('closed'));
           c.on('error', () => this[label] === c && this._lost('error'));
         };
-        peer.on('connection', (c) => (c.peer === target ? use(c) : c.close()));
+
+        if (relay) {
+          relay.on('connection', (c) => use(c, 'relay:' + c.bid));
+          relay.start(); // connect to the brokers now, so a knock goes out instantly
+        }
+        if (!usePeer) return;
+        const peer = new window.Peer(PEER_OPTS);
+        this.peer = peer;
+        const target = PREFIX + this.code;
+        peer.on('error', (err) => {
+          if (settled) return console.warn('[net client] peer error', err.type);
+          if (err.type === 'peer-unavailable') {
+            found = false;
+            if (!relay) return fail('Room not found');
+            // A host that couldn't reach the matchmaking server may still be on the relay.
+            knock();
+            setTimeout(() => fail('Room not found'), 5000);
+          } else {
+            if (!relay) return fail('Network error: ' + (err.type || 'unknown'));
+            knock(); // matchmaking trouble: the relay may still get through
+          }
+        });
+        peer.on('connection', (c) => (c.peer === target ? use(c, 'direct') : c.close()));
         peer.on('open', () => {
           found = true;
           for (const label of ['ctrl', 'fast']) {
@@ -381,7 +479,7 @@
                 c.peerConnection.setConfiguration({ iceServers: [], iceTransportPolicy: 'relay' });
               } catch (e) {}
             }
-            use(c);
+            use(c, 'direct');
           }
         });
       });
@@ -397,6 +495,7 @@
       this.pingT = setInterval(() => this.pump(performance.now()), 1000);
     }
     pump(now) {
+      if (this.relayJ) this.relayJ.pump(now);
       if (!this.open || now - this._lastPing < 1000) return;
       this._lastPing = now;
       this.sendCtrl({ t: 'ping', c: now, rtt: Math.round(this.rtt) });
@@ -440,11 +539,15 @@
       try {
         if (this.fast) this.fast.close();
       } catch (e) {}
+      if (this.relayJ) this.relayJ.close(); // after the channels, so their goodbyes go out first
       try {
         if (this.peer) this.peer.destroy();
       } catch (e) {}
     }
   }
 
-  G.Net = { NetHost, NetClient, PREFIX, PROTO, peerAvailable, SIMNET };
+  // Can we go online at all? (PeerJS loaded, or at least the relay.)
+  const available = () => peerAvailable() || !!G.Relay;
+
+  G.Net = { NetHost, NetClient, PREFIX, PROTO, peerAvailable, available, SIMNET };
 })(window.G);

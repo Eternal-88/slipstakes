@@ -3,8 +3,15 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '4.0';
+  G.VERSION = '4.1';
   G.CHANGELOG = [
+    {
+      v: '4.1', name: 'School Wi-Fi', items: [
+        ['🛰', 'Backup relay', 'Joining now works when two devices can\'t link directly, such as two Chromebooks on a school Wi-Fi that keeps devices apart. After about 8 seconds without a direct link, the game falls back to a relay through public servers on normal web ports. A message tells you when you\'re on it; expect a little more lag than a direct link.'],
+        ['🌐', 'Rooms without matchmaking', 'If the matchmaking server is blocked, a room still opens on the relay, and joiners find it there.'],
+        ['💬', 'Clearer join errors', 'A failed join now says which route was blocked and what to try next.'],
+      ],
+    },
     {
       v: '4.0', name: 'Slipstream & Chaos', items: [
         ['🌬', 'Slipstream', 'Tuck in behind another car to cut your drag by up to 45%: close up, pull out, slingshot past. A SLIPSTREAM meter and wind streaks show when you\'re in the tow.'],
