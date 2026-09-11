@@ -34,6 +34,7 @@
         return;
       }
       this.world = new G.World(document.getElementById('c'));
+      this.world.onPad = (mine) => G.Audio && G.Audio.zap && G.Audio.zap(mine ? 1 : 0.35); // speed-pad zap
       this.hud = new G.HUD(document.getElementById('hud'));
       this.hud.show(false);
       G.UI.init();
@@ -256,9 +257,10 @@
     // --------------------------------------------------------------- drive
     // Quick race: a REAL race (laps, finish, results, play-money prize) —
     // not endless practice.
-    quickRace(trackId) {
+    async quickRace(trackId) {
       const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag');
       const pick = trackId || ids[Math.floor(Math.random() * ids.length)];
+      await this._offerQuickBet(pick);
       this.startDrive({ trackId: pick, bots: 5, quick: true });
     },
     quickAgain(nextTrack) {
@@ -266,9 +268,52 @@
       if (!d) return this.quickRace();
       const cur = this.sim.track.id;
       this._applyDriveWear();
-      if (!nextTrack) return this.startDrive(d.opts);
+      if (!nextTrack) return this.quickRace(cur);
       const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag' && id !== cur);
       this.quickRace(ids[Math.floor(Math.random() * ids.length)]);
+    },
+
+    // Quick-race bots: same car / parts per grid slot every race, so the
+    // bookie's odds (below) describe the field you actually get.
+    _botCar(k) {
+      const hard = G.Settings.s.botLevel === 'hard';
+      return G.Parts.CAR_ORDER[(k + 1) % (hard ? 6 : 4)];
+    },
+    _botParts(k) {
+      const L = G.Settings.s.botLevel === 'hard'
+        ? [{ compound: 'medium', suspension: 'sport', brakes: 'sport', nitrous: 'n1' }, { induction: 'sc', compound: 'medium' }, { aero: 'a2', weight: 'w1', compound: 'medium' }, { induction: 't1', cooling: 'radiator', nitrous: 'n1' }, { ecu: 'stage1', exhaust: 'sport', weight: 'w1' }]
+        : [{}, { compound: 'medium', suspension: 'sport' }, { induction: 'sc' }, { aero: 'a1', weight: 'w1', nitrous: 'n1' }, { brakes: 'sport', exhaust: 'sport' }];
+      return L[k % L.length];
+    },
+
+    // v4: back yourself before a quick race, at the bookie's odds for this
+    // field on this track (garage money; paid on top of the prize).
+    async _offerQuickBet(trackId) {
+      this._qbet = null;
+      const me = this.host && this.host.player('me');
+      if (!me || G.Game.role) return;
+      const E = G.Econ, track = G.getTrack(trackId);
+      const lvl = G.Settings.s.botLevel;
+      const skill = lvl === 'easy' ? 0.83 : lvl === 'hard' ? 0.975 : 0.91;
+      const field = [{ id: 'me', carId: me.carId, garage: me.garage, stats: { form: [] }, isBot: false }];
+      for (let k = 0; k < 5; k++) field.push({ id: 'b' + k, carId: this._botCar(k), garage: { installed: this._botParts(k), wear: {}, tune: {} }, stats: { form: [] }, isBot: true, botSkill: skill });
+      const o = E.computeOdds(field, track, U.hashStr(trackId + lvl + me.carId)).me;
+      const can = (s) => me.money - s >= E.FLOOR;
+      const btns = [{ label: 'Just race', value: 0, cls: 'ghost' }];
+      if (can(250)) btns.push({ label: `$250 on a podium · ${o.podium.toFixed(2)}x`, value: 1 });
+      if (can(500)) btns.push({ label: `$500 to win · ${o.win.toFixed(2)}x`, value: 2, cls: 'primary' });
+      const r = await G.UI.modal(
+        'Back yourself?',
+        `<p><b>${U.esc(track.name)}</b> <em class="fmt fmt-${track.format}">${track.format.toUpperCase()}</em>${track.def.isNew ? ' <em class="t-new">NEW</em>' : ''}</p><p class="muted small">${U.esc(track.blurb)}</p><p>The bookie rates your ${U.esc(G.Parts.CARS[me.carId].name)} against this field at <b>${o.win.toFixed(2)}x</b> to win and <b>${o.podium.toFixed(2)}x</b> for a podium. A winning bet is paid on top of your prize.</p>`,
+        btns
+      );
+      const v = r && r.value;
+      if (v === 1 || v === 2) {
+        const stake = v === 1 ? 250 : 500, type = v === 1 ? 'podium' : 'win';
+        me.money -= stake;
+        this.host.touch();
+        this._qbet = { stake, type, odds: type === 'win' ? o.win : o.podium };
+      }
     },
     _applyDriveWear() {
       const d = this.drive, me = this.sim && this.sim.byId.me;
@@ -284,12 +329,20 @@
       const prize = meRow.finished ? PRIZES[meRow.pos - 1] || 200 : 0;
       const fuel = Math.round(sim.byId.me.st.fuel);
       const me = this.host.player('me');
+      // settle a "back yourself" bet
+      let bet = null;
+      if (this._qbet) {
+        const b = this._qbet;
+        const won = meRow.finished && (b.type === 'win' ? meRow.pos === 1 : meRow.pos <= 3);
+        bet = Object.assign({}, b, { won, payout: won ? Math.round(b.stake * b.odds) : 0 });
+        this._qbet = null;
+      }
       if (me && !G.Game.role) {
-        me.money = Math.max(0, me.money + prize - fuel);
+        me.money = Math.max(0, me.money + prize - fuel + (bet ? bet.payout : 0));
         this.host.touch();
       }
       d.results = {
-        track: sim.track, pos: meRow.pos, finished: meRow.finished, total: res.length, prize, fuel, best: meRow.bestLap, pb: this.getPB(sim.track.id, sim.byId.me.carId),
+        track: sim.track, pos: meRow.pos, finished: meRow.finished, total: res.length, prize, fuel, bet, best: meRow.bestLap, pb: this.getPB(sim.track.id, sim.byId.me.carId),
         rows: res.map((r) => ({ id: r.id, pos: r.pos, name: sim.byId[r.id].name, carId: sim.byId[r.id].carId, color: sim.byId[r.id].color, ms: r.ms, finished: r.finished, best: r.bestLap })),
       };
       G.UI.show('qresults', d.results);
@@ -313,14 +366,13 @@
       const lvl = G.Settings.s.botLevel;
       const [lo, hi] = lvl === 'easy' ? [0.8, 0.86] : lvl === 'hard' ? [0.95, 1.0] : [0.87, 0.95];
       for (let k = 0; k < (opts.bots || 0); k++) {
-        const L = lvl === 'hard'
-          ? [{ compound: 'medium', suspension: 'sport', brakes: 'sport' }, { induction: 'sc', compound: 'medium' }, { aero: 'a2', weight: 'w1', compound: 'medium' }, { induction: 't1', cooling: 'radiator' }, { ecu: 'stage1', exhaust: 'sport', weight: 'w1' }]
-          : [{}, { compound: 'medium', suspension: 'sport' }, { induction: 'sc' }, { aero: 'a1', weight: 'w1' }, { brakes: 'sport', exhaust: 'sport' }];
-        ents.push({ id: 'bot' + k, name: G.BOT_NAMES[k], carId: G.Parts.CAR_ORDER[(k + 1) % 4], color: G.CarModel.PALETTE[(k + 1) % 8], parts: L[k % L.length], wear: {}, look: botLook('bot' + k + track.id), bot: { skill: lo + (hi - lo) * Math.random() } });
+        ents.push({ id: 'bot' + k, name: G.BOT_NAMES[k], carId: this._botCar(k), color: G.CarModel.PALETTE[(k + 1) % 8], parts: this._botParts(k), wear: {}, look: botLook('bot' + k + track.id), bot: { skill: lo + (hi - lo) * Math.random() } });
       }
       const quick = !!opts.quick;
       if (quick && ents.length > 3) ents.splice(3, 0, ents.shift()); // you start mid-pack
-      this.sim = new G.RaceSim(track, ents, { countdown: quick ? 3.5 : 2.5, practice: !quick });
+      // catch-up only in real (quick) races, at the player's chosen strength
+      const catchup = quick ? G.Settings.CATCHUP[G.Settings.s.catchup] || 0 : 0;
+      this.sim = new G.RaceSim(track, ents, { countdown: quick ? 3.5 : 2.5, practice: !quick, catchup });
       this.attract = null;
       this.world.setCars(ents);
       this.world.cam.snap = true;

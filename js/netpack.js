@@ -4,8 +4,8 @@
 //  FAST (every snapshot, 20 Hz, every car):
 //    [x, z, h, vx, vz, w, steer, ax, ay, rpm, gear, boost, heat, flags, slip, surf, raceDist]
 //    flags = spin(4 bits) | lock<<4 | overheat<<8 | backfire<<9 | ghost<<10 | wallHit<<11
-//            | braking<<12 | handbrake<<13 | throttle<<14
-//    slip  = 4 wheels × 3 bits (0..7)       surf = 4 wheels × 3 bits (surface code)
+//            | braking<<12 | handbrake<<13 | throttle<<14 | nitrous<<15 | speedPad<<16
+//    slip  = 4 wheels × 3 bits (0..7)       surf = 4 wheels × 4 bits (surface code; v4 has 11)
 //  SLOW (every 4th snapshot, 5 Hz):
 //    [lapCount, finished, dnf, finishMs, bestLap, lastLap, curMs, tyreWear, engineWear, body, wrong]
 //  FULL (only to the owning client, every snapshot): the complete physics core
@@ -19,11 +19,11 @@
 
   function packFast(c) {
     const s = c.st;
-    const flags = (s.spin & 15) | ((s.lock & 15) << 4) | (s.overheat ? 256 : 0) | (s.backfire > 0 ? 512 : 0) | (s.ghost > 0 ? 1024 : 0) | (s.wallHit > 800 ? 2048 : 0) | (s.brk > 0.3 ? 4096 : 0) | (s.hb ? 8192 : 0) | (s.thr > 0.3 ? 16384 : 0);
+    const flags = (s.spin & 15) | ((s.lock & 15) << 4) | (s.overheat ? 256 : 0) | (s.backfire > 0 ? 512 : 0) | (s.ghost > 0 ? 1024 : 0) | (s.wallHit > 800 ? 2048 : 0) | (s.brk > 0.3 ? 4096 : 0) | (s.hb ? 8192 : 0) | (s.thr > 0.3 ? 16384 : 0) | (s.nosOn ? 32768 : 0) | (s.padT > 0.6 ? 65536 : 0);
     let slip = 0, surf = 0;
     for (let i = 0; i < 4; i++) {
       slip |= Math.min(7, Math.round(s.slip[i] * 7)) << (i * 3);
-      surf |= (s.surf[i] & 7) << (i * 3);
+      surf |= (s.surf[i] & 15) << (i * 4);
     }
     return [r(s.x, 100), r(s.z, 100), r(s.h, 1000), r(s.vx, 100), r(s.vz, 100), r(s.w, 1000), r(s.steer, 1000), r(s.ax, 10), r(s.ay, 10), r(s.rpm, 100), s.gear, r(s.boost, 100), r(s.heat, 100), flags, slip, surf, r(c.raceDist, 10)];
   }
@@ -35,9 +35,10 @@
     const f = a[13];
     o.spin = f & 15; o.lock = (f >> 4) & 15; o.overheat = f & 256 ? 1 : 0; o.backfire = f & 512 ? 0.1 : 0; o.ghost = f & 1024 ? 1 : 0; o.wallHit = f & 2048 ? 1000 : 0;
     o.brk = f & 4096 ? 1 : 0; o.hb = f & 8192 ? 1 : 0; o.thr = f & 16384 ? 1 : 0; // brake lights / exhaust for remote cars
+    o.nosOn = f & 32768 ? 1 : 0; o.pad = f & 65536 ? 1 : 0; // nitrous flame, speed-pad flash
     for (let i = 0; i < 4; i++) {
       o.slip[i] = ((a[14] >> (i * 3)) & 7) / 7;
-      o.surf[i] = (a[15] >> (i * 3)) & 7;
+      o.surf[i] = (a[15] >> (i * 4)) & 15;
     }
     o.raceDist = a[16];
     return o;

@@ -32,7 +32,7 @@
       this.state = {
         v: 1, code: opts.code || null, createdAt: Date.now(), hostId: opts.hostId || null,
         phase: opts.sandbox ? 'sandbox' : 'lobby', phaseEnds: 0,
-        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox },
+        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 'mild' },
         raceNo: 0, schedule: [], players: {}, order: [], chat: [], race: null, results: null,
         bets: [], sideBets: [], odds: {}, casino: null, final: null, seq: 0, nextId: 1,
       };
@@ -216,6 +216,7 @@
       const s = this.state.settings;
       if (m.races != null && isFinite(+m.races)) s.races = U.clamp(Math.round(+m.races), 1, 30);
       if (m.bots != null) s.bots = U.clamp(Math.round(+m.bots), 0, 7);
+      if (m.catchup != null && G.Settings.CATCHUP[m.catchup] != null) s.catchup = m.catchup;
       this.syncBots();
       this.touch();
     }
@@ -327,6 +328,8 @@
       }
       st.race = {
         no: st.raceNo + 1, trackId, startedAt: Date.now(),
+        // catch-up strength travels with the race so the host's sim uses it
+        catchup: G.Settings.CATCHUP[st.settings.catchup || 'mild'] || 0,
         entrants: racers.map((p) => ({
           id: p.id, name: p.name, carId: p.carId, color: p.color,
           parts: Object.assign({}, p.garage.installed), wear: Object.assign({}, p.garage.wear),
@@ -506,20 +509,29 @@
 
     // Free before the first race (and in single-player). Between races it's a
     // paid chassis swap: all owned parts, setup and paint move to the new car.
+    // v4 premium cars (price > 0) are bought once per session on top of that.
     on_setCar(p, m) {
       const ph = this.state.phase;
-      if (!Parts.CARS[m.carId] || m.carId === p.carId) return;
+      const car = Parts.CARS[m.carId];
+      if (!car || m.carId === p.carId) return;
       const free = ['lobby', 'carselect', 'sandbox'].includes(ph);
       if (!free && !['intermission', 'results'].includes(ph)) return this.toast(p.id, 'You can only change car between races.', 'bad');
-      const fee = free ? 0 : Parts.CAR_SWAP;
-      if (p.money < fee) return this.toast(p.id, `A chassis swap costs ${U.fmtMoney(fee)}.`, 'bad');
+      Parts.fixGarage(p.garage);
+      const owned = p.garage.cars.includes(m.carId);
+      const buy = owned ? 0 : car.price || 0;
+      const fee = buy + (free ? 0 : Parts.CAR_SWAP);
+      if (p.money < fee) return this.toast(p.id, `${buy ? 'The ' + car.name + ' costs' : 'A chassis swap costs'} ${U.fmtMoney(fee)}.`, 'bad');
       p.money -= fee;
       p.stats.spent += fee;
+      if (buy) p.garage.cars.push(m.carId);
       p.carId = m.carId;
       p.garage.carId = m.carId;
-      if (fee) {
-        this.toast(p.id, `Swapped to the ${Parts.CARS[m.carId].name} (${U.fmtMoney(fee)}). Your parts came with you.`, 'good');
-        this.sys(`${p.name} swapped to a ${Parts.CARS[m.carId].name}.`);
+      if (buy) {
+        this.toast(p.id, `Bought the ${car.name} (${U.fmtMoney(fee)}). It's yours for the session.`, 'good');
+        this.sys(`${p.name} bought a ${car.name}!`);
+      } else if (fee) {
+        this.toast(p.id, `Swapped to the ${car.name} (${U.fmtMoney(fee)}). Your parts came with you.`, 'good');
+        this.sys(`${p.name} swapped to a ${car.name}.`);
       }
       this.touch();
     }

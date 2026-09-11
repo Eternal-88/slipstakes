@@ -16,11 +16,18 @@
     puff: { life: 0.8, size0: 0.45, size1: 1.8, col: [0.5, 0.5, 0.53], a: 0.3, rise: 0.7, drag: 2.2, grav: 0 },
     debris: { life: 1.5, size0: 0.3, size1: 0.24, col: [0.4, 0.4, 0.4], a: 1.0, rise: 3.5, drag: 0.4, grav: 15, solid: 1 },
     confetti: { life: 2.4, size0: 0.55, size1: 0.45, col: [1, 1, 1], a: 1.0, rise: 7, drag: 0.9, grav: 6, solid: 1 },
+    // v4 hazard surfaces
+    oil: { life: 0.8, size0: 0.6, size1: 1.8, col: [0.06, 0.06, 0.07], a: 0.55, rise: 0.6, drag: 2.4, grav: 3 },
+    mud: { life: 1.2, size0: 0.8, size1: 2.8, col: [0.36, 0.25, 0.14], a: 0.7, rise: 0.8, drag: 1.6, grav: 4 },
+    snow: { life: 0.9, size0: 0.6, size1: 2.4, col: [0.94, 0.97, 1.0], a: 0.5, rise: 1.0, drag: 2.0, grav: 1 },
     // additive
     spark: { life: 0.5, size0: 0.5, size1: 0.1, col: [1.0, 0.75, 0.3], a: 1.0, rise: 3, drag: 0.6, grav: 12, add: 1 },
     flame: { life: 0.2, size0: 1.0, size1: 0.3, col: [1.0, 0.5, 0.12], a: 0.95, rise: 0.2, drag: 3.0, grav: 0, add: 1 },
     glow: { life: 0.045, size0: 1.3, size1: 1.3, col: [1, 0.1, 0.05], a: 0.55, rise: 0, drag: 0, grav: 0, add: 1, flat: 1 },
     firework: { life: 1.3, size0: 1.0, size1: 0.2, col: [1, 1, 1], a: 1.0, rise: 0, drag: 1.1, grav: 4, add: 1 },
+    // v4: nitrous exhaust flame, slipstream wind streaks
+    nos: { life: 0.16, size0: 1.1, size1: 0.4, col: [0.35, 0.6, 1.0], a: 0.95, rise: 0.1, drag: 3.2, grav: 0, add: 1 },
+    streak: { life: 0.3, size0: 0.28, size1: 0.12, col: [0.85, 0.92, 1.0], a: 0.35, rise: 0, drag: 0, grav: 0, add: 1 },
   };
 
   class Particles {
@@ -34,6 +41,8 @@
       this.vel = new Float32Array(MAX * 3);
       this.age = new Float32Array(MAX);
       this.sm = new Float32Array(MAX);
+      this.flo = new Float32Array(MAX); // per-particle ground height (v4: roads have elevation)
+      this.floorY = 0.05;
       this.type = new Array(MAX);
       this.head = 0;
       this.live = 0;
@@ -91,6 +100,7 @@
       this.vel[i * 3] = vx; this.vel[i * 3 + 1] = vy + T.rise; this.vel[i * 3 + 2] = vz;
       this.age[i] = 0;
       this.type[i] = T;
+      this.flo[i] = this.floorY;
       this.sm[i] = sizeMul || 1;
       this.size[i] = T.size0 * this.sm[i];
       const c = rgb || T.col;
@@ -129,7 +139,7 @@
           this.vel[i * 3] *= d; this.vel[i * 3 + 2] *= d;
           this.vel[i * 3 + 1] = this.vel[i * 3 + 1] * d - T.grav * dt;
           this.pos[i * 3] += this.vel[i * 3] * dt;
-          this.pos[i * 3 + 1] = Math.max(0.05, this.pos[i * 3 + 1] + this.vel[i * 3 + 1] * dt);
+          this.pos[i * 3 + 1] = Math.max(this.flo[i], this.pos[i * 3 + 1] + this.vel[i * 3 + 1] * dt);
           this.pos[i * 3 + 2] += this.vel[i * 3 + 2] * dt;
           this.size[i] = U.lerp(T.size0, T.size1, Math.sqrt(k)) * this.sm[i];
           this.alpha[i] = T.a * (1 - k) * (k < 0.08 ? k * 12.5 : 1);
@@ -168,6 +178,11 @@
     }
     get budget() {
       return this._budget;
+    }
+    // Ground height for particles emitted from now on (they settle on it).
+    set floorY(y) {
+      this.norm.floorY = y;
+      this.add.floorY = y;
     }
     set budget(v) {
       this._budget = v;

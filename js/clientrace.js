@@ -74,7 +74,7 @@
         this.hist = [];
         this.seq = 0;
         this.blockT = TPI; // forces a new block on the first tick
-        this.cur = { s: 0, t: 0, b: 0, hb: 0 };
+        this.cur = { s: 0, t: 0, b: 0, hb: 0, n: 0 };
         this.acc = 0;
         this.px = g.x; this.pz = g.z; this.ph = g.h;
         this.vis = { x: 0, z: 0, h: 0 };
@@ -161,7 +161,7 @@
       while (this.acc >= P.DT && n < 12) {
         if (this.blockT >= TPI) {
           this.seq++;
-          this.cur = { s: input.s, t: input.t, b: input.b, hb: input.hb };
+          this.cur = { s: input.s, t: input.t, b: input.b, hb: input.hb, n: input.n ? 1 : 0 };
           this.hist.push({ seq: this.seq, inp: this.cur });
           if (this.hist.length > 120) this.hist.shift(); // 4 s cap
           // Redundancy: each packet also carries the previous two blocks, so a
@@ -171,9 +171,9 @@
           const red = [];
           for (let k = this.hist.length - 2; k >= 0 && k >= this.hist.length - 3; k--) {
             const h = this.hist[k];
-            red.push([h.seq, h.inp.s, h.inp.t, h.inp.b, h.inp.hb]);
+            red.push([h.seq, h.inp.s, h.inp.t, h.inp.b, h.inp.hb, h.inp.n]);
           }
-          this.net.sendFast({ t: 'i', q: this.seq, s: this.cur.s, th: this.cur.t, b: this.cur.b, hb: this.cur.hb, rs: input.rs ? 1 : 0, p: red });
+          this.net.sendFast({ t: 'i', q: this.seq, s: this.cur.s, th: this.cur.t, b: this.cur.b, hb: this.cur.hb, n: this.cur.n, rs: input.rs ? 1 : 0, p: red });
           input.rs = 0;
           this.blockT = 0;
         }
@@ -265,7 +265,7 @@
         me = {
           id: this.meId, pos: order.findIndex((o) => o.i === this.meIdx) + 1, lapCount: s.lapCount,
           curMs: s.finished ? s.finishMs : s.curMs + since, lastLap: s.lastLap, bestLap: s.bestLap,
-          rs: cars[this.meIdx].rs, hasBoost: this.spec.boostKind !== 'none', coldBrakes: (this.spec.bCold || 1) < 0.9, wrong: s.wrong, finished: s.finished,
+          rs: cars[this.meIdx].rs, hasBoost: this.spec.boostKind !== 'none', hasNos: !!this.spec.nosGain, coldBrakes: (this.spec.bCold || 1) < 0.9, wrong: s.wrong, finished: s.finished,
           carId: this.entrants[this.meIdx].carId, parts: this.entrants[this.meIdx].parts,
         };
       }

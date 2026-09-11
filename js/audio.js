@@ -37,8 +37,38 @@
     brick: { cyl: 4, cut: 1.15, rasp: 7.5, lope: 0.3, lopeDiv: 2, sub: 0.35, h2: 0.3 },
     sting: { cyl: 4, cut: 1.7, rasp: 4.5, lope: 0.0, lopeDiv: 4, sub: 0.16, h2: 0.8 },
     mule: { cyl: 8, cut: 0.68, rasp: 2.4, lope: 0.62, lopeDiv: 4, sub: 1.15, h2: 0.18 },
+    // v4: truck = low, gruff, lumpy V6; Apex = high, clean flat-six shriek
+    dune: { cyl: 6, cut: 0.72, rasp: 3.4, lope: 0.24, lopeDiv: 3, sub: 0.95, h2: 0.22 },
+    apex: { cyl: 6, cut: 2.0, rasp: 3.6, lope: 0.02, lopeDiv: 4, sub: 0.18, h2: 0.95 },
   };
   const vol = (v) => Math.pow(U.clamp(v, 0, 100) / 100, 1.6);
+
+  // v4: how performance mods colour the sound. One place, used by your own
+  // engine AND other cars' voices, so a friend's straight-piped Mule sounds
+  // like one as it passes.
+  //   exhaust : stock is muffled and smooth; sport is throatier with a
+  //             resonant drone; a straight pipe is raw, loud and burbly
+  //   ecu     : remaps harden the note; Stage 2 pops on lift
+  //   weight  : stripped cars lose their sound deadening (engine + road louder)
+  //   gearing : a sequential box has straight-cut gear whine
+  //   aero    : wings roar in the wind; brakes: race pads squeal near a stop
+  function modSound(parts) {
+    const p = Object.assign({}, G.Parts.STOCK, parts || {});
+    const ex = { stock: { loud: 1, rasp: 0.8, q: 1.2, cut: 0.85, drone: 0, sub: 1, lope: 1 }, sport: { loud: 1.15, rasp: 1.25, q: 2.2, cut: 1, drone: 0.35, sub: 1.1, lope: 1.1 }, straight: { loud: 1.4, rasp: 1.8, q: 3.2, cut: 1.15, drone: 0.2, sub: 1.3, lope: 1.35 } }[p.exhaust] || { loud: 1, rasp: 1, q: 1.6, cut: 1, drone: 0, sub: 1, lope: 1 };
+    const ecu = p.ecu === 'stage2' ? 1.18 : p.ecu === 'stage1' ? 1.08 : 1;
+    const strip = { w1: 1.08, w2: 1.15, w3: 1.22 }[p.weight] || 1;
+    return {
+      loud: ex.loud * strip, rasp: ex.rasp * ecu, q: ex.q, cut: ex.cut, drone: ex.drone, sub: ex.sub, lope: ex.lope,
+      road: { w1: 1.3, w2: 1.6, w3: 2 }[p.weight] || 1,
+      pops: Math.max(G.Parts.opt('exhaust', p.exhaust).pops || 0, p.ecu === 'stage2' ? 0.5 : 0),
+      limHard: p.ecu === 'stage2', // harsher limiter bounce
+      whine: p.gearing === 'seq' ? 0.014 : p.gearing === 'short' ? 0.006 : 0,
+      wind: p.aero === 'a3' ? 1.7 : p.aero === 'a2' ? 1.35 : 1,
+      squeal: p.brakes === 'carbon' ? 0.05 : p.brakes === 'sport' ? 0.03 : 0,
+      screech: p.compound === 'soft' ? 120 : p.compound === 'medium' ? 50 : 0,
+      kerb: p.suspension === 'race' ? 1.45 : p.suspension === 'rally' ? 0.7 : 1,
+    };
+  }
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
   function shaperCurve(k) {
@@ -193,14 +223,23 @@
       e.hf = this._filt('highpass', 2600, 0.8);
       e.hg = this._gain(0);
       e.hs.connect(e.hf).connect(e.hg).connect(E);
-      for (const o of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs]) o.start();
+      // v4 mods: exhaust drone (resonant band on the raw mix) and straight-cut
+      // gear whine (sequential box)
+      e.dr = this._filt('bandpass', 120, 6);
+      e.drg = this._gain(0);
+      e.mix.connect(e.dr).connect(e.drg).connect(E);
+      e.gw = this._osc('triangle', 400);
+      e.gwg = this._gain(0);
+      e.gw.connect(e.gwg).connect(E);
+      e.exKey = null;
+      for (const o of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs, e.gw]) o.start();
       this.eng = e;
       this._startEnv();
     },
     _stopEngine() {
       const e = this.eng;
       if (e) {
-        for (const n of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs]) {
+        for (const n of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs, e.gw]) {
           try {
             n.stop();
           } catch (x) {}
@@ -238,6 +277,9 @@
       v.wind = chain('bandpass', 520, 0.45);
       v.kerb = chain('lowpass', 170, 1);
       v.scrape = chain('bandpass', 2700, 3);
+      v.nos = chain('bandpass', 4600, 0.7); // v4 nitrous hiss
+      v.buffet = chain('lowpass', 150, 1.2); // v4 slipstream buffeting
+      v.squeal = chain('bandpass', 3300, 18); // v4 race-pad brake squeal
       // kerb rumble: square LFO gating the low thump
       v.kl = this._osc('square', 12);
       v.klg = this._gain(0);
@@ -313,6 +355,8 @@
     // ------------------------------------------------------- per frame
     // Own car. rs = render state; meta = {carId, parts, vol}. rs null = silence.
     update(rs, dt, meta) {
+      // a garage rev demo owns the engine voice until it ends
+      if (this._demoUntil && performance.now() < this._demoUntil && !(meta && meta.demo)) return;
       if (!rs || !this.ok()) {
         if (this.eng && this.ctx) {
           const t = this.ctx.currentTime;
@@ -322,7 +366,9 @@
           this.eng.swg.gain.setTargetAtTime(0, t, 0.08);
           this.eng.sw2g.gain.setTargetAtTime(0, t, 0.08);
           this.eng.hg.gain.setTargetAtTime(0, t, 0.08);
-          if (this.env) for (const k of ['scr1', 'scr2', 'road', 'loose', 'grass', 'wet', 'wind', 'kerb', 'scrape']) this.env[k].g.gain.setTargetAtTime(0, t, 0.06);
+          this.eng.drg.gain.setTargetAtTime(0, t, 0.08);
+          this.eng.gwg.gain.setTargetAtTime(0, t, 0.08);
+          if (this.env) for (const k of ['scr1', 'scr2', 'road', 'loose', 'grass', 'wet', 'wind', 'kerb', 'scrape', 'nos', 'buffet', 'squeal']) this.env[k].g.gain.setTargetAtTime(0, t, 0.06);
           this.env && this.env.klg.gain.setTargetAtTime(0, t, 0.06);
         }
         return;
@@ -334,22 +380,43 @@
       if (!this.eng) this._startEngine(prof);
       const e = this.eng, t = this.ctx.currentTime;
       const parts = Object.assign({}, G.Parts.STOCK, meta.parts || {});
+      const ms = modSound(parts);
+      this._ms = ms;
       const master = meta.vol == null ? 1 : meta.vol;
       const rpm = U.clamp(rs.rpm || 0.14, 0.1, 1.05);
       const thr = rs.thr != null ? U.clamp(rs.thr, 0, 1) : 0.5;
       const speed = Math.hypot(rs.vx || 0, rs.vz || 0);
+      // exhaust / ECU character: distortion amount (shaper curve, rebuilt only
+      // when the parts change), filter resonance, sub and lope
+      const exKey = prof.rasp * ms.rasp;
+      if (e.exKey !== exKey) {
+        e.exKey = exKey;
+        e.sh.curve = shaperCurve(exKey);
+      }
+      e.f.Q.setTargetAtTime(ms.q, t, 0.1);
+      e.g2.gain.setTargetAtTime(prof.sub * 0.5 * ms.sub, t, 0.1);
       // firing frequency: rpm/60 * cylinders/2
       const f0 = ((rpm * car.redline) / 60) * (prof.cyl / 2);
       e.o1.frequency.setTargetAtTime(f0, t, 0.025);
       e.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.025);
       e.o3.frequency.setTargetAtTime(f0 * 2, t, 0.025);
       e.lfo.frequency.setTargetAtTime(f0 / (prof.lopeDiv || 4), t, 0.05);
-      const loud = parts.exhaust === 'straight' ? 1.35 : parts.exhaust === 'sport' ? 1.15 : 1;
-      e.f.frequency.setTargetAtTime((350 + rpm * 2300 * prof.cut + thr * 1300) * (0.8 + 0.2 * loud), t, 0.04);
-      let g = (0.04 + thr * 0.075) * loud * master;
-      // rev limiter: fuel-cut stutter
+      const loud = ms.loud;
+      e.f.frequency.setTargetAtTime((350 + rpm * 2300 * prof.cut + thr * 1300) * ms.cut, t, 0.04);
+      let g = (0.04 + thr * 0.075) * loud * master * (rs.nosOn ? 1.25 : 1);
+      // exhaust drone: a resonant band that follows the firing frequency,
+      // strongest at part throttle / cruise (that's when a sport exhaust booms)
+      e.dr.frequency.setTargetAtTime(f0 * 1.02, t, 0.05);
+      e.drg.gain.setTargetAtTime(ms.drone * (0.4 + 0.6 * (1 - Math.abs(thr - 0.5) * 2)) * 0.09 * master, t, 0.08);
+      // straight-cut gears: whine rising with road speed
+      e.gw.frequency.setTargetAtTime(180 + speed * 26, t, 0.05);
+      e.gwg.gain.setTargetAtTime(ms.whine * Math.min(1, speed / 12) * (0.4 + 0.6 * thr) * master, t, 0.06);
+      // nitrous: a sharp "pssht" as it opens
+      if (rs.nosOn && !this._nos) this.noiseHit(0.35, 2500, 0.14 * master, 'highpass', 'sfx', 0, 5000);
+      this._nos = !!rs.nosOn;
+      // rev limiter: fuel-cut stutter (a race map bounces off it harder)
       this._limT += dt;
-      if (rpm > 0.985 && thr > 0.5 && rs.gear > 0) g *= Math.sin(this._limT * 95) > 0 ? 1 : 0.25;
+      if (rpm > 0.985 && thr > 0.5 && rs.gear > 0) g *= Math.sin(this._limT * 95) > 0 ? 1 : ms.limHard ? 0.08 : 0.25;
       // shift: brief dip + click; boost dump on a turbo = blow-off
       if (rs.gear !== this._lastGear) {
         if (rs.gear > this._lastGear && this._lastGear > 0) {
@@ -361,7 +428,7 @@
         this._lastGear = rs.gear;
       }
       e.amp.gain.setTargetAtTime(g, t, 0.03);
-      e.lfoG.gain.setTargetAtTime(g * prof.lope, t, 0.05);
+      e.lfoG.gain.setTargetAtTime(g * prof.lope * ms.lope, t, 0.05);
       // Forced induction — deliberately different characters:
       //  supercharger: whine LOCKED to engine speed (it's belt-driven), there
       //                the instant you touch the throttle, no blow-off
@@ -383,7 +450,7 @@
       if (kind === 'turbo' && this._lastBoost > 0.45 && b < 0.25) big ? this.flutter(master) : this.blowoff(master);
       this._lastBoost = b;
       // overrun crackle (free-flowing exhausts), backfire pops on shifts
-      const pops = G.Parts.opt('exhaust', parts.exhaust).pops || 0;
+      const pops = ms.pops;
       if (this._lastThr > 0.6 && thr < 0.15 && rpm > 0.5 && pops > 0) this.crackle(pops, master);
       if (rs.backfire > 0 && !this._bf) this.pop(master);
       this._bf = rs.backfire > 0;
@@ -394,6 +461,7 @@
     _env(rs, speed, master, t) {
       const v = this.env;
       if (!v) return;
+      const ms = this._ms || modSound(null);
       let screech = 0, loose = 0, grass = 0, wet = 0, kerb = 0, road = 0;
       for (let i = 0; i < 4; i++) {
         const sf = G.SURF[(rs.surf && rs.surf[i]) || 0];
@@ -405,21 +473,29 @@
         }
         if (sf.loose && sf.id !== 'grass') loose += 0.25 * (0.5 + sl);
         if (sf.id === 'grass') grass += 0.25 * (0.6 + sl);
-        if (sf.wet) wet += 0.25;
+        if (sf.wet || sf.icy) wet += 0.25;
         if (sf.id === 'kerb') kerb += 0.25;
+        if (sf.id === 'oil') screech = Math.max(screech, sl * 0.6);
       }
       const sp = Math.min(speed / 40, 1.3);
       const sc = Math.max(0, screech - 0.25) * 0.16 * master;
       v.scr1.g.gain.setTargetAtTime(sc, t, 0.03);
       v.scr2.g.gain.setTargetAtTime(sc * 0.6, t, 0.03);
-      v.scr1.f.frequency.setTargetAtTime(850 + screech * 400 + Math.sin(this._limT * 13) * 60, t, 0.05);
-      v.road.g.gain.setTargetAtTime(road * sp * 0.05 * master, t, 0.08);
+      v.scr1.f.frequency.setTargetAtTime(850 + ms.screech + screech * 400 + Math.sin(this._limT * 13) * 60, t, 0.05);
+      v.road.g.gain.setTargetAtTime(road * sp * 0.05 * master * ms.road, t, 0.08);
+      // race pads / carbon squeal as the car rolls to a stop under braking
+      const sq = (rs.brk || 0) > 0.3 && speed > 1.5 && speed < 13 ? ms.squeal * (1 - speed / 13) * master : 0;
+      v.squeal.g.gain.setTargetAtTime(sq, t, 0.05);
       v.loose.g.gain.setTargetAtTime(loose * sp * 0.22 * master, t, 0.05);
       v.grass.g.gain.setTargetAtTime(grass * sp * 0.08 * master, t, 0.05);
       v.wet.g.gain.setTargetAtTime(wet * sp * 0.09 * master, t, 0.06);
-      v.wind.g.gain.setTargetAtTime(sp * sp * 0.05 * master, t, 0.15);
+      // in a slipstream the wind noise drops and the air buffets instead
+      const dr = rs.draft || 0;
+      v.wind.g.gain.setTargetAtTime(sp * sp * 0.05 * master * (1 - 0.65 * dr) * ms.wind, t, 0.15);
+      v.buffet.g.gain.setTargetAtTime(dr * sp * 0.16 * master * (0.8 + 0.2 * Math.sin(this._limT * 17)), t, 0.06);
+      v.nos.g.gain.setTargetAtTime(rs.nosOn ? 0.075 * master : 0, t, 0.04);
       v.kl.frequency.setTargetAtTime(Math.max(4, speed / 1.9), t, 0.05);
-      const kg = kerb > 0 && speed > 4 ? 0.22 * Math.min(1, speed / 20) * master : 0;
+      const kg = kerb > 0 && speed > 4 ? 0.22 * Math.min(1, speed / 20) * master * ms.kerb : 0;
       v.kerb.g.gain.setTargetAtTime(kg * 0.5, t, 0.03);
       v.klg.gain.setTargetAtTime(kg * 0.5, t, 0.03);
       const scr = rs.wallHit > 0 && speed > 3 ? Math.min(0.2, speed / 120) * master : 0;
@@ -495,10 +571,17 @@
         v.o1.frequency.setTargetAtTime(f0, t, 0.04);
         v.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.04);
         v.o3.frequency.setTargetAtTime(f0 * 2, t, 0.04);
-        v.f.frequency.setTargetAtTime((320 + rpm * 1900 * prof.cut) * (0.8 + 0.2 * dop), t, 0.05);
+        // their mods colour their note too (exhaust / ECU / stripped shell)
+        const oms = modSound(o.c.parts);
+        v.f.frequency.setTargetAtTime((320 + rpm * 1900 * prof.cut) * (0.8 + 0.2 * dop) * oms.cut, t, 0.05);
+        v.f.Q.setTargetAtTime(1.4 * (oms.q / 1.6), t, 0.1);
+        v.m3.gain.setTargetAtTime(0.3 * oms.rasp, t, 0.1);
         const thr = rs.thr ? U.clamp(rs.thr, 0.5, 1) : 0.45;
         const fall = 1 / (1 + d / 11);
-        v.g.gain.setTargetAtTime((0.035 + 0.06 * thr) * fall, t, 0.06);
+        v.g.gain.setTargetAtTime((0.035 + 0.06 * thr) * fall * oms.loud, t, 0.06);
+        // straight pipes / race maps crackle as they lift past you
+        if (oms.pops > 0.4 && v.lt > 0.5 && !rs.thr && fall > 0.2 && Math.random() < 0.5) this.crackle(oms.pops * 0.6, fall * 0.7);
+        v.lt = rs.thr ? 1 : 0;
         let slip = 0;
         if (rs.slip) for (let i = 0; i < 4; i++) {
           const sf = G.SURF[(rs.surf && rs.surf[i]) || 0];
@@ -615,6 +698,53 @@
         const w = 0.04 + Math.random() * 0.45;
         setTimeout(() => this.pop(0.35 + Math.random() * 0.5 * (m || 1)), w * 1000);
       }
+    },
+    // v4 garage "Listen": rev the engine with a given build for ~2.4 s —
+    // idle blip, a pull to the limiter, then lift (so pops, blow-off and the
+    // exhaust's character are all heard). Uses the real engine voice.
+    revDemo(carId, parts) {
+      if (!this.ok()) return false;
+      clearInterval(this._demoT);
+      if (!this.env) this._startEnv();
+      const t0 = performance.now();
+      let last = t0;
+      const rs = { rpm: 0.14, thr: 0, gear: 1, vx: 0, vz: 0, boost: 0, surf: [0, 0, 0, 0], slip: [0, 0, 0, 0] };
+      const spec = G.Parts.computeSpec(carId, parts, {}, {});
+      this._demoUntil = t0 + 2700;
+      this._demoT = setInterval(() => {
+        const now = performance.now(), dt = (now - last) / 1000, s = (now - t0) / 1000;
+        last = now;
+        if (s > 2.6) {
+          clearInterval(this._demoT);
+          this.update(null, dt, { demo: true });
+          this._demoUntil = 0;
+          return;
+        }
+        const thr = s < 0.35 ? 1 : s < 0.7 ? 0 : s < 1.9 ? 1 : 0;
+        const tgt = thr ? (s < 0.35 ? 0.55 : Math.min(1, 0.3 + (s - 0.7) * 0.75)) : 0.16;
+        rs.rpm += (tgt - rs.rpm) * Math.min(1, dt * (thr ? 3.2 : 2.2));
+        rs.thr = thr;
+        const bt = thr * G.Parts.boostAvail(spec, rs.rpm);
+        rs.boost += (bt - rs.boost) * Math.min(1, dt / (bt > rs.boost ? spec.boostLag : 0.12));
+        this.update(rs, dt, { carId, parts, demo: true });
+      }, 30);
+      return true;
+    },
+    // v4 speed pad: a rising electric zap
+    zap(m) {
+      if (!this.ok()) return;
+      const c = this.ctx, t = c.currentTime, k = m || 1;
+      const o = c.createOscillator(), g = c.createGain();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(300, t);
+      o.frequency.exponentialRampToValueAtTime(1900, t + 0.22);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.1 * k, t + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+      o.connect(g).connect(this.bus.sfx);
+      o.start(t);
+      o.stop(t + 0.32);
+      this.noiseHit(0.25, 3000, 0.08 * k, 'highpass', 'sfx', 0, 6000);
     },
     blowoff(m, bus) {
       this.noiseHit(0.38, 5200, 0.16 * (m || 1), 'highpass', bus || 'sfx', 0, 1400);

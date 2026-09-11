@@ -20,6 +20,13 @@
     { id: 'grass', name: 'Grass', grip: 0.6, rr: 0.07, rough: 0.3, wet: 0, loose: 1, fx: 'grass' },
     { id: 'sand', name: 'Sand', grip: 0.56, rr: 0.11, rough: 0.4, wet: 0, loose: 1, fx: 'dust' },
     { id: 'concrete', name: 'Concrete', grip: 0.86, rr: 0.015, rough: 0.1, wet: 0, loose: 0, fx: 'smoke' },
+    // Hazard patches (v4): laid on the road by a track's `hazards` list.
+    // Oil: almost no grip for a moment — lift and keep it straight.
+    { id: 'oil', name: 'Oil', grip: 0.34, rr: 0.012, rough: 0.0, wet: 0, loose: 0, fx: 'oil' },
+    // Mud: slow and draggy, rally tyres and trucks cope best.
+    { id: 'mud', name: 'Mud', grip: 0.55, rr: 0.15, rough: 0.5, wet: 0, loose: 1, fx: 'mud' },
+    // Ice: glassy. Narrow tyres help (uses the WET multiplier), wide ones hurt.
+    { id: 'ice', name: 'Ice', grip: 0.44, rr: 0.01, rough: 0.0, wet: 0, icy: 1, loose: 0, fx: 'ice' },
   ];
   const SI = {};
   SURF.forEach((s, i) => {
@@ -31,12 +38,12 @@
 
   // Replace polygon corners that carry a radius with circular arcs.
   function expandCorners(def, closed) {
-    let cur = { w: 7, s: 'tarmac', kerb: 0, bank: 0 };
+    let cur = { w: 7, s: 'tarmac', kerb: 0, bank: 0, y: 0 };
     const V = def.pts.map((p) => {
       const a = p[2] || {};
       const { r, ...rest } = a;
       cur = Object.assign({}, cur, rest);
-      return { x: p[0], z: p[1], r: r || 0, w: cur.w, s: cur.s, kerb: cur.kerb, bank: cur.bank };
+      return { x: p[0], z: p[1], r: r || 0, w: cur.w, s: cur.s, kerb: cur.kerb, bank: cur.bank, y: cur.y };
     });
     const n = V.length;
     const out = [];
@@ -78,7 +85,7 @@
       const K = Math.max(2, Math.ceil(theta / (12 * Math.PI / 180)));
       for (let k = 0; k <= K; k++) {
         const a = a0 + (da * k) / K;
-        out.push({ x: Cx + Math.cos(a) * r, z: Cz + Math.sin(a) * r, w: v.w, s: v.s, kerb: v.kerb, bank: v.bank });
+        out.push({ x: Cx + Math.cos(a) * r, z: Cz + Math.sin(a) * r, w: v.w, s: v.s, kerb: v.kerb, bank: v.bank, y: v.y });
       }
     }
     return out;
@@ -134,7 +141,7 @@
           const t = k / m;
           const q = crPoint(p0, p1, p2, p3, t);
           const a = P[i], b = P[(i + 1) % n];
-          dense.push({ x: q.x, z: q.z, w: U.lerp(a.w, b.w, t), bank: U.lerp(a.bank, b.bank, t), s: a.s, kerb: a.kerb });
+          dense.push({ x: q.x, z: q.z, w: U.lerp(a.w, b.w, t), bank: U.lerp(a.bank, b.bank, t), y: U.lerp(a.y, b.y, t), s: a.s, kerb: a.kerb });
         }
       }
       if (!this.closed) dense.push(Object.assign({}, P[n - 1]));
@@ -148,7 +155,7 @@
       this.N = N;
       this.sp = sp;
       this.length = this.closed ? total : (N - 1) * sp;
-      const X = new Float32Array(N), Z = new Float32Array(N), W = new Float32Array(N), BKm = new Float32Array(N);
+      const X = new Float32Array(N), Z = new Float32Array(N), W = new Float32Array(N), BKm = new Float32Array(N), Yr = new Float32Array(N);
       const S = new Uint8Array(N), KA = new Uint8Array(N);
       let j = 0;
       for (let i = 0; i < N; i++) {
@@ -162,6 +169,7 @@
         Z[i] = U.lerp(a.z, b.z, t);
         W[i] = U.lerp(a.w, b.w, t);
         BKm[i] = U.lerp(a.bank, b.bank, t);
+        Yr[i] = U.lerp(a.y || 0, b.y || 0, t);
         S[i] = SI[a.s];
         KA[i] = a.kerb ? 1 : 0;
       }
@@ -206,9 +214,39 @@
         for (let k = -4; k <= 4; k++) if (kraw[idx(i + k)]) on = 1;
         KL[i] = on; KR[i] = on;
       }
-      Object.assign(this, { X, Z, W, S, TX, TZ, NX, NZ, H, K, D, BK, KL, KR });
+      // 5b. Elevation (v4). Vertices may carry `y` (metres); the profile is
+      //     smoothed twice over ±24 m so crests and dips are gentle vertical
+      //     curves, then its slope GR (rise per metre) feeds gravity in
+      //     physics.js §8. Flat tracks keep Y = 0 and GR = null (zero cost).
+      const Y = new Float32Array(N);
+      let GR = null;
+      if (Yr.some((v) => v !== 0)) {
+        let a = Yr, bb = new Float32Array(N);
+        for (let pass = 0; pass < 2; pass++) {
+          for (let i = 0; i < N; i++) {
+            let s = 0, n = 0;
+            for (let k = -12; k <= 12; k++) {
+              const j = i + k;
+              if (!this.closed && (j < 0 || j >= N)) continue;
+              s += a[idx(j)];
+              n++;
+            }
+            bb[i] = s / n;
+          }
+          [a, bb] = [bb, a];
+        }
+        Y.set(a);
+        GR = new Float32Array(N);
+        for (let i = 0; i < N; i++) {
+          const ia = idx(i - 1), ib = idx(i + 1);
+          const span = (this.closed ? 2 : Math.max(1, ib - ia)) * sp;
+          GR[i] = (Y[ib] - Y[ia]) / span;
+        }
+      }
+      Object.assign(this, { X, Z, W, S, TX, TZ, NX, NZ, H, K, D, BK, KL, KR, Y, GR });
       this.wallD = new Float32Array(N);
       for (let i = 0; i < N; i++) this.wallD[i] = W[i] + this.runoff;
+      this._hazards();
 
       // 6. Start / finish.
       if (this.closed) {
@@ -250,6 +288,82 @@
       }
       this.clearance = worst;
       if (worst < 1.02) console.warn(`[track ${this.id}] sections too close: ratio ${worst.toFixed(2)} at samples ${wi}/${wj}`, this.X[wi], this.Z[wi]);
+    }
+
+    // Hazards (v4). def.hazards: [{k, at, lat, len, hw, r}] with `at` = metres
+    // along the centreline, `lat` = offset (+ = left), `len` along × `hw`
+    // half-width across. Kinds:
+    //   'oil' | 'mud' | 'ice'   elliptical surface patch (per-wheel grip — see SURF)
+    //   'boost'                  speed pad: a forward kick (physics.js §5b)
+    //   'barrels' | 'tyres' | 'rock'  solid obstacle of radius r (physics collideWalls)
+    // Everything is indexed per centreline sample so a lookup is O(1).
+    _hazards() {
+      const N = this.N, sp = this.sp;
+      this.patches = [];
+      this.pads = [];
+      this.obs = [];
+      this.PT = null;
+      this.PD = null;
+      this.OBL = null;
+      const list = this.def.hazards || [];
+      if (!list.length) return;
+      this.PT = new Int16Array(N).fill(-1);
+      this.PD = new Int16Array(N).fill(-1);
+      const mark = (arr, ic, hl, id) => {
+        const n = Math.ceil(hl / sp);
+        for (let k = -n; k <= n; k++) {
+          const j = ic + k;
+          if (!this.closed && (j < 0 || j >= N)) continue;
+          arr[this.idx(j)] = id;
+        }
+      };
+      for (const h of list) {
+        // placed by distance along (`at`) or by a world position {x, z} near
+        // the road (snapped to the nearest centreline sample; lat is added on)
+        let at = h.at || 0, lat = h.lat || 0;
+        if (h.x != null) {
+          const q = this.query(h.x, h.z, -1, {});
+          at = q.along + (h.along || 0);
+          lat += q.lat;
+        }
+        const ic = this.idx(Math.round(at / sp));
+        at = this.D[ic];
+        if (h.k === 'oil' || h.k === 'mud' || h.k === 'ice') {
+          const P = { k: h.k, ic, at, lat, hl: (h.len || 10) / 2, hw: h.hw || 2.5, surf: SI[h.k] };
+          mark(this.PT, ic, P.hl, this.patches.length);
+          this.patches.push(P);
+        } else if (h.k === 'boost') {
+          const P = { ic, at, lat, hl: (h.len || 6) / 2, hw: h.hw || 1.8, dv: h.dv || 7, vmax: h.vmax || 68 };
+          mark(this.PD, ic, P.hl, this.pads.length);
+          this.pads.push(P);
+        } else {
+          const o = { k: h.k, i: ic, at, lat, r: h.r || 0.9, x: this.X[ic] + this.NX[ic] * lat, z: this.Z[ic] + this.NZ[ic] * lat };
+          this.obs.push(o);
+        }
+      }
+      if (this.obs.length) {
+        // obstacles within ±12 samples (24 m) of each sample
+        this.OBL = new Array(N).fill(null);
+        for (const o of this.obs) {
+          for (let k = -12; k <= 12; k++) {
+            const j = o.i + k;
+            if (!this.closed && (j < 0 || j >= N)) continue;
+            const jj = this.idx(j);
+            (this.OBL[jj] || (this.OBL[jj] = [])).push(o);
+          }
+        }
+      }
+    }
+
+    // Speed pad under (sample i, lateral lat), or null.
+    padAt(i, lat) {
+      if (!this.PD) return null;
+      const id = this.PD[i];
+      if (id < 0) return null;
+      const P = this.pads[id];
+      let da = (i - P.ic) * this.sp;
+      if (this.closed && Math.abs(da) > this.length / 2) da -= Math.sign(da) * this.length;
+      return Math.abs(da) <= P.hl && Math.abs(lat - P.lat) <= P.hw ? P : null;
     }
 
     idx(i) {
@@ -302,12 +416,23 @@
       out.nx = this.NX[i]; out.nz = this.NZ[i];
       out.wall = this.wallD[i];
       out.surf = this.surfaceAt(i, lat);
+      out.gr = this.GR ? this.GR[i] : 0;
       return out;
     }
 
     surfaceAt(i, lat) {
       const hw = this.W[i];
       const al = Math.abs(lat);
+      if (this.PT) {
+        const id = this.PT[i];
+        if (id >= 0) {
+          const P = this.patches[id];
+          let da = (i - P.ic) * this.sp;
+          if (this.closed && Math.abs(da) > this.length / 2) da -= Math.sign(da) * this.length;
+          const u = da / P.hl, v = (lat - P.lat) / P.hw;
+          if (u * u + v * v <= 1) return P.surf;
+        }
+      }
       const kerb = lat > 0 ? this.KL[i] : this.KR[i];
       if (al <= hw) {
         if (kerb && al > hw - 1.1) return SI.kerb;
@@ -317,8 +442,9 @@
       return this.runoffSurf;
     }
 
-    // Visual height of the ground at a lateral offset (banking raises the outside).
-    heightAt(i, lat) {
+    // Banking's share of the ground height at a lateral offset (the outside
+    // of a banked corner is raised).
+    bankH(i, lat) {
       const bk = this.BK[i];
       if (Math.abs(bk) < 1e-4) return 0;
       const hw = this.W[i];
@@ -327,6 +453,28 @@
       if (Math.abs(lat) <= hw) return tb * (hw + outer);
       if (outer > 0) return 2 * hw * tb * Math.max(0, 1 - (Math.abs(lat) - hw) / 8);
       return 0;
+    }
+
+    // Visual height of the ground at a sample + lateral offset: elevation plus banking.
+    heightAt(i, lat) {
+      return this.Y[i] + this.bankH(i, lat);
+    }
+
+    // Elevation interpolated between samples (for smooth car placement: whole
+    // samples would step 16 cm at a time on an 8% grade).
+    elevAlong(along) {
+      if (!this.GR) return 0;
+      let d = along;
+      if (this.closed) d = ((d % this.length) + this.length) % this.length;
+      else d = U.clamp(d, 0, this.length);
+      const f = d / this.sp;
+      const i = Math.floor(f);
+      return U.lerp(this.Y[this.idx(i)], this.Y[this.idx(i + 1)], f - i);
+    }
+
+    // Ground height under a query result (see query()).
+    groundY(q) {
+      return this.elevAlong(q.along) + this.bankH(q.i, q.lat);
     }
 
     // World position + heading of a point `dist` metres along the centreline, offset `lat`.

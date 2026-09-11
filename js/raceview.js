@@ -22,7 +22,7 @@
         else curMs = mc.finished ? mc.finishMs : mc.lapStartT === -1 ? mc.lastLap : raceTime * 1000;
         me = {
           id: mc.id, pos, lapCount: mc.lapCount, curMs, lastLap: mc.lastLap, bestLap: mc.bestLap, carId: mc.carId, parts: mc.parts,
-          rs: cars.find((c) => c.id === meId).rs, hasBoost: mc.spec.boostKind !== 'none', coldBrakes: (mc.spec.bCold || 1) < 0.9, wrong: mc.wrongT > 1.2, finished: mc.finished,
+          rs: cars.find((c) => c.id === meId).rs, hasBoost: mc.spec.boostKind !== 'none', hasNos: !!mc.spec.nosGain, coldBrakes: (mc.spec.bCold || 1) < 0.9, wrong: mc.wrongT > 1.2, finished: mc.finished,
         };
       }
       return {
@@ -39,6 +39,7 @@
       opts = opts || {};
       for (const c of v.cars) world.updateCar(c.id, c.rs, dt);
       const focus = opts.focusId ? v.cars.find((c) => c.id === opts.focusId) : null;
+      world.focusId = focus ? focus.id : null; // (slipstream streaks / pad shake on the camera car only)
       if (focus && !opts.freeCam) world.follow(focus.rs, dt);
       else world.freeCam(dt, opts.keys, focus ? focus.rs : null);
       if (v.practice && v.me) v.me.lapCount = Math.max(1, v.me.lapCount);

@@ -259,14 +259,14 @@
       const tr = this.track;
       const q = tr.query(rs.x, rs.z, m.hint, this.q);
       m.hint = q.i;
-      const y = tr.heightAt(q.i, q.lat);
+      const y = tr.groundY(q); // elevation (smoothly interpolated) + banking
       m.root.position.set(rs.x, y, rs.z);
       m.root.rotation.y = rs.h;
-      // Bank tilt relative to the car's heading.
+      // Bank tilt relative to the car's heading, plus pitch on hills.
       const dh = U.wrapAngle(rs.h - tr.H[q.i]);
       const bk = Math.abs(q.lat) <= q.hw ? tr.BK[q.i] : 0;
       m.tilt.rotation.z = U.damp(m.tilt.rotation.z, -bk * Math.cos(dh), 10, dt);
-      m.tilt.rotation.x = U.damp(m.tilt.rotation.x, bk * Math.sin(dh), 10, dt);
+      m.tilt.rotation.x = U.damp(m.tilt.rotation.x, bk * Math.sin(dh) - Math.atan(q.gr || 0) * Math.cos(dh), 10, dt);
       // Visual suspension: under-damped springs chasing load-transfer targets.
       // Exaggerated on purpose — the roll/squat/dive IS the game feel.
       const rg = m.rollGain;
@@ -290,13 +290,14 @@
       // Wheels: steer + spin (locked wheels stop).
       const sinH = Math.sin(rs.h), cosH = Math.cos(rs.h);
       const vLong = rs.vx * sinH + rs.vz * cosH;
-      m.spinA += (vLong / 0.33 + (rs.spin & 12 ? 25 : 0)) * dt;
+      const wr = m.wheelR || 0.33;
+      m.spinA += (vLong / wr + (rs.spin & 12 ? 25 : 0)) * dt;
       // All four wheels are ONE InstancedMesh: compose steer (Y) then spin (X).
       const d = m.wheelDummy;
       for (let i = 0; i < 4; i++) {
         const wh = m.wheels[i];
         if (!(rs.lock & (1 << i))) wh.spin = m.spinA;
-        d.position.set(wh.x, 0.33, wh.z);
+        d.position.set(wh.x, wr, wh.z);
         d.rotation.set(wh.spin, i < 2 ? rs.steer : 0, 0, 'YXZ');
         d.updateMatrix();
         m.wheelMesh.setMatrixAt(i, d.matrix);
@@ -311,6 +312,7 @@
 
     _emit(m, rs, dt, speed, sinH, cosH, y, braking) {
       const fx = this.fx;
+      fx.floorY = y + 0.05;
       const W = (lx, ly, lz) => [rs.x + sinH * lz + cosH * lx, y + ly, rs.z + cosH * lz - sinH * lx];
       for (let i = 0; i < 4; i++) {
         const [lx, lz] = m.wheelLocal[i];
@@ -337,6 +339,46 @@
         } else if (sf.fx === 'spray') {
           if (speed > 6 && Math.random() < (speed / 30 + slip) * dt * 34) fx.emit('spray', wx, y + 0.2, wz, bvx * 2, 0.3 + speed * 0.02, bvz * 2, 0.6 + speed / 40);
           this.skids.add(key, wx, y + 0.06, wz, 0.24, slip > 0.35 ? 0.25 : 0, [0.1, 0.12, 0.14]);
+        } else if (sf.fx === 'oil') {
+          if (speed > 6 && Math.random() < (0.4 + slip) * dt * 20) fx.emit('oil', wx, y + 0.15, wz, bvx * 1.5, 0.4, bvz * 1.5, 0.7);
+          this.skids.add(key, wx, y + 0.06, wz, 0.28, speed > 4 ? 0.5 : 0, [0.03, 0.03, 0.04]);
+        } else if (sf.fx === 'mud') {
+          const amt = (rear ? Math.min(speed / 25, 1) * 0.7 : 0.25) + slip;
+          if (speed > 3 && Math.random() < amt * dt * 40) fx.emit('mud', wx, y + 0.3, wz, bvx * 2 + (Math.random() - 0.5) * 2, 1 + slip, bvz * 2 + (Math.random() - 0.5) * 2, 0.8 + slip);
+          if (rear && Math.random() < dt * 14 * (0.3 + slip)) fx.emit('debris', wx, y + 0.2, wz, bvx * 1.5 + (Math.random() - 0.5) * 3, 1.5 + Math.random() * 2, bvz * 1.5 + (Math.random() - 0.5) * 3, 0.9, [0.3, 0.2, 0.1]);
+          this.skids.add(key, wx, y + 0.05, wz, 0.32, 0.45, [0.22, 0.14, 0.08]);
+        } else if (sf.fx === 'ice') {
+          if (speed > 5 && Math.random() < (0.2 + slip) * dt * 30) fx.emit('snow', wx, y + 0.2, wz, bvx * 1.5, 0.6, bvz * 1.5, 0.6 + slip);
+          this.skids.add(key, wx, y + 0.06, wz, 0.24, slip > 0.2 ? 0.3 : 0, [0.75, 0.85, 0.95]);
+        }
+      }
+      // v4: nitrous — blue exhaust flames + glow
+      if (rs.nosOn) {
+        for (const e of m.exhaust) {
+          const [ex, ey, ez] = W(e[0], e[1], e[2]);
+          fx.emit('nos', ex, ey, ez, -sinH * 9 + rs.vx * 0.9, 0, -cosH * 9 + rs.vz * 0.9, 1.3);
+          fx.emit('glow', ex - sinH * 0.4, ey, ez - cosH * 0.4, 0, 0, 0, 1.6, [0.25, 0.5, 1]);
+        }
+      }
+      // v4: speed pad — a cyan burst the moment the car hits it
+      const onPad = rs.padT > 0.6 || !!rs.pad;
+      if (onPad && !m.padPrev) {
+        for (let k = 0; k < 14; k++) fx.emit('spark', rs.x, y + 0.3, rs.z, (Math.random() - 0.5) * 6 + rs.vx * 0.5, 1 + Math.random() * 2, (Math.random() - 0.5) * 6 + rs.vz * 0.5, 1, [0.3, 0.8, 1]);
+        m.padFlash = 0.35;
+        if (m.id === this.focusId) this.shake(0.25);
+        if (this.onPad) this.onPad(m.id === this.focusId);
+      }
+      m.padPrev = onPad;
+      if (m.padFlash > 0) {
+        m.padFlash -= dt;
+        fx.emit('glow', rs.x, y + 0.2, rs.z, 0, 0, 0, 5 * m.padFlash, [0.2, 0.7, 1]);
+      }
+      // v4: slipstream — wind streaks streaming past the camera car
+      if (m.id === this.focusId && (rs.draft || 0) > 0.2 && speed > 14) {
+        const n = rs.draft * dt * 60;
+        for (let k = 0; k < n; k++) {
+          const [px, py, pz] = W((Math.random() - 0.5) * 3.2, 0.3 + Math.random() * 1.2, 1.5 + Math.random() * 4);
+          fx.emit('streak', px, py, pz, rs.vx * 0.35, 0, rs.vz * 0.35, 1);
         }
       }
       // exhaust: flames on backfire, puffs on gear changes and hard launches
@@ -378,6 +420,7 @@
       if (!m) return;
       const p = m.root.position;
       const cols = [[1, 0.8, 0], [1, 0.24, 0.5], [0.16, 0.83, 1], [0.18, 0.88, 0.48], [1, 1, 1]];
+      this.fx.floorY = p.y + 0.05;
       for (let k = 0; k < n; k++) {
         const a = Math.random() * Math.PI * 2, s = 2 + Math.random() * 6;
         this.fx.emit('confetti', p.x, p.y + 1.5, p.z, Math.cos(a) * s, 2 + Math.random() * 4, Math.sin(a) * s, 1, cols[k % cols.length]);
@@ -399,15 +442,27 @@
     }
 
     sparks(x, z, n) {
-      for (let k = 0; k < n; k++) this.fx.emit('spark', x, 0.6, z, (Math.random() - 0.5) * 9, 2 + Math.random() * 3, (Math.random() - 0.5) * 9, 1);
+      const gy = this.groundAt(x, z);
+      this.fx.floorY = gy + 0.05;
+      for (let k = 0; k < n; k++) this.fx.emit('spark', x, gy + 0.6, z, (Math.random() - 0.5) * 9, 2 + Math.random() * 3, (Math.random() - 0.5) * 9, 1);
     }
 
     // Body-coloured bits flying off in a big contact.
     debris(x, z, colors, n) {
+      const gy = this.groundAt(x, z);
+      this.fx.floorY = gy + 0.05;
       for (let k = 0; k < n; k++) {
         const c = colors[k % colors.length];
-        this.fx.emit('debris', x, 0.7, z, (Math.random() - 0.5) * 10, 2 + Math.random() * 4, (Math.random() - 0.5) * 10, 0.7 + Math.random() * 0.6, c);
+        this.fx.emit('debris', x, gy + 0.7, z, (Math.random() - 0.5) * 10, 2 + Math.random() * 4, (Math.random() - 0.5) * 10, 0.7 + Math.random() * 0.6, c);
       }
+    }
+
+    // Road height at a world position (v4 elevation); 0 with no track.
+    groundAt(x, z) {
+      if (!this.track || !this.track.GR) return 0;
+      const q = this.track.query(x, z, this._gHint == null ? -1 : this._gHint, (this._gq = this._gq || {}));
+      this._gHint = q.i;
+      return this.track.groundY(q);
     }
     colorOf(id) {
       const m = this.models.get(id);
@@ -454,17 +509,21 @@
       const vdir = speed > 3 ? Math.atan2(rs.vx, rs.vz) : rs.h;
       const la = U.clamp(speed * (o && o.lead != null ? o.lead : P[3]), 0, 15);
       const tx = rs.x + Math.sin(vdir) * la, tz = rs.z + Math.cos(vdir) * la;
+      const gy = this.groundAt(rs.x, rs.z);
       if (c.snap) {
-        c.fx = tx; c.fz = tz; c.yaw = rs.h; c.snap = false;
+        c.fx = tx; c.fz = tz; c.yaw = rs.h; c.fy = gy; c.snap = false;
       }
       c.fx = U.damp(c.fx, tx, 6, dt);
       c.fz = U.damp(c.fz, tz, 6, dt);
+      c.fy = U.damp(c.fy || 0, gy, 4, dt);
       const yawT = c.mode === 'fixed' && !o ? 0 : speed > 3 ? U.lerpAngle(rs.h, vdir, 0.6) : rs.h;
       c.yaw = U.lerpAngle(c.yaw, yawT, 1 - Math.exp(-2.4 * dt));
       c.dist = U.damp(c.dist, o && o.dist ? o.dist + speed * 0.1 : P[0] + speed * P[1], 2, dt);
       // speed feel: FOV opens up and the camera buzzes on rough ground
       const s = ST();
-      const fovT = !o && s.fovKick ? 40 + U.clamp((speed - 15) / 35, 0, 1) * 7 : 40;
+      // (v4: nitrous kicks the FOV wider still; a slipstream a touch)
+      const fovT = !o && s.fovKick ? 40 + U.clamp((speed - 15) / 35, 0, 1) * 7 + (rs.nosOn ? 6 : 0) + (rs.draft || 0) * 2 : 40;
+      if (!o && s.shake && rs.nosOn) c.shake = Math.max(c.shake, 0.06);
       if (!o && s.shake) {
         if (speed > 38) c.shake = Math.max(c.shake, (speed - 38) * 0.004);
         let rough = 0;
@@ -505,6 +564,7 @@
       c.fz += (cy * mz - sy * mx) * sp * dt;
       c.yaw = U.lerpAngle(c.yaw, c.freeYaw, 1 - Math.exp(-6 * dt));
       c.dist = U.damp(c.dist, c.freeDist, 6, dt);
+      c.fy = U.damp(c.fy || 0, this.groundAt(c.fx, c.fz), 3, dt);
       this._fov(40, dt);
       this._place(c.fx, c.fz, c.yaw, c.dist, 58, dt);
     }
@@ -515,6 +575,7 @@
       c.fx = U.damp(c.fx, x, 3, dt);
       c.fz = U.damp(c.fz, z, 3, dt);
       c.dist = U.damp(c.dist, dist || 60, 3, dt);
+      c.fy = U.damp(c.fy || 0, this.groundAt(c.fx, c.fz), 3, dt);
       this._fov(40, dt);
       this._place(c.fx, c.fz, c.yaw, c.dist, pitch || 42, dt, 0.6);
     }
@@ -530,11 +591,12 @@
         c.shake *= Math.exp(-8 * dt);
       }
       const hd = Math.cos(p) * dist, hy = Math.sin(p) * dist;
-      this.camera.position.set(fx - Math.sin(yaw) * hd + sx, hy + sy, fz - Math.cos(yaw) * hd + sz);
-      this.camera.lookAt(fx + sx * 0.5, lookY || 0, fz + sz * 0.5);
+      const fy = c.fy || 0; // focus height (v4 hills)
+      this.camera.position.set(fx - Math.sin(yaw) * hd + sx, fy + hy + sy, fz - Math.cos(yaw) * hd + sz);
+      this.camera.lookAt(fx + sx * 0.5, fy + (lookY || 0), fz + sz * 0.5);
       // Sun + shadow frustum follow the focus point (tight frustum = sharp shadows).
-      this.sun.position.set(fx + 40, 90, fz + 25);
-      this.sun.target.position.set(fx, 0, fz);
+      this.sun.position.set(fx + 40, fy + 90, fz + 25);
+      this.sun.target.position.set(fx, fy, fz);
     }
 
     project(x, y, z, out) {

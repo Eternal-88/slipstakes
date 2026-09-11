@@ -76,11 +76,18 @@
       tyreWear: 0, engineWear: 0, body: 0, fuel: 0, odo: 0, thr: 0, brk: 0, hb: 0,
       ghost: 0, // seconds of no car-car collision after a respawn
       bt: 0, // brake temperature (0 cold .. ~1.4); see §7b
+      // v4 race assists, all set by the HOST (race.js) and replicated: a
+      // client's prediction just holds the last value it was sent.
+      draft: 0, // slipstream 0..1 (a car close ahead)
+      cu: 0, // catch-up power bonus 0..~0.25 (trailing the leader)
+      nos: 1, // nitrous bottle 0..1 (only with a Nitrous part)
+      nosOn: 0, // nitrous firing this step (visual/sound)
+      padT: 0, // cooldown after a speed pad
     };
   }
 
   // Core state that must round-trip for prediction/reconciliation.
-  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt'];
+  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT'];
   function copyCore(dst, src) {
     for (let i = 0; i < CORE.length; i++) dst[CORE[i]] = src[CORE[i]];
     for (let i = 0; i < 4; i++) dst.fy[i] = src.fy[i];
@@ -98,13 +105,13 @@
     return 1 - (1 - slide) * k * k * (3 - 2 * k);
   }
 
-  const Q = { i: 0, along: 0, lat: 0, hw: 0, bank: 0, tx: 0, tz: 0, nx: 0, nz: 0, wall: 0, surf: 0 };
+  const Q = { i: 0, along: 0, lat: 0, hw: 0, bank: 0, tx: 0, tz: 0, nx: 0, nz: 0, wall: 0, surf: 0, gr: 0 };
   const WQ = [{}, {}, {}, {}].map(() => Object.assign({}, Q));
   const _lu = [0, 0, 0, 0], _lv = [0, 0, 0, 0];
 
   // ---------------------------------------------------------------------------
   // step(car, spec, input, track, dt, opts)
-  //   input: { s: steer -1..1 (+right), t: throttle 0..1, b: brake 0..1, hb: 0/1 }
+  //   input: { s: steer -1..1 (+right), t: throttle 0..1, b: brake 0..1, hb: 0/1, n: nitrous 0/1 }
   //   opts.frozen: grid hold (brakes locked, engine can rev)
   // ---------------------------------------------------------------------------
   function step(car, s, inp, track, dt, opts) {
@@ -173,9 +180,12 @@
     car.steer += s.bodyPull * dt * 0.2 * (speed > 5 ? 1 : 0); // bent chassis pulls left
 
     // ---- 4. Aero ------------------------------------------------------------
+    // Slipstream: race.js sets car.draft (0..1) when a car is close ahead;
+    // it cuts drag by up to 45%. Catch-up (car.cu, only while trailing the
+    // leader with the host's Catch-up setting on) trims drag a little too.
     const q = 0.5 * RHO * speed * speed;
     const down = q * s.clA;
-    const drag = q * s.cdA;
+    const drag = q * s.cdA * (1 - 0.45 * (car.draft || 0)) * (1 - 0.6 * (car.cu || 0));
 
     // ---- 5. Vertical loads (static + smoothed load transfer + downforce) ---
     // car.ax/car.ay are LAST step's smoothed local accelerations. Using the lagged
@@ -228,6 +238,23 @@
     }
     car.offT = off >= 2 ? car.offT + dt : 0;
 
+    // ---- 5b. Speed pads (v4) ------------------------------------------------
+    // Driving over a pad kicks the car forward along the track (+dv m/s, never
+    // past the pad's vmax), then a short cooldown so one pad = one kick.
+    if (car.padT > 0) car.padT -= dt;
+    else if (track.PD && !frozen) {
+      const pd = track.padAt(Q.i, Q.lat);
+      if (pd) {
+        const vt = car.vx * Q.tx + car.vz * Q.tz;
+        if (vt > 2) {
+          const add = U.clamp(pd.vmax - vt, 0, pd.dv);
+          car.vx += Q.tx * add;
+          car.vz += Q.tz * add;
+          car.padT = 0.9;
+        }
+      }
+    }
+
     // ---- 6. Engine, gearbox, boost, heat -------------------------------------
     const nG = s.gears.length;
     const ratio = car.gear > 0 ? s.gears[car.gear - 1] * s.finalDrive : s.revRatio * s.finalDrive;
@@ -273,7 +300,22 @@
     if (car.heat >= 1) car.overheat = 1;
     else if (car.overheat && car.heat < 0.65) car.overheat = 0;
     const limp = car.overheat ? 0.55 : 1;
-    let T = s.peakTorque * G.Parts.torqueAt(s, rClamped) * (1 + s.boostGain * car.boost) * s.engineHealth * limp;
+    // Nitrous (v4): while the button is held with the throttle down, burn the
+    // bottle for +nosGain power. It adds heat and engine wear, costs money
+    // (billed with the fuel) and refills while you sit in someone's slipstream.
+    let nos = 0;
+    if (s.nosGain && inp.n && car.nos > 0 && driveThr > 0.3 && car.gear > 0 && !frozen && !car.overheat) {
+      nos = s.nosGain;
+      car.nos = Math.max(0, car.nos - dt / s.nosDur);
+      car.fuel += (dt * s.nosCost) / s.nosDur;
+      car.heat += dt * s.nosHeat;
+      car.engineWear += dt * s.nosWear;
+    } else if (s.nosGain && car.draft > 0.05 && car.nos < 1) {
+      car.nos = Math.min(1, car.nos + dt * s.nosRefill * car.draft);
+    }
+    car.nosOn = nos > 0 ? 1 : 0;
+    // catch-up (car.cu) adds power when trailing the leader — see race.js
+    let T = s.peakTorque * G.Parts.torqueAt(s, rClamped) * (1 + s.boostGain * car.boost) * s.engineHealth * limp * (1 + (car.cu || 0) + nos);
     const limiter = r >= 1.0 && car.gear > 0; // fuel cut at redline
     let Fdrive = 0;
     if (car.shiftT <= 0 && !limiter && !frozen) Fdrive = (T * ratio * 0.9 * driveThr) / s.wheelR;
@@ -432,6 +474,13 @@
       gwx = Q.nx * gl;
       gwz = Q.nz * gl;
     }
+    // Hills (v4): gravity along the slope. gr = rise per metre along the
+    // track, so climbing costs speed and a descent lengthens braking zones.
+    if (Q.gr) {
+      const gs = (-mg * Q.gr) / Math.sqrt(1 + Q.gr * Q.gr);
+      gwx += Q.tx * gs;
+      gwz += Q.tz * gs;
+    }
 
     // ---- 9. Integrate (semi-implicit Euler) ---------------------------------
     const Fwx = FU * fx + FV * lx + gwx;
@@ -510,6 +559,38 @@
         worst = pen; wn = true; wu = u; wv = v; wnx = nx; wnz = nz;
       }
     }
+    // Solid obstacles (v4: barrels, tyre stacks, rocks): circle vs the car's
+    // rectangle. Find the closest point of the body to the obstacle centre (in
+    // the car frame) and push out along it — the same impulse as a wall hit.
+    const ol = track.OBL ? track.OBL[car.hint] : null;
+    let soft = 1; // damage factor: tyre stacks and barrels give (25%), rocks don't
+    if (ol) {
+      for (let k = 0; k < ol.length; k++) {
+        const o = ol[k];
+        const dx = o.x - car.x, dz = o.z - car.z;
+        const u = dx * sinH + dz * cosH, v = dx * cosH - dz * sinH; // centre in car frame (u fwd, v left)
+        const pu = U.clamp(u, -hl, hl), pv = U.clamp(v, -hw, hw);
+        const ex = u - pu, ev = v - pv;
+        const d = Math.hypot(ex, ev);
+        let pen, nu, nv;
+        if (d > 1e-4) {
+          if (d >= o.r) continue;
+          pen = o.r - d;
+          nu = -ex / d;
+          nv = -ev / d;
+        } else {
+          // centre inside the body: out along the shallower axis
+          const du = hl - Math.abs(u), dv = hw - Math.abs(v);
+          if (du < dv) { pen = du + o.r; nu = -(Math.sign(u) || 1); nv = 0; } else { pen = dv + o.r; nu = 0; nv = -(Math.sign(v) || 1); }
+        }
+        if (pen > worst) {
+          worst = pen; wn = true; wu = pu; wv = pv;
+          wnx = sinH * nu + cosH * nv;
+          wnz = cosH * nu - sinH * nv;
+          soft = o.k === 'rock' ? 1 : 0.25;
+        }
+      }
+    }
     if (!wn) return;
     car.x += wnx * worst;
     car.z += wnz * worst;
@@ -535,7 +616,7 @@
     car.vx -= tx * scrub;
     car.vz -= tz * scrub;
     car.wallHit = j;
-    car.body = Math.min(1, car.body + Math.max(0, j - 2500) * 0.000012);
+    car.body = Math.min(1, car.body + Math.max(0, j - 2500) * 0.000012 * soft);
   }
 
   G.Physics = { DT, createCar, step, copyCore, CORE, tyreCurve, TUNE };

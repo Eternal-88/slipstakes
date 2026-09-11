@@ -104,7 +104,7 @@
         for (let e = 0; e < 6; e++) {
           if (skipBottom && e === 0) continue;
           const e2 = (e + 1) % 6;
-          const c = colFn ? colFn(e) : e === 3 && colTop ? colTop : col;
+          const c = colFn ? colFn(e, k) : e === 3 && colTop ? colTop : col;
           this.quad(A[e], A[e2], B[e2], B[e], c, 0, icy, iz);
         }
       }
@@ -283,6 +283,46 @@
       ],
       roof: [-0.95, 0.0, 1.34], hood: [0.75, 2.3, 0.92], trunkZ: -2.05, trunkY: 0.93, wheelZ: [1.5, -1.4], doors: [0.6, -0.8],
     },
+    // v4: desert pickup — tall body, cab forward, open bed (drawn as a dark
+    // well with rails, see `bed`), big tyres (wheelR).
+    truck: {
+      body: [
+        { z: -2.45, yb: 0.5, ym: 0.74, yt: 1.02, wb: 0.88, wm: 0.98, wt: 0.94 },
+        { z: -2.3, yb: 0.44, ym: 0.76, yt: 1.08, wb: 0.9, wm: 1.0, wt: 0.96 },
+        { z: -0.2, yb: 0.44, ym: 0.76, yt: 1.08, wb: 0.9, wm: 1.0, wt: 0.96 },
+        { z: 1.6, yb: 0.44, ym: 0.76, yt: 1.06, wb: 0.9, wm: 1.0, wt: 0.94 },
+        { z: 2.3, yb: 0.48, ym: 0.74, yt: 0.98, wb: 0.86, wm: 0.96, wt: 0.88 },
+        { z: 2.45, yb: 0.56, ym: 0.72, yt: 0.9, wb: 0.8, wm: 0.9, wt: 0.8 },
+      ],
+      cabin: [
+        { z: -0.38, yb: 1.06, yt: 1.12, wb: 0.92, wt: 0.86 },
+        { z: -0.32, yb: 1.06, yt: 1.72, wb: 0.92, wt: 0.8 },
+        { z: 0.75, yb: 1.06, yt: 1.74, wb: 0.92, wt: 0.8 },
+        { z: 1.45, yb: 1.04, yt: 1.08, wb: 0.9, wt: 0.86 },
+      ],
+      roof: [-0.32, 0.75, 1.74], hood: [1.45, 2.4, 1.06], trunkZ: -2.35, trunkY: 1.08, wheelZ: [1.6, -1.35], doors: [1.2, -0.25],
+      bed: [-2.3, -0.45], wheelR: 0.42,
+    },
+    // v4: mid-engine wedge — low nose, cab forward, long engine deck with
+    // cooling slats (see `deck`).
+    mid: {
+      body: [
+        { z: -2.2, yb: 0.28, ym: 0.5, yt: 0.72, wb: 0.84, wm: 0.95, wt: 0.84 },
+        { z: -2.0, yb: 0.2, ym: 0.5, yt: 0.8, wb: 0.9, wm: 0.99, wt: 0.88 },
+        { z: -0.6, yb: 0.2, ym: 0.5, yt: 0.82, wb: 0.9, wm: 0.99, wt: 0.86 },
+        { z: 0.8, yb: 0.2, ym: 0.46, yt: 0.72, wb: 0.86, wm: 0.95, wt: 0.8 },
+        { z: 1.8, yb: 0.2, ym: 0.38, yt: 0.56, wb: 0.84, wm: 0.92, wt: 0.74 },
+        { z: 2.22, yb: 0.22, ym: 0.3, yt: 0.42, wb: 0.78, wm: 0.84, wt: 0.62 },
+      ],
+      cabin: [
+        { z: -1.0, yb: 0.8, yt: 0.86, wb: 0.8, wt: 0.7 },
+        { z: -0.55, yb: 0.8, yt: 1.12, wb: 0.8, wt: 0.6 },
+        { z: 0.25, yb: 0.77, yt: 1.14, wb: 0.8, wt: 0.6 },
+        { z: 1.15, yb: 0.66, yt: 0.7, wb: 0.8, wt: 0.74 },
+      ],
+      roof: [-0.55, 0.25, 1.14], hood: [1.15, 2.1, 0.66], trunkZ: -1.95, trunkY: 0.82, wheelZ: [1.45, -1.3], doors: [0.8, -0.5],
+      deck: [-1.85, -1.05],
+    },
   };
 
   function lighten(hex, k) {
@@ -353,9 +393,11 @@
     const acc = C(L.accent);
     const dark = C(0x1b1f27), black = C(0x121418), chrome = C(0xd5dbe2), carbon = C(0x2a2d33), white = C(0xf4f4f4), rubber = C(0x16181d);
     const glass = C(L.tint === 'clear' ? 0x6f8fae : L.tint === 'black' ? 0x0c0f14 : 0x243447);
-    const light = C(0xfff4c2);
+    const light = C(L.lights === 'xenon' ? 0xe4f2ff : L.lights === 'amber' ? 0xffc24a : 0xfff4c2);
     const su = G.Parts.opt('suspension', P.suspension);
     const rideH = su.rideH + T.rideH * 0.01;
+    // wheel radius: 0.33 m, except the truck's big tyres; wk scales wheel-sized details
+    const WR = BODIES[car.body].wheelR || 0.33, wk = WR / 0.33;
     const gb = new GB();
     const S = B.body, cab = B.cabin;
     const fz = S[S.length - 1].z, rz = S[0].z;
@@ -365,7 +407,23 @@
 
     // ---- hull + cabin
     const two = L.livery === 'twotone';
-    gb.loft(S, body, bodyTop, false, (e) => (e === 3 ? bodyTop : (e === 1 || e === 5) && two ? acc : e === 0 ? dark : body));
+    if (L.livery === 'fade') {
+      // Fade: the hull is re-lofted through extra sections every ~0.3 m and
+      // each band blends from the accent (tail) to the paint (nose).
+      const zsD = [];
+      for (let k = 0; k < S.length - 1; k++) {
+        const a = S[k].z, b = S[k + 1].z, n = Math.max(1, Math.ceil((b - a) / 0.3));
+        for (let j = 0; j < n; j++) zsD.push(a + ((b - a) * j) / n);
+      }
+      zsD.push(fz);
+      const secs = zsD.map((z) => Object.assign({}, secAt(B, z), { z }));
+      const span = secs.length - 2 || 1;
+      gb.loft(secs, body, bodyTop, false, (e, k) => {
+        if (e === 0) return dark;
+        const c = acc.clone().lerp(body, U.smoothstep(0.1, 0.9, k / span));
+        return e === 3 ? c.multiplyScalar(1.06) : c;
+      });
+    } else gb.loft(S, body, bodyTop, false, (e) => (e === 3 ? bodyTop : (e === 1 || e === 5) && two ? acc : e === 0 ? dark : body));
     gb.loft4(cab, glass);
     const pillar = L.livery === 'roof' ? acc : body;
     const c0 = cab[0], cN = cab[cab.length - 1];
@@ -427,7 +485,7 @@
     const hoodZ0 = B.cockpit ? cab[cab.length - 1].z + 0.05 : cN.z + 0.02;
     const zones = [[hoodZ0, fz - 0.04]];
     if (B.cockpit) zones.push([rz + 0.05, -1.08]);
-    else if (c0.z - rz > 0.2) zones.push([rz + 0.05, c0.z - 0.02]);
+    else if (c0.z - rz > 0.2 && !B.bed) zones.push([rz + 0.05, c0.z - 0.02]);
     // Layer heights above the paint, ≥ 1 cm apart so they never z-fight at
     // chase-camera distance: carbon 1 cm, stripes 2 cm, roundels 3 cm.
     if (carbonHood) band(zones[0][0], zones[0][1], -0.62, 0.62, carbon, 0.01);
@@ -460,6 +518,53 @@
       // runs between the wheel arches, like the real thing
       const [wf, wr] = B.wheelZ;
       for (const [a, b] of [[rz + 0.1, wr - 0.47], [wr + 0.47, wf - 0.47], [wf + 0.47, fz - 0.1]]) if (b - a > 0.1) sideBand(midS.ym + 0.03, midS.ym + (L.livery === 'side' ? 0.13 : 0.07), acc, a, b, 0.022);
+    }
+    if (L.livery === 'flames') {
+      // Flames: tongues licking back from behind the front wheel, an outer
+      // layer in the accent and a hotter inner layer, laid on the side panel.
+      const z0 = B.wheelZ[0] - 0.46 * wk;
+      const maxLen = z0 - (B.wheelZ[1] + 0.5 * wk);
+      const s0 = secAt(B, z0);
+      const yLo = s0.ym - 0.04, yHi = s0.yt - 0.05;
+      const hot = acc.clone().lerp(C(0xffd23a), 0.55);
+      const LENS = [0.55, 0.8, 0.68, 0.9, 0.5];
+      for (const [col, sc, lift] of [[acc, 1, 0.02], [hot, 0.55, 0.03]]) {
+        for (let t = 0; t < 5; t++) {
+          const yc = U.lerp(yLo, yHi, (t + 0.5) / 5), h = ((yHi - yLo) / 5) * 1.05 * sc;
+          const len = Math.min(maxLen, LENS[t] * car.len * 0.42) * sc;
+          const tipY = yc + (t % 2 ? 0.05 : -0.04);
+          for (const sx of [-1, 1]) {
+            const pt = (y, z) => [sx * (surfX(secAt(B, z), y) + lift), y, z];
+            for (let j = 0; j < 3; j++) {
+              const za = z0 - (len * j) / 3, zb = z0 - (len * (j + 1)) / 3;
+              const ya = U.lerp(yc, tipY, j / 3), yb = U.lerp(yc, tipY, (j + 1) / 3);
+              const wa = h * (1 - j / 3) * 0.5, wb2 = h * (1 - (j + 1) / 3) * 0.5;
+              gb.quadN(pt(ya + wa, za), pt(ya - wa, za), pt(yb - wb2, zb), pt(yb + wb2 + 0.001, zb), col, [sx, 0, 0]);
+            }
+          }
+        }
+      }
+    }
+    // ---- body-specific details (v4 chassis)
+    if (B.bed) {
+      // pickup bed: dark well with ribs, roll bar + light bar behind the cab, a spare
+      const [bz0, bz1] = B.bed;
+      const bw = secAt(B, (bz0 + bz1) / 2).wt - 0.12;
+      band(bz0, bz1, -bw, bw, C(0x2a2d33), 0.012);
+      for (let z = bz0 + 0.2; z < bz1 - 0.1; z += 0.3) band(z, z + 0.05, -bw, bw, C(0x3a3e46), 0.022);
+      const ry0 = topY(bz1);
+      for (const sx of [-1, 1]) gb.beam([sx * (bw - 0.05), ry0, bz1 - 0.08], [sx * (bw - 0.05), ry0 + 0.55, bz1 - 0.12], 0.07, 0.07, dark);
+      gb.beam([bw - 0.05, ry0 + 0.55, bz1 - 0.12], [-(bw - 0.05), ry0 + 0.55, bz1 - 0.12], 0.07, 0.07, dark);
+      for (const lx of [-0.45, -0.15, 0.15, 0.45]) gb.box(lx, ry0 + 0.66, bz1 - 0.12, 0.22, 0.14, 0.08, light);
+      const sz = bz0 + 0.75, sy = topY(sz);
+      gb.disc([0, sy + 0.1, sz], [1, 0, 0], [0, 0, 1], [0, 1, 0], 0.36, 10, C(0x1c1d21));
+      gb.disc([0, sy + 0.11, sz], [1, 0, 0], [0, 0, 1], [0, 1, 0], 0.2, 8, C(L.rimCol));
+    }
+    if (B.deck) {
+      // mid-engine: cooling slats over the engine, intakes behind the doors
+      const [dz0, dz1] = B.deck;
+      for (let z = dz0 + 0.06; z < dz1 - 0.05; z += 0.13) band(z, z + 0.06, -0.5, 0.5, dark, 0.014);
+      sideBand(midS.ym + 0.02, midS.yt - 0.07, dark, B.doors[1] - 0.55, B.doors[1] - 0.08, 0.012);
     }
     const [dzF, dzR] = B.doors;
     const seam = (z) => {
@@ -547,7 +652,7 @@
     // ---- wheel arches (dark rings on the body side above each wheel)
     const tw = G.Parts.opt('width', P.width).vis;
     const wheelX = car.track / 2 + 0.06 + (tw - 1) * 0.08;
-    const wheelY = 0.33 - rideH; // wheel centre in body space
+    const wheelY = WR - rideH; // wheel centre in body space
     for (const wz of B.wheelZ) {
       for (const sx of [-1, 1]) {
         const K = 9;
@@ -557,7 +662,7 @@
             const y = wheelY + Math.sin(a) * r, z = wz + Math.cos(a) * r;
             return [sx * (surfX(secAt(B, z), Math.max(y, secAt(B, z).yb)) + 0.008), y, z];
           };
-          gb.quadN(pt(0.34, a0), pt(0.44, a0), pt(0.44, a1), pt(0.34, a1), rubber, [sx, 0, 0]);
+          gb.quadN(pt(0.34 * wk, a0), pt(0.44 * wk, a0), pt(0.44 * wk, a1), pt(0.34 * wk, a1), rubber, [sx, 0, 0]);
         }
       }
     }
@@ -569,7 +674,8 @@
     gb.disc([-(surfX(fcs, fcs.ym + 0.12) + 0.006), fcs.ym + 0.12, fcz], [0, 1, 0], [0, 0, 1], [-1, 0, 0], 0.07, 8, dark);
 
     // ---- induction visuals
-    const [hz0, hz1] = B.hood;
+    // (a mid-engined car wears its blower / scoop / vents on the engine deck)
+    const [hz0, hz1] = B.deck || B.hood;
     // A box that sits ON the sloping hood: its bottom follows the hood's top
     // surface front-to-back (sunk 1 cm so no gap shows). Flat boxes used to
     // float at one end and sink at the other on every sloped bonnet.
@@ -632,11 +738,11 @@
       }
     }
     // ---- wide tyres get fender flares; rally gets mud flaps + light pod
-    if (P.width === 'wide') {
-      for (const wz of B.wheelZ) for (const sx of [-1, 1]) gb.box(sx * (wheelX + 0.06), 0.62 - rideH, wz, 0.18, 0.1, 0.95, black);
+    if (P.width === 'wide' || car.body === 'truck') {
+      for (const wz of B.wheelZ) for (const sx of [-1, 1]) gb.box(sx * (wheelX + 0.06), wheelY + 0.29 * wk, wz, 0.18, 0.1, 0.95 * wk, black);
     }
     if (P.suspension === 'rally') {
-      for (const sx of [-1, 1]) gb.box(sx * wheelX, 0.28, B.wheelZ[1] - 0.45, 0.3, 0.34, 0.03, black);
+      for (const sx of [-1, 1]) gb.box(sx * wheelX, WR - 0.05, B.wheelZ[1] - 0.45 * wk, 0.3, 0.34, 0.03, black);
       gb.box(0, fy + 0.02, fz + 0.06, 0.9, 0.14, 0.06, black);
       for (const lx of [-0.3, -0.1, 0.1, 0.3]) gb.box(lx, fy + 0.02, fz + 0.1, 0.14, 0.1, 0.03, light);
     }
@@ -644,16 +750,16 @@
 
     const mat = G.CarModel.material();
     const geo = gb.geometry();
-    const bodyMesh = new THREE.Mesh(geo, mat);
+    const bodyMesh = new THREE.Mesh(geo, finishMat(L.finish)); // paint finish: gloss / metallic / chrome / matte
     bodyMesh.castShadow = true;
 
-    // ---- wheels (geometry cached per look: width, compound, rim style/colour)
+    // ---- wheels (geometry cached per look: size, width, compound, rim style/colour)
     const comp = G.Parts.opt('compound', P.compound);
-    const wkey = [tw, comp.stripe, L.rims, L.rimCol].join('|');
+    const wkey = [WR, tw, comp.stripe, L.rims, L.rimCol].join('|');
     let wgeo = _wheelCache[wkey];
     if (!wgeo) {
       const wgb = new GB();
-      wgb.wheel(0.33, 0.27 * tw, 12, { tyre: C(0x1c1d21), rim: C(L.rimCol), stripe: C(comp.stripe), disc: C(0x8d9299) }, L.rims);
+      wgb.wheel(WR, 0.27 * tw * (wk > 1 ? 1.15 : 1), 12, { tyre: C(0x1c1d21), rim: C(L.rimCol), stripe: C(comp.stripe), disc: C(0x8d9299) }, L.rims);
       wgeo = _wheelCache[wkey] = wgb.geometry();
       wgeo.userData.shared = true;
     }
@@ -676,7 +782,7 @@
     const wheels = [];
     for (let i = 0; i < 4; i++) {
       wheels.push({ x: xs[i], z: zs[i], spin: 0 });
-      wheelDummy.position.set(xs[i], 0.33, zs[i]);
+      wheelDummy.position.set(xs[i], WR, zs[i]);
       wheelDummy.updateMatrix();
       wheelMesh.setMatrixAt(i, wheelDummy.matrix);
     }
@@ -685,12 +791,12 @@
     // not with body roll), coloured by the brake part, seen through the spokes
     const cgb = new GB();
     const bcol = C(G.Parts.opt('brakes', P.brakes).caliper);
-    for (let i = 0; i < 4; i++) cgb.box(xs[i] + Math.sign(xs[i]) * 0.02, 0.33 + 0.12, zs[i] - 0.07, 0.07, 0.15, 0.13, bcol);
+    for (let i = 0; i < 4; i++) cgb.box(xs[i] + Math.sign(xs[i]) * 0.02, WR + 0.12 * wk, zs[i] - 0.07 * wk, 0.07, 0.15 * wk, 0.13 * wk, bcol);
     const calMesh = new THREE.Mesh(cgb.geometry(), mat);
     tilt.add(calMesh);
     const exhaust = exXs.map((x) => [x, exY + rideH, rz - 0.18]);
     return {
-      root, tilt, pivot, body: bodyMesh, wheels, wheelMesh, wheelDummy, calMesh, carId, color: paint,
+      root, tilt, pivot, body: bodyMesh, wheels, wheelMesh, wheelDummy, calMesh, carId, color: paint, wheelR: WR,
       exhaust,
       wheelLocal: xs.map((x, i) => [x, zs[i]]),
       tailLocal: [[0.56, ry + rideH, rz - 0.05], [-0.56, ry + rideH, rz - 0.05]],
@@ -731,6 +837,19 @@
     model.body.geometry.dispose();
     if (model.calMesh) model.calMesh.geometry.dispose();
     // wheel geometry is shared via _wheelCache — kept alive for reuse
+  }
+
+  // Paint finishes (v4). Matte is the plain shared Lambert material; the
+  // others are Phong with a sun highlight that runs across the flat facets.
+  // One material per finish, shared by every car: still one draw call a body.
+  const _fin = {};
+  function finishMat(f) {
+    if (!f || f === 'matte') return G.CarModel.material();
+    if (_fin[f]) return _fin[f];
+    const o = { vertexColors: true, shininess: 40, specular: 0x2c2c2c };
+    if (f === 'metal') Object.assign(o, { shininess: 70, specular: 0x5e5e5e });
+    else if (f === 'chrome') Object.assign(o, { shininess: 130, specular: 0xb4b4b4 });
+    return (_fin[f] = new THREE.MeshPhongMaterial(o));
   }
 
   let _mat = null;

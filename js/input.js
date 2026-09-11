@@ -52,13 +52,14 @@
       const now = performance.now();
       const dt = Math.min(0.1, lastRead ? (now - lastRead) / 1000 : 0);
       lastRead = now;
-      let s = 0, t = 0, b = 0, hb = 0, kb = 0;
+      let s = 0, t = 0, b = 0, hb = 0, n = 0, kb = 0;
       if (!typing() && !Input.blocked) {
         if (this.down('left')) kb -= 1;
         if (this.down('right')) kb += 1;
         if (this.down('up')) t = 1;
         if (this.down('down')) b = 1;
         if (this.down('hb')) hb = 1;
+        if (this.down('nitro')) n = 1;
       }
       // on-screen touch buttons (ui/touch.js) behave exactly like keys
       const T = G.Touch && G.Touch.visible ? G.Touch.state : null;
@@ -68,6 +69,7 @@
         if (T.t) t = 1;
         if (T.b) b = 1;
         if (T.hb) hb = 1;
+        if (T.n) n = 1;
       }
       // Keyboard steering ramps in (~0.22 s to full lock) and snaps back
       // faster, so a TAP gives a partial steer. With instant full lock,
@@ -90,14 +92,15 @@
         if (rt > 0.05) t = Math.max(t, rt);
         if (lt > 0.05) b = Math.max(b, lt);
         if (p.buttons[0] && p.buttons[0].pressed) hb = 1;
+        if ((p.buttons[2] && p.buttons[2].pressed) || (p.buttons[4] && p.buttons[4].pressed)) n = 1; // X or LB: nitrous
         const K = G.Settings.s.keys;
         if (p.buttons[3] && p.buttons[3].pressed && !padPrev.y) pressed[K.reset] = true;
         if (p.buttons[5] && p.buttons[5].pressed && !padPrev.rb) pressed[K.cam] = true;
         padPrev = { y: p.buttons[3] && p.buttons[3].pressed, rb: p.buttons[5] && p.buttons[5].pressed };
         break;
       }
-      if (Input.blocked) return { s: 0, t: 0, b: 0, hb: 0 };
-      return { s, t, b, hb };
+      if (Input.blocked) return { s: 0, t: 0, b: 0, hb: 0, n: 0 };
+      return { s, t, b, hb, n };
     },
     // Gamepad Start opens the menu from ANY screen, so it's polled every
     // frame on its own (read() only runs while driving, and must run once per

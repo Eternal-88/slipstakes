@@ -22,6 +22,9 @@
       this.fastest = null; // {id, ms}
       this.maxTime = opts.maxTime || 360;
       this.practice = !!opts.practice;
+      // Catch-up strength (host setting): the most extra power a car far
+      // behind the leader gets. 0 = off (pure racing).
+      this.catchup = opts.catchup || 0;
       this.cars = entrants.map((e, k) => {
         const slot = track.gridSlot(k);
         const st = P.createCar(slot.x, slot.z, slot.h);
@@ -52,8 +55,50 @@
     setInput(id, inp) {
       const c = this.byId[id];
       if (!c) return;
-      c.input.s = inp.s; c.input.t = inp.t; c.input.b = inp.b; c.input.hb = inp.hb;
+      c.input.s = inp.s; c.input.t = inp.t; c.input.b = inp.b; c.input.hb = inp.hb; c.input.n = inp.n ? 1 : 0;
       if (inp.rs) c.respawnReq = true;
+    }
+
+    // v4 race assists, computed here on the host only and carried in each
+    // car's state (P.CORE) — a client's prediction holds the last value it
+    // was sent, so it never has to guess where the other cars are.
+    //  * SLIPSTREAM: a car up to DRAFT_LEN ahead, roughly in line and moving
+    //    with you, hides you from the wind (physics.js cuts drag up to 45%).
+    //    Strongest right behind it; the pocket widens a little with distance.
+    //  * CATCH-UP: trailing the leader by more than 12 m earns up to
+    //    this.catchup extra power (full strength 160 m back). Off by default
+    //    in practice; the host picks Off / Mild / Wild for a session.
+    assist(dt) {
+      const cs = this.cars;
+      const DRAFT_LEN = 30;
+      let lead = -Infinity;
+      for (const c of cs) if (!c.dnf) lead = Math.max(lead, c.raceDist);
+      for (const A of cs) {
+        const a = A.st;
+        let tgt = 0;
+        const sp = Math.hypot(a.vx, a.vz);
+        if (sp > 12 && a.ghost <= 0) {
+          const fx = Math.sin(a.h), fz = Math.cos(a.h);
+          for (const B of cs) {
+            if (B === A || B.st.ghost > 0) continue;
+            const b = B.st;
+            const dx = b.x - a.x, dz = b.z - a.z;
+            const ahead = dx * fx + dz * fz;
+            if (ahead < 3 || ahead > DRAFT_LEN) continue;
+            const lat = Math.abs(dx * fz - dz * fx);
+            const lim = 1.3 + ahead * 0.035;
+            if (lat > lim || b.vx * fx + b.vz * fz < sp * 0.6) continue;
+            const s = Math.pow(1 - ahead / DRAFT_LEN, 0.6) * (1 - (lat / lim) * (lat / lim));
+            if (s > tgt) tgt = s;
+          }
+        }
+        a.draft += (tgt - a.draft) * Math.min(1, dt / (tgt > a.draft ? 0.35 : 0.2));
+        let cu = 0;
+        if (this.catchup && this.phase === 'race' && !A.finished && !A.dnf && isFinite(lead)) {
+          cu = this.catchup * U.clamp((lead - A.raceDist - 12) / 150, 0, 1);
+        }
+        a.cu += (cu - a.cu) * Math.min(1, dt / 0.5);
+      }
     }
 
     // One fixed step (P.DT). Order matters: inputs -> physics -> contacts -> progress.
@@ -72,6 +117,7 @@
       }
       const frozen = this.phase === 'grid';
       const others = this.cars.map((c) => c.st);
+      if (!frozen) this.assist(dt);
       for (const c of this.cars) {
         c.px = c.st.x; c.pz = c.st.z; c.ph = c.st.h;
         let inp = c.input;
@@ -82,6 +128,7 @@
           if (!c.autopilot) c.autopilot = new G.Bot(0.7, 7);
           inp = c.autopilot.drive(c.st, c.spec, tr, dt, others);
           inp.t *= 0.6;
+          inp.n = 0;
         }
         if (frozen) inp = { s: inp.s, t: inp.t, b: 0, hb: 0 };
         if ((c.respawnReq || inp.rs) && !frozen) this.respawn(c);
@@ -89,6 +136,9 @@
         P.step(c.st, c.spec, inp, tr, dt, { frozen });
       }
       this.collideCars();
+      // a car that has taken the flag is on its cool-down lap: no more body
+      // damage (sprints end at a wall, and v4 finishing speeds are high)
+      for (const c of this.cars) if (c.finished && c.bodyAtFinish != null) c.st.body = c.bodyAtFinish;
       if (this.phase !== 'grid') this.progress();
     }
 
@@ -98,7 +148,16 @@
       const q = tr.query(c.st.x, c.st.z, c.st.hint, this._q);
       let d = q.along;
       if (!tr.closed) d = U.clamp(d, 2, tr.length - 2);
-      const p = tr.pointAt(d, 0);
+      // never respawn inside a barrel stack: step sideways past it
+      let lat = 0;
+      const near = tr.OBL && tr.OBL[tr.idx(Math.round(d / tr.sp))];
+      if (near) {
+        for (const o of near) {
+          const pp = tr.pointAt(d, lat);
+          if (Math.hypot(pp.x - o.x, pp.z - o.z) < o.r + 3) lat = o.lat > 0 ? o.lat - o.r - 3.2 : o.lat + o.r + 3.2;
+        }
+      }
+      const p = tr.pointAt(d, lat);
       const st = c.st;
       st.x = p.x; st.z = p.z; st.h = p.h;
       st.vx = st.vz = st.w = 0;
@@ -230,13 +289,16 @@
       if (this.phase === 'race' && !this.practice) {
         const active = this.cars.filter((c) => !c.dnf);
         const allDone = active.every((c) => c.finished);
-        const grace = tr.format === 'drag' ? 8 : 25;
+        // after the winner: 25 s on circuits/sprints; drags scale with length
+        // (a flat 8 s DNF'd the slowest car on the 1,609 m Backstretch Mile)
+        const grace = tr.format === 'drag' ? Math.max(8, tr.raceDistance / 110) : 25;
         if (allDone || (this.firstFinishT != null && this.t - this.firstFinishT > grace) || raceT > this.maxTime) this.end();
       }
     }
 
     finish(c, raceT) {
       c.finished = true;
+      c.bodyAtFinish = c.st.body;
       c.finishMs = raceT * 1000;
       this.finishOrder.push(c.id);
       if (this.firstFinishT == null) this.firstFinishT = this.t;

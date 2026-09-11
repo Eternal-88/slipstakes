@@ -31,9 +31,12 @@
     steerSpeed: 'normal', // slow | normal | fast (keyboard steering ramp)
     touch: 'auto', // auto (after the first screen touch) | on | off
     botLevel: 'normal', // easy | normal | hard (single-player bots)
-    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', reset: 'KeyR', cam: 'KeyC' },
+    catchup: 'mild', // off | mild | wild (single-player quick races; the host picks for multiplayer)
+    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC' },
   };
-  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', reset: 'Reset car', cam: 'Change camera' };
+  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera' };
+  // Catch-up strength per setting: the most extra power a car far behind gets.
+  const CATCHUP = { off: 0, mild: 0.1, wild: 0.25 };
 
   const saved = U.store.get('ss.settings', null) || {};
   const s = Object.assign({}, DEF, saved);
@@ -45,7 +48,7 @@
 
   const subs = [];
   const Settings = {
-    DEF, KEY_LABELS, s,
+    DEF, KEY_LABELS, CATCHUP, s,
     get(k) {
       return s[k];
     },

@@ -36,8 +36,23 @@
       mass: 1440, powerKW: 178, redline: 6300, rearBias: 1.0, wheelbase: 2.8, weightFront: 0.5,
       cgH: 0.54, track: 1.66, cdA: 0.98, vTop: 57, inertiaK: 0.98, body: 'muscle', len: 4.75, wid: 1.96,
     },
+    // v4 premium chassis: bought once per session (price), then swappable
+    // like any other. Each wins somewhere and pays for it somewhere else.
+    dune: {
+      id: 'dune', name: 'Dune Runner', tag: 'AWD desert truck', drive: 'AWD', price: 2600,
+      blurb: 'Long-travel desert pickup. Shrugs off dirt, mud and sand and shoves smaller cars aside. Heavy, tall and draggy on tarmac.',
+      mass: 1560, powerKW: 172, redline: 5900, rearBias: 0.58, wheelbase: 2.95, weightFront: 0.55,
+      cgH: 0.68, track: 1.74, cdA: 1.18, vTop: 49, inertiaK: 1.04, body: 'truck', len: 4.9, wid: 2.02, looseBonus: 1.14,
+    },
+    apex: {
+      id: 'apex', name: 'Apex MR', tag: 'mid-engine RWD', drive: 'RWD', price: 4800,
+      blurb: 'Mid-engined supercar: the most grip and power in the paddock, and the least forgiving. Snaps on lift-off, hates dirt, costly to run.',
+      mass: 1180, powerKW: 182, redline: 8400, rearBias: 1.0, wheelbase: 2.55, weightFront: 0.41,
+      cgH: 0.44, track: 1.68, cdA: 0.8, vTop: 60, inertiaK: 0.88, body: 'mid', len: 4.45, wid: 1.96, looseBonus: 0.9, wearK: 1.35,
+    },
   };
-  const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule'];
+  const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule', 'dune', 'apex'];
+  const BASE_CARS = ['vandal', 'brick', 'sting', 'mule']; // free for everyone
 
   // Every option lists its upside (desc) and its downside (cons) — shown verbatim in the shop.
   const SLOTS = [
@@ -94,7 +109,7 @@
         // genuinely launch harder, and still pay with a low limiter.
         { id: 'short', name: 'Short Ratios + Quick-shift', price: 1100, desc: '+22% wheel torque and 0.10 s shifts — quicker off the line and out of corners.', cons: 'Hits the limiter early: much lower top speed. Useless on long straights.', fd: 1.22, gears: [3.25, 2.1, 1.52, 1.17, 0.94], shift: 0.1, kick: 1.0 },
         { id: 'long', name: 'Long Ratios', price: 1100, desc: 'Higher top speed — lets big power keep pulling.', cons: '−16% wheel torque: sluggish out of corners.', fd: 0.84, gears: [3.25, 2.1, 1.52, 1.17, 0.94], shift: 0.16, kick: 1.0 },
-        { id: 'seq', name: 'Sequential Race Box', price: 3000, desc: '6 close ratios, 0.05 s shifts.', cons: 'Violent shifts kick the rear loose mid-corner. Extra engine wear.', fd: 1.0, gears: [3.1, 2.2, 1.66, 1.32, 1.09, 0.92], shift: 0.05, kick: 1.7 },
+        { id: 'seq', name: 'Sequential Race Box', price: 3000, desc: '6 close ratios, 0.05 s shifts. Straight-cut gear whine.', cons: 'Violent shifts kick the rear loose mid-corner. Extra engine wear.', fd: 1.0, gears: [3.1, 2.2, 1.66, 1.32, 1.09, 0.92], shift: 0.05, kick: 1.7 },
       ],
     },
     {
@@ -124,9 +139,9 @@
     {
       id: 'exhaust', name: 'Exhaust', icon: '♨',
       options: [
-        { id: 'stock', name: 'Stock Muffler', price: 0, desc: 'Full low-end torque. Quiet.', cons: 'Chokes the top end.', tqLow: 1.0, tqHigh: 1.0, kg: 0, pops: 0 },
-        { id: 'sport', name: 'Sport Cat-back', price: 800, desc: '+5% power at the top end, −5 kg.', cons: '−2% torque below half revs.', tqLow: 0.98, tqHigh: 1.05, kg: -5, pops: 0.4 },
-        { id: 'straight', name: 'Straight Pipe', price: 1800, desc: '+10% top-end power, −9 kg. Pops and bangs on the overrun.', cons: 'Torque hole below half revs (−8%): bogs out of slow corners.', tqLow: 0.92, tqHigh: 1.1, kg: -9, pops: 1 },
+        { id: 'stock', name: 'Stock Muffler', price: 0, desc: 'Full low-end torque. Quiet, muffled note.', cons: 'Chokes the top end.', tqLow: 1.0, tqHigh: 1.0, kg: 0, pops: 0 },
+        { id: 'sport', name: 'Sport Cat-back', price: 800, desc: '+5% power at the top end, −5 kg. Throatier note with a cruising drone.', cons: '−2% torque below half revs.', tqLow: 0.98, tqHigh: 1.05, kg: -5, pops: 0.4 },
+        { id: 'straight', name: 'Straight Pipe', price: 1800, desc: '+10% top-end power, −9 kg. Loud, raw, burbly — pops and bangs on the overrun.', cons: 'Torque hole below half revs (−8%): bogs out of slow corners.', tqLow: 0.92, tqHigh: 1.1, kg: -9, pops: 1 },
       ],
     },
     {
@@ -134,7 +149,7 @@
       options: [
         { id: 'stock', name: 'Factory Map', price: 0, desc: 'Safe timing. Long engine life.', cons: 'Leaves power on the table.', pMul: 1.0, wearM: 1.0, heatM: 1.0, fuelM: 1.0 },
         { id: 'stage1', name: 'Stage 1 Remap', price: 1400, desc: '+8% power everywhere.', cons: 'Engine wear +25%, fuel +10%.', pMul: 1.08, wearM: 1.25, heatM: 1.05, fuelM: 1.1 },
-        { id: 'stage2', name: 'Stage 2 Race Map', price: 3200, desc: '+16% power everywhere.', cons: 'Engine wear +60%, boost heat +20%, fuel +22%. Rebuilds get expensive.', pMul: 1.16, wearM: 1.6, heatM: 1.2, fuelM: 1.22 },
+        { id: 'stage2', name: 'Stage 2 Race Map', price: 3200, desc: '+16% power everywhere. Harder note, crackles on lift, bounces off the limiter.', cons: 'Engine wear +60%, boost heat +20%, fuel +22%. Rebuilds get expensive.', pMul: 1.16, wearM: 1.6, heatM: 1.2, fuelM: 1.22 },
       ],
     },
     {
@@ -156,13 +171,24 @@
         { id: 'spool', name: 'Welded Spool', price: 500, desc: '100% lock: huge traction in a line, easy long drifts.', cons: 'Scrubs and understeers in slow corners; you must throw it in.', lsd: 1.0, diffYaw: 900 },
       ],
     },
+    // Nitrous (v4): push-to-pass. A bottle per race (refilled free at the
+    // start, billed with the fuel), topped up while you're in a slipstream —
+    // so drafting someone charges the shot you pass them with.
+    {
+      id: 'nitrous', name: 'Nitrous', icon: '⚡',
+      options: [
+        { id: 'none', name: 'No Nitrous', price: 0, desc: 'Nothing to manage.', cons: 'No push-to-pass button.', gain: 0, dur: 1, refill: 0, heat: 0, wear: 0, cost: 0, kg: 0 },
+        { id: 'n1', name: 'Street Shot', price: 2200, desc: 'Hold NITROUS for +30% power. A 6 s bottle every race, topped up in other cars\' slipstream.', cons: '+12 kg. $120 per full bottle. Adds engine heat.', gain: 0.3, dur: 6, refill: 0.07, heat: 0.04, wear: 0.0004, cost: 120, kg: 12 },
+        { id: 'n2', name: 'Race Shot', price: 4400, desc: '+60% power for 5 s, and it refills faster while drafting.', cons: '+18 kg. $240 a bottle. Heavy heat and engine wear — it can cook a boosted engine.', gain: 0.6, dur: 5, refill: 0.1, heat: 0.09, wear: 0.0012, cost: 240, kg: 18 },
+      ],
+    },
   ];
   const SLOT_MAP = {};
   SLOTS.forEach((s) => {
     SLOT_MAP[s.id] = s;
     s.options.forEach((o) => (o.slot = s.id));
   });
-  const STOCK = { induction: 'na', weight: 'stock', aero: 'none', compound: 'hard', width: 'std', gearing: 'stock', suspension: 'stock', brakes: 'stock', exhaust: 'stock', ecu: 'stock', cooling: 'stock', diff: 'stock' };
+  const STOCK = { induction: 'na', weight: 'stock', aero: 'none', compound: 'hard', width: 'std', gearing: 'stock', suspension: 'stock', brakes: 'stock', exhaust: 'stock', ecu: 'stock', cooling: 'stock', diff: 'stock', nitrous: 'none' };
   const opt = (slot, id) => SLOT_MAP[slot].options.find((o) => o.id === id) || SLOT_MAP[slot].options[0];
 
   // ------------------------------------------------------------------------
@@ -217,15 +243,17 @@
   const LOOK = {
     paints: [0xff3b30, 0xd7263d, 0xff8a00, 0xffc400, 0xf2e94e, 0x9be15d, 0x22c55e, 0x0f9d58, 0x19c3e6, 0x2f6bff, 0x1d3fbb, 0x6c3ce0, 0xa855f7, 0xff2d92, 0xff7eb6, 0xf5f5f5, 0xc9ced6, 0x8a929c, 0x4a4f58, 0x1b1d22, 0x7a4a2a, 0xc49a6c, 0x2f5d50, 0x9e1b32],
     accents: [0xf5f5f5, 0x1b1d22, 0xffc400, 0xff3b30, 0x2f6bff, 0x22c55e, 0x19c3e6, 0xff2d92, 0xff8a00, 0xa855f7, 0x8a929c, 0xd4a017],
-    liveries: [['none', 'Plain'], ['stripes', 'Twin stripes'], ['single', 'Centre stripe'], ['side', 'Side stripe'], ['twotone', 'Two-tone'], ['roof', 'Contrast roof'], ['race', 'Race (stripes + roundels)'], ['checker', 'Checker roof']],
+    liveries: [['none', 'Plain'], ['stripes', 'Twin stripes'], ['single', 'Centre stripe'], ['side', 'Side stripe'], ['twotone', 'Two-tone'], ['roof', 'Contrast roof'], ['race', 'Race (stripes + roundels)'], ['checker', 'Checker roof'], ['fade', 'Fade (accent → paint)'], ['flames', 'Flames']],
     rims: [['five', '5-spoke'], ['mesh', 'Mesh'], ['dish', 'Dish'], ['rally', 'Rally steel'], ['turbine', 'Turbine']],
     rimCols: [0xc9d0d8, 0x2a2d33, 0xd4a017, 0xf5f5f5, 0x5a6270, 0xa0602e, 0xe8322b, 0x19c3e6],
     tints: [['clear', 'Clear'], ['dark', 'Dark'], ['black', 'Limo black']],
     glows: [['none', 'None'], ['cyan', 'Cyan'], ['pink', 'Pink'], ['green', 'Green'], ['yellow', 'Yellow'], ['purple', 'Purple']],
+    finishes: [['gloss', 'Gloss'], ['metal', 'Metallic'], ['chrome', 'Chrome flake'], ['matte', 'Matte']],
+    lights: [['warm', 'Halogen'], ['xenon', 'Xenon blue'], ['amber', 'Rally amber']],
   };
   const GLOW_COL = { cyan: 0x29d3ff, pink: 0xff3d9a, green: 0x2fe07a, yellow: 0xffcc00, purple: 0xa855f7 };
   function defaultLook(num) {
-    return { paint: null, accent: 0xf5f5f5, livery: 'none', rims: 'five', rimCol: 0xc9d0d8, num: num || 0, tint: 'dark', glow: 'none' };
+    return { paint: null, accent: 0xf5f5f5, livery: 'none', rims: 'five', rimCol: 0xc9d0d8, num: num || 0, tint: 'dark', glow: 'none', finish: 'gloss', lights: 'warm' };
   }
   // Validate a look patch from the wire (host side).
   function cleanLook(look, patch) {
@@ -240,6 +268,8 @@
       else if (k === 'rims' && ok(LOOK.rims, v)) o.rims = v;
       else if (k === 'tint' && ok(LOOK.tints, v)) o.tint = v;
       else if (k === 'glow' && ok(LOOK.glows, v)) o.glow = v;
+      else if (k === 'finish' && ok(LOOK.finishes, v)) o.finish = v;
+      else if (k === 'lights' && ok(LOOK.lights, v)) o.lights = v;
       else if (k === 'num' && Number.isInteger(v) && v >= 0 && v <= 99) o.num = v;
     }
     return o;
@@ -285,9 +315,10 @@
     const ind = opt('induction', p.induction), wt = opt('weight', p.weight), ae = opt('aero', p.aero);
     const cp = opt('compound', p.compound), wd = opt('width', p.width), gr = opt('gearing', p.gearing), su = opt('suspension', p.suspension);
     const br = opt('brakes', p.brakes), ex = opt('exhaust', p.exhaust), ec = opt('ecu', p.ecu), co = opt('cooling', p.cooling), df = opt('diff', p.diff);
+    const no = opt('nitrous', p.nitrous);
     const T = effTune(p, tune);
 
-    const mass = c.mass - wt.kg + (ae.kg || 0) + br.kg + ex.kg + co.kg;
+    const mass = c.mass - wt.kg + (ae.kg || 0) + br.kg + ex.kg + co.kg + no.kg;
     const cgF = c.wheelbase * (1 - c.weightFront); // distance CG -> front axle
     const cgR = c.wheelbase - cgF;
     // Yaw inertia via the "dynamic index" k: Iz = m * a * b * k (k≈1 for road
@@ -333,7 +364,7 @@
     const loose = wd.loose * su.looseM * (c.looseBonus || 1);
     const surfMul = G.SURF.map((s) => {
       let m = s.grip;
-      if (s.wet) m *= wd.wetM;
+      if (s.wet || s.icy) m *= wd.wetM;
       else if (s.loose) m *= loose;
       else m *= wd.dry;
       return m;
@@ -374,9 +405,11 @@
       steerLock: 0.56, steerFalloff: 14, steerRate: 3.4 * su.steer,
       brakeForce: mass * G_ACC * 1.3 * br.bForce, brakeFront: T.bias / 100,
       csAssist: 0.6, yawDamp: 0.9, spinAssist: 2.2, spinAngle: 0.62,
-      engineWearRate: 0.00016 * (1 + ind.boostGain * 1.4) * (gr.id === 'seq' ? 1.25 : 1) * ec.wearM * (1 + (boostM - 1) * 1.5),
+      engineWearRate: 0.00016 * (1 + ind.boostGain * 1.4) * (gr.id === 'seq' ? 1.25 : 1) * ec.wearM * (1 + (boostM - 1) * 1.5) * (c.wearK || 1),
       heatDamage: 0.006,
       bodyPull: (w.body || 0) * 0.02,
+      // nitrous (physics.js §6)
+      nosGain: no.gain, nosDur: no.dur, nosRefill: no.refill, nosHeat: no.heat, nosWear: no.wear, nosCost: no.cost,
     };
     return s;
   }
@@ -622,6 +655,9 @@
     if (p.exhaust === 'straight') out.push(['warn', 'Straight pipe: torque hole below half revs — bogs out of hairpins in a high gear.']);
     if (p.ecu === 'stage2') out.push(['warn', 'Race map: engine wear +60% — budget for rebuilds.']);
     if (p.diff === 'spool') out.push(['warn', 'Welded spool: the car pushes in slow corners. Throw it in and drift, or lose time.']);
+    if (s.nosGain) out.push([s.nosGain >= 0.5 && s.heatRate > 0 ? 'bad' : 'warn', 'Nitrous: +' + Math.round(s.nosGain * 100) + '% power for ' + s.nosDur + ' s a race (hold the Nitrous key). Draft other cars to refill it. $' + s.nosCost + ' a bottle.']);
+    if (s.carId === 'apex') out.push(['warn', 'Apex MR: lift mid-corner and the rear comes round. Engine wear +35%.']);
+    if (s.carId === 'dune') out.push(['warn', 'Dune Runner: tall and heavy — it rolls and runs wide on tarmac, but dirt and mud barely slow it.']);
     const t = s.tune || {};
     if (t.bias != null && t.bias <= 56) out.push(['bad', 'Rear brake bias: the rear tyres are at their limit under hard braking — the car will try to swap ends.']);
     if (t.bias >= 70) out.push(['warn', 'Forward brake bias: the fronts do all the work — the car pushes wide when you brake into a corner.']);
@@ -645,7 +681,9 @@
   function newGarage(carId) {
     const owned = {};
     SLOTS.forEach((s) => (owned[s.id] = [s.options[0].id]));
-    return { carId, installed: Object.assign({}, STOCK), owned, wear: { tyre: 0, engine: 0, body: 0 }, tune: defaultTune(), look: defaultLook() };
+    const cars = BASE_CARS.slice();
+    if (!cars.includes(carId)) cars.push(carId);
+    return { carId, installed: Object.assign({}, STOCK), owned, cars, wear: { tyre: 0, engine: 0, body: 0 }, tune: defaultTune(), look: defaultLook() };
   }
 
   // Bring a garage from an older save up to date (new slots, tune, look).
@@ -657,6 +695,9 @@
       if (!Array.isArray(g.owned[s.id]) || !g.owned[s.id].length) g.owned[s.id] = [s.options[0].id];
     });
     g.wear = Object.assign({ tyre: 0, engine: 0, body: 0 }, g.wear || {});
+    g.cars = Array.isArray(g.cars) ? g.cars.filter((id) => CARS[id]) : BASE_CARS.slice();
+    for (const id of BASE_CARS) if (!g.cars.includes(id)) g.cars.push(id);
+    if (g.carId && CARS[g.carId] && !g.cars.includes(g.carId)) g.cars.push(g.carId);
     g.tune = Object.assign(defaultTune(), g.tune || {});
     g.look = Object.assign(defaultLook(), g.look || {});
     return g;
@@ -672,7 +713,7 @@
   const CAR_SWAP = 800;
 
   G.Parts = {
-    CARS, CAR_ORDER, SLOTS, SLOT_MAP, STOCK, opt, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,
+    rearExcess, CARS, CAR_ORDER, BASE_CARS, SLOTS, SLOT_MAP, STOCK, opt, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,
     topSpeed, zeroTo100, repairQuote, tyreSetPrice, engineRebuildPrice, BASIC_REPAIR, BODY_REPAIR, newGarage, fixGarage, partsValue,
     TUNES, TUNE_MAP, defaultTune, effTune, tuneAvailable, LOOK, GLOW_COL, defaultLook, cleanLook, brakeDist, CAR_SWAP,
     WHEEL_R, RHO, G_ACC,

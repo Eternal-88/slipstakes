@@ -28,6 +28,9 @@
     MARGIN: 0.12, // bookmaker margin on odds
     FLOOR: Parts.BASIC_REPAIR,
     T: { entry: 20000, betting: 25000 },
+    // v4 comeback economy
+    BOUNTY: 400, // on the money leader's head: paid to the best finisher who beats them
+    DOUBLE_MAX: 2000, // double-or-nothing on a race prize, capped
   };
   E.mult = (raceNo) => 1 + E.GROWTH * (raceNo - 1);
   E.prize = (pos, dnf, raceNo) => Math.round(((dnf ? E.DNF_PAY : E.PRIZES[pos - 1] || 400) * E.mult(raceNo)) / 10) * 10;
@@ -147,6 +150,14 @@
     st.odds = computeOdds(racers, track, U.hashStr(st.code + ':' + st.raceNo));
     // Stipend goes to the two poorest racers (decided now, shown on the board).
     st.stipend = racers.length >= 4 ? racers.slice().sort((a, b) => this.netWorth(a) - this.netWorth(b)).slice(0, 2).map((p) => p.id) : [];
+    // v4 BOUNTY: from race 2, a price on the richest racer's head. Whoever
+    // finishes highest ahead of them collects it (paid by the house).
+    st.bounty = null;
+    if (st.raceNo >= 1 && racers.length >= 3) {
+      const lead = racers.slice().sort((a, b) => this.netWorth(b) - this.netWorth(a))[0];
+      st.bounty = { id: lead.id, name: lead.name, amount: Math.round((E.BOUNTY * E.mult(st.raceNo + 1)) / 10) * 10 };
+      this.sys(`🎯 Bounty: ${U.fmtMoney(st.bounty.amount)} to whoever finishes highest ahead of ${lead.name} (the money leader).`);
+    }
     this.setPhase('betting', E.T.betting);
   };
 
@@ -154,7 +165,9 @@
   HS.on_bet = function (p, m) {
     const st = this.state;
     if (st.phase !== 'betting') return this.toast(p.id, 'Betting is closed.', 'bad');
-    if (p.entry !== 'sit') return this.toast(p.id, 'Racers can only make side bets.', 'bad');
+    // v4: racers may BACK THEMSELVES (never anyone else — no betting against
+    // your own interests). Spectators can bet on anyone.
+    if (p.entry !== 'sit' && m.racer !== p.id) return this.toast(p.id, 'Racers can only back themselves (or make side bets).', 'bad');
     const o = st.odds[m.racer];
     const r = this.player(m.racer);
     if (!o || !r) return;
@@ -274,6 +287,23 @@
     }
     const pos = {};
     R.rows.forEach((r) => (pos[r.id] = r));
+    // v4 bounty on the money leader
+    const bt = st.bounty && pos[st.bounty.id];
+    if (bt) {
+      const hunter = R.rows.find((r) => !r.dnf && r.id !== st.bounty.id && r.pos < bt.pos);
+      R.bounty = Object.assign({}, st.bounty, { winner: hunter ? hunter.id : null, winnerName: hunter ? hunter.name : null });
+      if (hunter) {
+        const hp = this.player(hunter.id);
+        hunter.payout.bounty = st.bounty.amount;
+        hunter.payout.net += st.bounty.amount;
+        if (hp) {
+          hp.money += st.bounty.amount;
+          hp.stats.earned += st.bounty.amount;
+        }
+        this.sys(`🎯 ${hunter.name} collects the ${U.fmtMoney(st.bounty.amount)} bounty on ${st.bounty.name}!`);
+      }
+    }
+    st.bounty = null;
     R.bets = (st.bets || []).map((b) => {
       const r = pos[b.racer];
       const won = r && !r.dnf && (b.type === 'win' ? r.pos === 1 : r.pos <= 3);
@@ -307,10 +337,30 @@
     st.sideBets = [];
   };
 
+  // v4 DOUBLE OR NOTHING: on the results screen each racer may flip a coin
+  // once for this race's prize (capped). A fair 50/50 — no house edge.
+  HS.on_double = function (p) {
+    const st = this.state;
+    if (st.phase !== 'results' || !st.results) return;
+    const row = st.results.rows.find((r) => r.id === p.id);
+    if (!row || !row.payout || row.dbl) return;
+    const amt = Math.min(row.payout.prize, E.DOUBLE_MAX);
+    if (amt <= 0) return;
+    if (p.money < amt) return this.toast(p.id, 'You no longer have that prize to stake.', 'bad');
+    const won = U.cryptoInt(2) === 1;
+    p.money += won ? amt : -amt;
+    p.stats.casino += won ? amt : -amt;
+    row.dbl = won ? 'won' : 'lost';
+    row.dblAmt = amt;
+    this.sys(`🪙 ${p.name} flipped for ${U.fmtMoney(amt)} — ${won ? 'DOUBLED it!' : 'and lost it.'}`);
+    this.emit('toPlayer', p.id, { t: 'toast', msg: won ? `Heads! +${U.fmtMoney(amt)}` : `Tails. −${U.fmtMoney(amt)}`, kind: won ? 'money' : 'bad' });
+    this.touch();
+  };
+
   // --------------------------------------------------------- bots
   // Bots are cautious: repair when worn, then maybe buy one sensible upgrade
   // while keeping a cash reserve. They never gamble.
-  const BOT_PREFS = [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['induction', 'sc'], ['cooling', 'radiator'], ['gearing', 'short'], ['aero', 'a2'], ['weight', 'w2'], ['induction', 't1'], ['compound', 'soft']];
+  const BOT_PREFS = [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator'], ['gearing', 'short'], ['aero', 'a2'], ['weight', 'w2'], ['induction', 't1'], ['compound', 'soft']];
   HS.botsShop = function () {
     const st = this.state;
     for (const b of this.bots()) {

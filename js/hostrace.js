@@ -40,7 +40,7 @@
       const r = session.state.race;
       this.no = r.no;
       this.track = G.getTrack(r.trackId);
-      this.sim = new G.RaceSim(this.track, r.entrants, { countdown: 4.5 });
+      this.sim = new G.RaceSim(this.track, r.entrants, { countdown: 4.5, catchup: r.catchup || 0 });
       this.inputs = {}; // pid -> {q: [blocks], cur: block|null, seq, ticks, rs}
       this.acc = 0;
       this.snapN = 0;
@@ -54,17 +54,17 @@
       let I = this.inputs[pid];
       if (!I) I = this.inputs[pid] = { q: [], cur: null, seq: -1, ticks: 0, rs: 0 };
       if (typeof m.q !== 'number') return;
-      this._insert(I, m.q, m.s, m.th, m.b, m.hb);
+      this._insert(I, m.q, m.s, m.th, m.b, m.hb, m.n);
       // redundant copies of the previous blocks: recover any we lost
-      if (Array.isArray(m.p)) for (const r of m.p.slice(0, 3)) if (Array.isArray(r)) this._insert(I, r[0], r[1], r[2], r[3], r[4]);
+      if (Array.isArray(m.p)) for (const r of m.p.slice(0, 3)) if (Array.isArray(r)) this._insert(I, r[0], r[1], r[2], r[3], r[4], r[5]);
       if (m.rs) I.rs = 1;
     }
 
-    _insert(I, seq, s, th, b, hb) {
+    _insert(I, seq, s, th, b, hb, n) {
       if (typeof seq !== 'number' || seq <= I.seq) return; // already consumed / stale
       if (I.q.some((x) => x.seq === seq)) return; // duplicate
       // Clamp everything: never trust the wire.
-      const blk = { seq, inp: { s: U.clamp(+s || 0, -1, 1), t: U.clamp(+th || 0, 0, 1), b: U.clamp(+b || 0, 0, 1), hb: hb ? 1 : 0 } };
+      const blk = { seq, inp: { s: U.clamp(+s || 0, -1, 1), t: U.clamp(+th || 0, 0, 1), b: U.clamp(+b || 0, 0, 1), hb: hb ? 1 : 0, n: n ? 1 : 0 } };
       // insert in seq order (the fast channel is unordered)
       let i = I.q.length;
       while (i > 0 && I.q[i - 1].seq > blk.seq) i--;
@@ -105,7 +105,7 @@
             sim.setInput(c.id, BRAKE);
             continue;
           }
-          sim.setInput(c.id, I.rs ? { s: inp.s, t: inp.t, b: inp.b, hb: inp.hb, rs: 1 } : inp);
+          sim.setInput(c.id, I.rs ? { s: inp.s, t: inp.t, b: inp.b, hb: inp.hb, n: inp.n, rs: 1 } : inp);
           I.rs = 0;
         }
         localInput.rs = 0;
