@@ -12,7 +12,7 @@
     const tr = id ? G.getTrack(id) : null;
     if (!tr) return '';
     const laps = tr.format === 'circuit' ? `${tr.laps} laps` : tr.format === 'drag' ? `${tr.def.dragLength} m` : `${Math.round(tr.raceDistance)} m`;
-    return `<div class="pr-track"><div><span class="muted">RACE ${st.raceNo + 1}/${st.settings.races}</span><h1>${U.esc(tr.name)}</h1></div><em class="fmt fmt-${tr.format}">${tr.format.toUpperCase()}</em><span class="muted">${laps}</span><div class="pr-timer">${label} <b>${left(st)} s</b></div></div><p class="muted pr-blurb">${U.esc(tr.blurb)}</p>`;
+    return `<div class="pr-track"><div><span class="muted">RACE ${st.raceNo + 1}/${st.settings.races}</span><h1>${U.esc(tr.name)}</h1></div><em class="fmt fmt-${tr.format}">${tr.format.toUpperCase()}</em>${tr.def.isNew ? '<em class="t-new">NEW</em>' : ''}<span class="muted">${laps}</span><div class="pr-timer">${label} <b>${left(st)} s</b></div></div><p class="muted pr-blurb">${U.esc(tr.blurb)}</p>`;
   }
 
   // ------------------------------------------------------------ entry
@@ -45,6 +45,7 @@
            <p>Paid by placement: <b>${prizes[0]}</b> · ${prizes[1]} · ${prizes[2]} … last ${prizes[prizes.length - 1]}. +${U.fmtMoney(E().GAIN_BONUS)} per place gained from the grid, ${U.fmtMoney(E().FASTEST_LAP)} fastest lap.</p>
            <p class="muted">Your ${U.esc(Parts.CARS[me.carId].name)}: tyres ${Math.round((1 - w.tyre) * 100)}% · engine ${Math.round((1 - w.engine) * 100)}% · running cost ~${U.fmtMoney(cost)} (fuel + wear)</p>
            ${warns.map((x) => `<div class="wn bad">⚠ ${U.esc(x[1])}</div>`).join('')}
+           ${G.Advisor ? G.Advisor.html(G.Advisor.tips(me, tr, 4).filter((t) => t.lvl !== 'good'), false) : ''}
          </div>
          <div class="choice ${me.entry === 'sit' ? 'on' : ''}" data-act="sit">
            <div class="ch-t">🎲 SIT OUT & BET</div>
@@ -96,7 +97,8 @@
           return `<tr class="${p.id === me.id ? 'me' : ''}"><td><i class="dot" style="background:${hex(p.color)}"></i>${U.esc(p.name)}${stip.has(p.id) ? ' <em class="tag-sti" title="Sponsor stipend: poorest racers get a bonus">+$300</em>' : ''}</td><td class="muted">${Parts.CARS[p.carId].name}</td><td>${form}</td><td><div class="sc"><i style="width:${o.score * 10}%"></i></div></td>${cell('win', o.win)}${cell('podium', o.podium)}</tr>`;
         })
         .join('');
-      UI.patch(this.el.board, `<table class="odds"><tr><th>Racer</th><th>Car</th><th>Form</th><th>Car on this track</th><th>WIN</th><th>PODIUM</th></tr>${rows}</table>${this.publicBets(st)}`);
+      const bounty = st.bounty ? `<div class="bounty">🎯 <b>BOUNTY ${U.fmtMoney(st.bounty.amount)}</b> on ${U.esc(st.bounty.name)} (the money leader) — paid to whoever finishes highest ahead of them.</div>` : '';
+      UI.patch(this.el.board, `${bounty}<table class="odds"><tr><th>Racer</th><th>Car</th><th>Form</th><th>Car on this track</th><th>WIN</th><th>PODIUM</th></tr>${rows}</table>${this.publicBets(st)}`);
       UI.patch(this.el.slip, sitting ? this.slipHtml(st, me) : this.sideHtml(st, me));
       UI.patch(this.el.foot, `<span class="muted">${G.Game.readyLine()}</span><button class="btn ${me.ready ? 'green' : 'primary'}" data-act="ready">${me.ready ? '✓ Ready' : sitting ? 'Done betting' : 'Ready to race'}</button>`);
     },
@@ -133,7 +135,19 @@
       const incoming = st.sideBets.filter((s) => s.to === me.id && s.status === 'pending');
       const mine = st.sideBets.filter((s) => (s.from === me.id || s.to === me.id) && s.status !== 'pending');
       const inc = incoming.map((s) => `<div class="incoming"><b>${U.esc(s.fromName)}</b>: "I'll beat you, ${U.fmtMoney(s.stake)}." <button class="btn small green" data-act="accept" data-id="${s.id}">Accept</button><button class="btn small ghost" data-act="decline" data-id="${s.id}">Decline</button></div>`).join('');
-      return `<h3>You're racing</h3><p class="muted small">Racers can't use the bookie, but you can challenge a rival: whoever finishes ahead takes both stakes.</p>
+      // v4: back yourself with the bookie
+      const mo = st.odds[me.id];
+      const myBets = st.bets.filter((b) => b.pid === me.id);
+      const staked = myBets.reduce((a, b) => a + b.stake, 0);
+      const maxOk = Math.max(0, Math.min(E_.BET_MAX, E_.BET_TOTAL - staked, me.money - E_.FLOOR));
+      const can = this.stake >= E_.BET_MIN && this.stake <= maxOk;
+      const back = mo
+        ? `<h3>Back yourself</h3><p class="muted small">Bet on your own result at the bookie's odds — paid on top of your prize.</p>
+          <div class="chips">${this.chips(this.stake, 'stake')}</div>
+          <div class="side-row"><button class="btn primary small" data-act="backme" data-type="win" ${can ? '' : 'disabled'}>WIN @ ${mo.win.toFixed(2)}x → ${U.fmtMoney(this.stake * mo.win)}</button>${mo.podium ? `<button class="btn small" data-act="backme" data-type="podium" ${can ? '' : 'disabled'}>PODIUM @ ${mo.podium.toFixed(2)}x → ${U.fmtMoney(this.stake * mo.podium)}</button>` : ''}</div>
+          ${myBets.map((b) => `<div class="mybet">${U.fmtMoney(b.stake)} on yourself to ${b.type} @${b.odds.toFixed(2)}x</div>`).join('')}`
+        : '';
+      return `<h3>You're racing</h3>${back}<h3 style="margin-top:12px">Side bet</h3><p class="muted small">Challenge a rival: whoever finishes ahead takes both stakes.</p>
         ${inc}
         <div class="side-row"><select data-input="sideTo">${racers.map((p) => `<option value="${p.id}" ${p.id === this.side.to ? 'selected' : ''}>${U.esc(p.name)}</option>`).join('')}</select></div>
         <div class="chips">${this.chips(this.side.stake, 'sstake')}</div>
@@ -162,6 +176,7 @@
         this.sel = null;
       },
       challenge() { if (this.side.to) G.Client.act({ t: 'sideBet', to: this.side.to, stake: this.side.stake }); },
+      backme(el) { G.Client.act({ t: 'bet', racer: G.Client.meId, type: el.dataset.type, stake: this.stake }); },
       accept(el) { G.Client.act({ t: 'sideReply', id: el.dataset.id, accept: true }); },
       decline(el) { G.Client.act({ t: 'sideReply', id: el.dataset.id, accept: false }); },
       ready() { G.Client.act({ t: 'ready', v: !G.Client.me.ready }); },

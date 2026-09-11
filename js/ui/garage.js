@@ -22,6 +22,14 @@
     return v + ' / 9';
   }
   const tuneEq = (inst, a, b) => JSON.stringify(Parts.effTune(inst, a)) === JSON.stringify(Parts.effTune(inst, b));
+  // What switching to a car costs this player now (mirrors session.on_setCar).
+  function carFee(me, id, free) {
+    const owned = ((me.garage && me.garage.cars) || Parts.BASE_CARS).includes(id);
+    const buy = owned ? 0 : Parts.CARS[id].price || 0;
+    const swap = free ? 0 : Parts.CAR_SWAP;
+    return { buy, swap, total: buy + swap };
+  }
+  G.carFee = carFee;
 
   const Garage = {
     mount(root, arg) {
@@ -150,7 +158,15 @@
       UI.patch(this.el.stats, `<h3>${same ? 'Current build' : `Current <i class="lg cur"></i> vs ${U.esc(what)} <i class="lg cand"></i>`}</h3>${bars}`);
       const warns = Parts.warnings(cs.spec, next || null);
       if (this.arg.extra) UI.patch(this.el.extra, this.arg.extra());
-      UI.patch(this.el.warn, `<h3>Handling notes</h3>` + (warns.length ? warns.map((w) => `<div class="wn ${w[0]}">${w[0] === 'bad' ? '⚠' : '•'} ${U.esc(w[1])}</div>`).join('') : '<div class="wn ok">✓ Stock-ish and predictable. No surprises.</div>'));
+      // v4 pit crew: repairs due, an affordable upgrade for the next track,
+      // heat on long tracks, a premium car in reach — click to jump to the fix
+      const tips = G.Advisor ? G.Advisor.tips(me, next || null, 3) : [];
+      this.el.tabs.forEach((b) => {
+        const t = b.dataset.tab;
+        b.classList.toggle('dot', tips.some((x) => x.tab === t && x.lvl !== 'good'));
+        b.classList.toggle('dotg', tips.some((x) => x.tab === t && x.lvl === 'good'));
+      });
+      UI.patch(this.el.warn, (tips.length ? `<h3>Pit crew</h3>${G.Advisor.html(tips, true)}` : '') + `<h3>Handling notes</h3>` + (warns.length ? warns.map((w) => `<div class="wn ${w[0]}">${w[0] === 'bad' ? '⚠' : '•'} ${U.esc(w[1])}</div>`).join('') : '<div class="wn ok">✓ Stock-ish and predictable. No surprises.</div>'));
     },
 
     // ---------------------------------------------------------------- parts
@@ -182,7 +198,8 @@
     actionHtml(me, slot) {
       const g = me.garage;
       const p = this.pick && this.pick.slot === slot.id ? this.pick : null;
-      if (!p) return '<div class="act-row muted">Hover an option to preview it — click to select.</div>';
+      const listen = '<button class="btn ghost small" data-act="listen" title="Rev the engine with this build: exhaust, induction, engine map and gearbox all change the sound">🔊 Listen</button>';
+      if (!p) return `<div class="act-row muted">Hover an option to preview it — click to select. ${listen}</div>`;
       const o = Parts.opt(slot.id, p.opt);
       const owned = g.owned[slot.id].includes(o.id);
       const installed = g.installed[slot.id] === o.id;
@@ -196,7 +213,7 @@
         btns += `<button class="btn primary" data-act="buy" ${me.money < o.price ? 'disabled' : ''}>Buy & fit ${U.fmtMoney(o.price)}</button>`;
       }
       if (owned && o.id !== slot.options[0].id) btns += `<button class="btn ghost" data-act="sell">Sell ${U.fmtMoney(o.price * 0.5)}</button>`;
-      return `<div class="act-row">${btns}</div>`;
+      return `<div class="act-row">${btns}${listen}</div>`;
     },
 
     // --------------------------------------------------------------- tuning
@@ -249,6 +266,8 @@
         <div class="pt-sec"><h4>Accent colour <span class="muted small">stripes, two-tone, roof</span></h4><div class="sws">${LK.accents.map((c) => sw('accent', c, L.accent === c)).join('')}</div></div>
         <div class="pt-sec"><h4>Race number</h4><div class="pt-num"><input type="number" min="0" max="99" data-change="num" value="${L.num}"><button class="btn small ghost" data-act="numr">🎲 Random</button><span class="muted small">On the Side-stripe and Race liveries · 0 hides it</span></div></div>
         <div class="pt-sec"><h4>Wheels</h4><div class="chips2">${LK.rims.map(([v, l]) => chip('rims', v, l, L.rims === v)).join('')}</div><div class="sws">${LK.rimCols.map((c) => sw('rimcol', c, L.rimCol === c)).join('')}</div></div>
+        <div class="pt-sec"><h4>Paint finish</h4><div class="chips2">${LK.finishes.map(([v, l]) => chip('finish', v, l, L.finish === v)).join('')}</div></div>
+        <div class="pt-sec"><h4>Headlights</h4><div class="chips2">${LK.lights.map(([v, l]) => chip('lights', v, l, L.lights === v)).join('')}</div></div>
         <div class="pt-sec"><h4>Windows</h4><div class="chips2">${LK.tints.map(([v, l]) => chip('tint', v, l, L.tint === v)).join('')}</div></div>
         <div class="pt-sec"><h4>Underglow</h4><div class="chips2">${LK.glows.map(([v, l]) => chip('glow', v, l, L.glow === v)).join('')}</div></div>
         <p class="muted small">Paint is free and cosmetic only. Your team colour still marks you on the minimap, name tags and standings.</p>`;
@@ -269,14 +288,17 @@
           const c = Parts.CARS[id];
           const s = this.stats(id, g.installed, g.wear, g.tune).st;
           const cur = me.carId === id;
+          const fee = carFee(me, id, free);
           const bars = s.bars.filter((b) => !b.cost).map((b) => `<div class="mini"><span>${b.k}</span><div><i style="width:${b.v * 10}%"></i></div></div>`).join('');
+          const label = fee.buy ? `Buy ${U.fmtMoney(fee.total)}` : free ? 'Switch (free)' : 'Swap ' + U.fmtMoney(fee.total);
           const btn = cur
             ? '<em class="t-inst">CURRENT</em>'
             : allowed
-            ? `<button class="btn ${free ? 'primary' : 'pink'} small" data-act="swapcar" data-id="${id}" ${!free && me.money < Parts.CAR_SWAP ? 'disabled' : ''}>${free ? 'Switch (free)' : 'Swap ' + U.fmtMoney(Parts.CAR_SWAP)}</button>`
+            ? `<button class="btn ${fee.total ? 'pink' : 'primary'} small" data-act="swapcar" data-id="${id}" ${me.money < fee.total ? 'disabled' : ''}>${label}</button>`
             : '<span class="muted small">Between races only</span>';
-          return `<div class="gcar ${cur ? 'on' : ''}" data-hover="1" data-car="${id}"><div class="gc-h"><b>${c.name}</b><span>${c.tag}</span>${btn}</div><p>${U.esc(c.blurb)}</p>${bars}</div>`;
-        }).join('') + `<p class="muted small">${free ? 'Switching is free before the first race.' : `A chassis swap costs ${U.fmtMoney(Parts.CAR_SWAP)}: every part you own, your setup and your paint move to the new car.`} Stats are shown with your current parts. Hover a car to preview it.</p>`
+          const tag = c.price ? `<em class="t-new">${fee.buy ? 'PREMIUM ' + U.fmtMoney(c.price) : 'OWNED'}</em>` : '';
+          return `<div class="gcar ${cur ? 'on' : ''}" data-hover="1" data-car="${id}"><div class="gc-h"><b>${c.name}</b>${tag}<span>${c.tag}</span>${btn}</div><p>${U.esc(c.blurb)}</p>${bars}</div>`;
+        }).join('') + `<p class="muted small">${free ? 'Switching between the four base cars is free before the first race.' : `A chassis swap costs ${U.fmtMoney(Parts.CAR_SWAP)}: every part you own, your setup and your paint move to the new car.`} The Dune Runner and Apex MR are premium: buy one once and it's yours for the session. Stats are shown with your current parts. Hover a car to preview it.</p>`
       );
     },
 
@@ -366,6 +388,16 @@
         this.pick = null;
         UI.refresh(true);
       },
+      // a pit-crew tip: jump to its tab (and open the part's slot)
+      tiptab(el) {
+        this.tab = el.dataset.tab;
+        if (el.dataset.slot) this.sel = el.dataset.slot;
+        this.pick = null;
+        this.hov = null;
+        this.carPick = null;
+        if (G.Audio) G.Audio.tab();
+        UI.refresh(true);
+      },
       pick(el) {
         const o = { slot: el.dataset.slot, opt: el.dataset.opt };
         this.pick = this.pick && this.pick.slot === o.slot && this.pick.opt === o.opt ? null : o;
@@ -395,6 +427,11 @@
       testdrive() {
         const c = this.candidate();
         if (c && this.arg.onTestDrive) this.arg.onTestDrive(c);
+      },
+      listen() {
+        const c = this.candidate();
+        if (!c || !G.Audio) return;
+        if (!G.Audio.revDemo(c.carId, c.installed)) UI.toast('Sound is off — press M or the 🔊 button (top right) first.', 'info');
       },
       done() {
         if (this.arg.onDone) this.arg.onDone();
@@ -450,6 +487,12 @@
       glow(el) {
         this.look({ glow: el.dataset.v });
       },
+      finish(el) {
+        this.look({ finish: el.dataset.v });
+      },
+      lights(el) {
+        this.look({ lights: el.dataset.v });
+      },
       numr() {
         this.look({ num: 1 + Math.floor(Math.random() * 99) });
       },
@@ -458,8 +501,10 @@
         const id = el.dataset.id;
         const st = G.Client.state;
         const free = ['lobby', 'carselect', 'sandbox'].includes(st.phase);
-        if (!free) {
-          const ok = await UI.confirm('Swap chassis?', `Move every part you own, your setup and your paint to the <b>${U.esc(Parts.CARS[id].name)}</b> for <b>${U.fmtMoney(Parts.CAR_SWAP)}</b>?`, 'Swap for ' + U.fmtMoney(Parts.CAR_SWAP));
+        const fee = carFee(G.Client.me, id, free);
+        if (fee.total) {
+          const what = fee.buy ? `Buy the <b>${U.esc(Parts.CARS[id].name)}</b> for <b>${U.fmtMoney(fee.total)}</b>${fee.swap ? ` (${U.fmtMoney(Parts.CARS[id].price)} + ${U.fmtMoney(fee.swap)} swap)` : ''}? Your parts, setup and paint move over, and it stays yours for the session.` : `Move every part you own, your setup and your paint to the <b>${U.esc(Parts.CARS[id].name)}</b> for <b>${U.fmtMoney(fee.total)}</b>?`;
+          const ok = await UI.confirm(fee.buy ? 'Buy car?' : 'Swap chassis?', what, (fee.buy ? 'Buy for ' : 'Swap for ') + U.fmtMoney(fee.total));
           if (!ok) return;
         }
         G.Client.act({ t: 'setCar', carId: id });

@@ -9,14 +9,14 @@
   const Touch = {
     seen: false,
     visible: false,
-    state: { l: 0, r: 0, t: 0, b: 0, hb: 0 },
+    state: { l: 0, r: 0, t: 0, b: 0, hb: 0, n: 0 },
 
     init() {
       this.root = document.getElementById('touch');
       this.root.innerHTML = `
         <div class="tc-top"><button data-t="rs" title="Reset car">↺</button><button data-t="cam" title="Camera">🎥</button></div>
         <div class="tc-left"><button data-t="l">◀</button><button data-t="r">▶</button></div>
-        <div class="tc-right"><button data-t="hb" class="hb">HAND<br>BRAKE</button><button data-t="b" class="br">BRAKE</button><button data-t="t" class="gas">GAS</button></div>`;
+        <div class="tc-right"><button data-t="n" class="nos">N2O</button><button data-t="hb" class="hb">HAND<br>BRAKE</button><button data-t="b" class="br">BRAKE</button><button data-t="t" class="gas">GAS</button></div>`;
       const set = (e, v) => {
         const b = e.target.closest && e.target.closest('[data-t]');
         if (!b) return;

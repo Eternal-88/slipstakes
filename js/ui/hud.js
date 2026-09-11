@@ -26,8 +26,10 @@
         <canvas class="hud-map" width="200" height="200"></canvas>
         <div class="hud-prog"><div class="pg-bar"></div><div class="pg-dots"></div></div>
         <div class="hud-br">
+          <div class="hud-assist"><span class="as-draft">SLIPSTREAM <i><b></b></i></span><span class="as-cu"></span></div>
           <canvas class="speedo" width="260" height="150"></canvas>
           <div class="gauges">
+            <div class="gauge nos"><span>N2O</span><div><i></i></div></div>
             <div class="gauge boost"><span>BOOST</span><div><i></i></div></div>
             <div class="gauge heat"><span>HEAT</span><div><i></i></div></div>
             <div class="gauge brk"><span>BRAKES</span><div><i></i></div></div>
@@ -47,6 +49,7 @@
         boost: $('.boost i'), heat: $('.heat i'), heatBox: $('.gauge.heat'), boostBox: $('.gauge.boost'), brk: $('.brk i'), brkBox: $('.gauge.brk'), tyre: $('.tyre i'), eng: $('.eng i'),
         cd: $('.cd'), banner: $('.banner'), sub: $('.sub'), tags: $('.hud-tags'), br: $('.hud-br'), tl: $('.hud-tl'), debug: $('.hud-debug'), help: $('.hud-help'),
         lights: root.querySelectorAll('.hud-lights i'), lightsBox: $('.hud-lights'), prog: $('.hud-prog'), pgDots: $('.pg-dots'), vig: $('.hud-vig'), flash: $('.hud-flash'),
+        nos: $('.nos i'), nosBox: $('.gauge.nos'), asDraft: $('.as-draft'), asDraftBar: $('.as-draft b'), asCu: $('.as-cu'),
       };
       this.ctx = this.el.map.getContext('2d');
       this.sctx = this.el.speedo.getContext('2d');
@@ -69,7 +72,7 @@
       this.el.map.style.display = s.minimap ? '' : 'none';
       this.el.tags.style.display = s.tags ? '' : 'none';
       const K = s.keys, n = G.Settings.keyName;
-      this.el.help.textContent = `${n(K.up)}/↑ throttle · ${n(K.down)}/↓ brake/reverse · ${n(K.left)} ${n(K.right)} steer · ${n(K.hb)} handbrake · ${n(K.reset)} reset · ${n(K.cam)} camera · Esc menu`;
+      this.el.help.textContent = `${n(K.up)}/↑ throttle · ${n(K.down)}/↓ brake/reverse · ${n(K.left)} ${n(K.right)} steer · ${n(K.hb)} handbrake · ${n(K.nitro)} nitrous · ${n(K.reset)} reset · ${n(K.cam)} camera · Esc menu · tuck in behind a car to slipstream`;
       this.cache = {};
     }
 
@@ -120,6 +123,29 @@
         c.strokeStyle = sf.wet ? '#7fb2ff' : '#d9a066';
         c.stroke();
       }
+      // v4 hazards: oil / mud / ice patches, speed pads, obstacles
+      const M = (x, z) => [-x * s + size - this.mapT.ox, this.mapT.oz - z * s];
+      for (const p of track.patches) {
+        const q = track.pointAt(p.at, p.lat);
+        const [x, y] = M(q.x, q.z);
+        c.fillStyle = p.k === 'oil' ? '#15171c' : p.k === 'mud' ? '#8a5a30' : '#dff3ff';
+        c.beginPath();
+        c.arc(x, y, 3.2, 0, Math.PI * 2);
+        c.fill();
+      }
+      for (const p of track.pads) {
+        const q = track.pointAt(p.at, p.lat);
+        const [x, y] = M(q.x, q.z);
+        c.fillStyle = '#39d4ff';
+        c.fillRect(x - 2.5, y - 2.5, 5, 5);
+      }
+      for (const o of track.obs) {
+        const [x, y] = M(o.x, o.z);
+        c.fillStyle = '#ff4a3d';
+        c.beginPath();
+        c.arc(x, y, 2.4, 0, Math.PI * 2);
+        c.fill();
+      }
       const st = track.pointAt(track.startDist, 0);
       c.fillStyle = '#ffcc00';
       c.fillRect(-st.x * s + size - this.mapT.ox - 3, this.mapT.oz - st.z * s - 3, 6, 6);
@@ -135,6 +161,7 @@
       this.cache = {};
       this.lastPos = 0;
       this.bestSeen = null;
+      this._wearTold = false;
       this.el.prog.style.display = track.closed ? 'none' : '';
     }
 
@@ -296,6 +323,17 @@
         el.posN.parentElement.classList.toggle('spec', spectate);
       }
       this.set('help', el.help, v.phase === 'grid' && !spectate && s.hints ? '' : 'none', 'display');
+      // v4: one heads-up on the grid if the car is worn (you can't fix it now,
+      // but you should know why it feels slow)
+      if (me && v.phase === 'grid' && !this._wearTold && s.hints) {
+        this._wearTold = true;
+        const tw = me.rs.tyreWear || 0, ew = me.rs.engineWear || 0, bw = me.rs.body || 0;
+        const bits = [];
+        if (tw > 0.45) bits.push(`tyres −${Math.round(32 * Math.pow(tw, 1.6))}% grip`);
+        if (ew > 0.3) bits.push(`engine −${Math.round(38 * Math.pow(ew, 1.3))}% power`);
+        if (bw > 0.3) bits.push('bodywork damaged');
+        if (bits.length) this.banner('CAR NEEDS WORK', bits.join(' · ') + ' — repair in the garage after this race', 3.5, 'warn');
+      }
       if (me) {
         // position, with a pop + arrow when it changes mid-race
         if (me.pos && this.lastPos && me.pos !== this.lastPos && v.phase === 'race' && v.raceTime > 2) {
@@ -331,6 +369,15 @@
         const bt = U.clamp((rs.bt || 0) / 1.2, 0, 1);
         this.set('brk', el.brk, Math.round(bt * 100) + '%', 'width');
         el.brkBox.className = 'gauge brk' + ((rs.bt || 0) > 0.7 ? ' warn' : (rs.bt || 0) < 0.12 && me.coldBrakes ? ' cold' : '');
+        // v4: nitrous bottle, slipstream strength, catch-up bonus
+        this.set('nosBox', el.nosBox, me.hasNos ? '' : 'none', 'display');
+        this.set('nos', el.nos, Math.round(U.clamp(rs.nos == null ? 1 : rs.nos, 0, 1) * 100) + '%', 'width');
+        el.nosBox.className = 'gauge nos' + (rs.nosOn ? ' on' : (rs.nos || 0) < 0.05 ? ' empty' : '');
+        const dr = rs.draft || 0;
+        this.set('draftOn', el.asDraft, dr > 0.12 ? 'on' : '', 'className');
+        this.set('draftW', el.asDraftBar, Math.round(dr * 100) + '%', 'width');
+        const cu = rs.cu || 0;
+        this.set('cu', el.asCu, cu > 0.012 ? 'CATCH-UP +' + Math.round(cu * 100) + '%' : '');
         this.set('tyre', el.tyre, Math.round((1 - U.clamp(rs.tyreWear || 0, 0, 1)) * 100) + '%', 'width');
         this.set('eng', el.eng, Math.round((1 - U.clamp(rs.engineWear || 0, 0, 1)) * 100) + '%', 'width');
         this._wrongT -= dt;

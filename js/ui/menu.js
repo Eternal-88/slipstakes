@@ -62,6 +62,12 @@
     'The casino always wins in the long run. Racing pays better.',
     'Setups are free: soften the rear anti-roll bar if the car is too loose.',
     'Press Esc any time for the menu, settings and controls.',
+    'Sit behind another car to slipstream it, then pull out and slingshot past.',
+    'Nitrous refills while you draft — chase a car, charge the bottle, pass it.',
+    'There\'s a bounty on the money leader: finish ahead of them and it\'s yours.',
+    'After a race you can go double-or-nothing on your prize. It\'s a fair coin.',
+    'Summit Pass climbs 58 m — gravity slows you uphill and stretches braking downhill.',
+    'Oil kills grip for a moment: lift, keep it straight, and don\'t touch the brakes.',
   ];
 
   const Menu = {
@@ -73,7 +79,7 @@
       root.innerHTML = `
         <div class="menu">
           <div class="m-card">
-            <div class="logo">SLIP<span>STAKES</span></div>
+            <div class="logo">SLIP<span>STAKES</span><em class="ver" data-act="news" title="What's new">v${G.VERSION}</em></div>
             <div class="tagline">Race. Upgrade. Gamble. Regret.</div>
             <label class="fld m-name"><span>Your name</span><input data-input="name" maxlength="16" placeholder="Driver" autocomplete="off" spellcheck="false"></label>
             <div class="m-body"></div>
@@ -86,6 +92,15 @@
       // of the re-rendered body: every letter typed replaced the input).
       this.nameBox = root.querySelector('.m-name');
       this.nameBox.querySelector('input').value = U.store.get('ss.name', '') || '';
+      // after an update, show what changed (once per version)
+      if (U.store.get('ss.seenVer', null) !== G.VERSION) {
+        U.store.set('ss.seenVer', G.VERSION);
+        setTimeout(() => this.showNews(), 700);
+      }
+    },
+
+    showNews() {
+      UI.modal(`What's new in v${G.VERSION}`, `<div class="news-box">${G.newsHtml(2)}</div>`, [{ label: 'Let\'s race', value: 1, cls: 'primary' }]);
     },
 
     async openJoin(prefill) {
@@ -113,22 +128,27 @@
       if (this.tab === 'home') {
         h = `
           <div class="m-grid">
-            <button class="btn big primary span2" data-act="quick">🏁 Quick race <small>you vs 5 ${U.esc(({ easy: 'easy', normal: 'normal', hard: 'hard' })[G.Settings.s.botLevel] || 'normal')} bots · random track · win garage money</small></button>
+            <button class="btn big primary span2" data-act="quick">🏁 Quick race <small>you vs 5 ${U.esc(({ easy: 'easy', normal: 'normal', hard: 'hard' })[G.Settings.s.botLevel] || 'normal')} bots · random track · back yourself · win garage money</small></button>
+            <div class="m-qopts span2">
+              <label class="fld inline"><span>Bot skill</span><select data-input="botLevel">${[['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard']].map(([v, l]) => `<option value="${v}" ${v === G.Settings.s.botLevel ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+              <label class="fld inline" title="Cars behind the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${[['off', 'Off'], ['mild', 'Mild'], ['wild', 'Wild']].map(([v, l]) => `<option value="${v}" ${v === G.Settings.s.catchup ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
+            </div>
             ${G.App.menuButtons ? G.App.menuButtons() : ''}
             <button class="btn" data-act="practice">🛣 Free practice</button>
             <button class="btn" data-act="garage">🔧 Garage <small>parts · tuning · paint</small></button>
             <button class="btn" data-act="casino">🎰 Casino <small>practice chips</small></button>
             <button class="btn" data-act="settings">⚙ Settings</button>
-            <button class="btn ghost span2" data-act="help">❓ How to play</button>
+            <button class="btn ghost" data-act="help">❓ How to play</button>
+            <button class="btn ghost news-btn" data-act="news">✨ What's new <small>v${G.VERSION}: 4 maps, 2 cars, nitrous, slipstream</small></button>
           </div>
-          <div class="m-help">${kn(K.up)}/↑ throttle · ${kn(K.down)}/↓ brake & reverse · ${kn(K.left)}/${kn(K.right)} steer · ${kn(K.hb)} handbrake · ${kn(K.reset)} reset · ${kn(K.cam)} camera · Esc menu</div>`;
+          <div class="m-help">${kn(K.up)}/↑ throttle · ${kn(K.down)}/↓ brake & reverse · ${kn(K.left)}/${kn(K.right)} steer · ${kn(K.hb)} handbrake · ${kn(K.nitro)} nitrous · ${kn(K.reset)} reset · ${kn(K.cam)} camera · Esc menu</div>`;
       } else if (this.tab === 'practice') {
         const tracks = G.TrackDefs.TRACKS;
         const pbCar = me ? me.carId : 'vandal';
         h = `<h2>Free practice</h2><div class="trk-grid">${tracks
           .map((t) => {
             const pb = G.App.getPB(t.id, pbCar);
-            return `<div class="trk ${t.id === this.track ? 'on' : ''}" data-act="pickTrack" data-id="${t.id}"><img src="${thumb(t.id)}" alt=""><div><b>${U.esc(t.name)}</b><em class="fmt fmt-${t.format}">${t.format.toUpperCase()}</em>${pb ? `<span class="pb" title="Your personal best in this car">PB ${U.fmtTime(pb)}</span>` : ''}<p>${U.esc(t.blurb)}</p></div></div>`;
+            return `<div class="trk ${t.id === this.track ? 'on' : ''}" data-act="pickTrack" data-id="${t.id}"><img src="${thumb(t.id)}" alt=""><div><b>${U.esc(t.name)}</b><em class="fmt fmt-${t.format}">${t.format.toUpperCase()}</em>${t.isNew ? '<em class="t-new">NEW</em>' : ''}${pb ? `<span class="pb" title="Your personal best in this car">PB ${U.fmtTime(pb)}</span>` : ''}<p>${U.esc(t.blurb)}</p></div></div>`;
           })
           .join('')}</div>
           <div class="m-row">
@@ -146,6 +166,9 @@
             <p><b>Parts have downsides.</b> Turbos lag and overheat, wings add drag, wide tyres aquaplane, race brakes are weak when cold. Read the red lines in the shop and the handling notes.</p>
             <p><b>Setup is free.</b> The Tuning tab changes pressures, camber, anti-roll bars, brake bias, diff lock, gearing and more — watch the preview car and the stat bars as you drag.</p>
             <p><b>Driving.</b> ${kn(K.up)} throttle, ${kn(K.down)} brake (hold when stopped to reverse), ${kn(K.left)}/${kn(K.right)} steer — tap for small corrections. ${kn(K.hb)} is the handbrake. ${kn(K.reset)} puts you back on the track. Arrow keys work too, and gamepads.</p>
+            <p><b>Slipstream, nitrous, catch-up.</b> Sit a few car-lengths behind someone and the wind stops fighting you (watch the SLIPSTREAM meter), then pull out and slingshot past. With a Nitrous part, hold ${kn(K.nitro)} for a burst of power — drafting refills it. When catch-up is on, cars far behind the leader get extra power, so nobody is ever out of it.</p>
+            <p><b>Hazards.</b> Oil and ice kill grip for a moment — lift and keep it straight. Mud is slow unless you're on rally tyres or in the truck. Cyan chevrons are speed pads. Barrel stacks and rocks are solid.</p>
+            <p><b>Betting in the flow.</b> Racers can back themselves before a race. There's a bounty on the money leader: finish highest ahead of them and it's yours. After every race you can flip a fair coin for double-or-nothing on your prize.</p>
             <p><b>Multiplayer.</b> One person clicks <b>Host</b> and reads out the 5-letter code; up to 7 friends click <b>Join</b>. Bots fill empty grid slots. If anyone drops, they can rejoin with their car and money intact.</p>
           </div>
           <div class="m-btns row"><button class="btn ghost" data-act="home">← Back</button></div>`;
@@ -166,7 +189,8 @@
           `<div class="m-carcard"><span>YOUR CAR</span><b><i style="background:${hex(paint)}"></i>${U.esc(c.name)}</b><em>${U.esc(c.tag)}</em>
             <p>${up.length ? up.slice(0, 5).map(U.esc).join(' · ') + (up.length > 5 ? ` +${up.length - 5}` : '') : 'Stock — visit the garage.'}</p>
             <div class="m-cc-btns"><button class="btn small" data-act="car">🚗 Change car</button><button class="btn small ghost" data-act="paint">🎨 Paint</button></div>
-            <div class="m-money">Garage money <b>${U.fmtMoney(me.money)}</b></div></div>
+            <div class="m-money">Garage money <b>${U.fmtMoney(me.money)}</b></div>
+            ${G.Advisor ? `<div class="m-tips">${G.Advisor.html(G.Advisor.tips(me, null, 2), true)}</div>` : ''}</div>
            <div class="m-tip"><span>TIP</span>${U.esc(TIPS[this.tip])}</div>`
         );
       }
@@ -187,7 +211,10 @@
         U.store.set('ss.name', v);
         if (G.App.setName) G.App.setName(v);
       } else if (k === 'bots') this.bots = +el.value;
-      else if (k === 'botLevel') G.Settings.set('botLevel', el.value);
+      else if (k === 'botLevel') {
+        G.Settings.set('botLevel', el.value);
+        UI.refresh(true);
+      } else if (k === 'catchup') G.Settings.set('catchup', el.value);
     },
 
     acts: {
@@ -233,6 +260,9 @@
         this.tab = 'help';
         UI.refresh(true);
       },
+      news() {
+        this.showNews();
+      },
       settings() {
         G.Overlay.show('settings', 'graphics');
       },
@@ -244,6 +274,9 @@
       },
       car() {
         G.App.openGarage('car');
+      },
+      tiptab(el) {
+        G.App.openGarage(el.dataset.tab);
       },
       paint() {
         G.App.openGarage('paint');
@@ -293,7 +326,8 @@
         .join('');
       UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Car</th><th>Time</th><th>Best lap</th></tr>${rows}</table>`);
       const me = G.Client.me;
-      UI.patch(this.el.money, `<div class="box"><div class="ln"><span>Prize (${place})</span><b>${U.fmtSigned(r.prize)}</b></div><div class="ln"><span>Fuel</span><b>${U.fmtSigned(-r.fuel)}</b></div><div class="ln tot"><span>Garage money</span><b>${me ? U.fmtMoney(me.money) : ''}</b></div></div>${r.pb ? `<div class="box"><div class="ln"><span>Your best lap here</span><b>${U.fmtTime(r.best)}</b></div><div class="ln"><span>Personal best (this car)</span><b>${U.fmtTime(r.pb)}</b></div></div>` : ''}`);
+      const bet = r.bet ? `<div class="ln"><span>Backed yourself (${r.bet.type} @ ${r.bet.odds.toFixed(2)}x)</span><b class="${r.bet.won ? 'pos' : 'neg'}">${r.bet.won ? U.fmtSigned(r.bet.payout) + ' 🎉' : 'lost ' + U.fmtMoney(r.bet.stake)}</b></div>` : '';
+      UI.patch(this.el.money, `<div class="box"><div class="ln"><span>Prize (${place})</span><b>${U.fmtSigned(r.prize)}</b></div><div class="ln"><span>Fuel</span><b>${U.fmtSigned(-r.fuel)}</b></div>${bet}<div class="ln tot"><span>Garage money</span><b>${me ? U.fmtMoney(me.money) : ''}</b></div></div>${r.pb ? `<div class="box"><div class="ln"><span>Your best lap here</span><b>${U.fmtTime(r.best)}</b></div><div class="ln"><span>Personal best (this car)</span><b>${U.fmtTime(r.pb)}</b></div></div>` : ''}`);
       UI.patch(this.el.btns, `<button class="btn primary big" data-act="again">↻ Race again</button><button class="btn big" data-act="next">🎲 Next track</button><button class="btn" data-act="garage">🔧 Garage</button><button class="btn ghost" data-act="menu">⌂ Menu</button>`);
     },
     acts: {

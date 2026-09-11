@@ -54,13 +54,16 @@
           .join('')
       );
       const s = st.settings;
+      const CU = { off: 'Off (pure racing)', mild: 'Mild', wild: 'Wild (chaos)' };
+      const cu = s.catchup || 'mild';
       UI.patch(
         this.el.set,
         isHost
           ? `<label class="fld inline"><span>Races</span><input class="num-in" type="number" min="1" max="30" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 30, then press Enter"></label>
              <label class="fld inline"><span>Bots</span><select data-input="bots">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option ${n === s.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+             <label class="fld inline" title="Cars trailing the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${Object.keys(CU).map((k) => `<option value="${k}" ${k === cu ? 'selected' : ''}>${CU[k]}</option>`).join('')}</select></label>
              <span class="muted small">~${Math.round(s.races * 6)} min session · bots fill empty grid slots</span>`
-          : `<span class="muted">${s.races} race${s.races === 1 ? '' : 's'} · ${s.bots} bots · waiting for the host to start</span>`
+          : `<span class="muted">${s.races} race${s.races === 1 ? '' : 's'} · ${s.bots} bots · catch-up ${CU[cu]} · waiting for the host to start</span>`
       );
       UI.patch(this.el.btns, `<button class="btn ghost" data-act="leave">Leave</button><button class="btn" data-act="garage">🎨 Car, tune & paint</button>${isHost ? '<button class="btn primary big" data-act="start">Start session →</button>' : ''}`);
       const log = chatHtml(st);
@@ -71,6 +74,7 @@
     },
     input(k, el) {
       if (k === 'bots') G.Client.act({ t: 'settings', bots: +el.value });
+      if (k === 'catchup') G.Client.act({ t: 'settings', catchup: el.value });
     },
     // number field: act on Enter / leaving the field, not on every keystroke
     change(k, el) {
@@ -136,7 +140,9 @@
           const c = Parts.CARS[id], s = this.stats(id);
           const bars = s.bars.filter((b) => !b.cost).slice(0, 6).map((b) => `<div class="mini"><span>${b.k}</span><div><i style="width:${b.v * 10}%"></i></div></div>`).join('');
           const who = (pickers[id] || []).map((p) => `<i title="${U.esc(p.name)}" style="background:${hex(p.color)}"></i>`).join('');
-          return `<div class="cs-car ${me.carId === id ? 'on' : ''}" data-act="car" data-id="${id}"><div class="cs-name">${c.name}</div><div class="cs-tag">${c.tag}</div><p>${U.esc(c.blurb)}</p>${bars}<div class="cs-who">${who}</div></div>`;
+          const fee = G.carFee(me, id, true);
+          const price = c.price ? `<div class="cs-price">${fee.buy ? 'PREMIUM · ' + U.fmtMoney(fee.buy) : 'OWNED'}</div>` : '';
+          return `<div class="cs-car ${me.carId === id ? 'on' : ''} ${fee.buy && me.money < fee.buy ? 'locked' : ''}" data-act="car" data-id="${id}"><div class="cs-name">${c.name}</div><div class="cs-tag">${c.tag}</div>${price}<p>${U.esc(c.blurb)}</p>${bars}<div class="cs-who">${who}</div></div>`;
         }).join('')
       );
       const used = new Set(Object.values(st.players).filter((p) => p.id !== me.id).map((p) => p.color));
@@ -148,7 +154,15 @@
     },
     acts: {
       garage() { G.App.openCarTab('paint'); },
-      car(el) { G.Client.act({ t: 'setCar', carId: el.dataset.id }); },
+      async car(el) {
+        const id = el.dataset.id, me = G.Client.me;
+        const fee = G.carFee(me, id, true);
+        if (fee.buy) {
+          if (me.money < fee.buy) return UI.toast(`The ${Parts.CARS[id].name} costs ${U.fmtMoney(fee.buy)} — win some races first.`, 'bad');
+          if (!(await UI.confirm('Buy car?', `Buy the <b>${U.esc(Parts.CARS[id].name)}</b> for <b>${U.fmtMoney(fee.buy)}</b>? It's yours for the rest of the session.`, 'Buy for ' + U.fmtMoney(fee.buy)))) return;
+        }
+        G.Client.act({ t: 'setCar', carId: id });
+      },
       color(el) { G.Client.act({ t: 'setColor', color: +el.dataset.c }); },
       ready() { G.Client.act({ t: 'ready', v: !G.Client.me.ready }); },
       start() { G.Client.act({ t: 'start' }); },
@@ -209,9 +223,16 @@
         .join('');
       const hasPay = R.rows.some((r) => r.payout);
       UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Time</th><th>Best lap</th><th>Grid</th>${hasPay ? '<th>Net</th>' : ''}</tr>${rows}</table>`);
-      UI.patch(this.el.extra, G.Game.resultsExtra ? G.Game.resultsExtra(R) : '');
+      const bty = R.bounty ? `<div class="bounty">🎯 Bounty on ${U.esc(R.bounty.name)}: ${R.bounty.winner ? `<b>${U.esc(R.bounty.winnerName)}</b> collects ${U.fmtMoney(R.bounty.amount)}` : 'nobody beat them — it stays on the table'}.</div>` : '';
+      UI.patch(this.el.extra, bty + (G.Game.resultsExtra ? G.Game.resultsExtra(R) : ''));
       const left = secsLeft(st);
-      UI.patch(this.el.foot, `<span class="muted">${left != null ? 'Garage opens in ' + left + ' s' : ''} · ${G.Game.readyLine()}</span><button class="btn ${me && me.ready ? 'green' : 'primary'}" data-act="ready">${me && me.ready ? '✓ Waiting…' : 'Continue'}</button>`);
+      // v4: double or nothing on this race's prize (once, a straight 50/50)
+      const mine = me && R.rows.find((r) => r.id === me.id);
+      const prize = mine && mine.payout ? mine.payout.prize : 0;
+      let dbl = '';
+      if (mine && mine.dbl) dbl = `<span class="dbl-res ${mine.dbl}">${mine.dbl === 'won' ? '🪙 Doubled! +' + U.fmtMoney(mine.dblAmt) : '🪙 Lost the flip: −' + U.fmtMoney(mine.dblAmt)}</span>`;
+      else if (prize > 0) dbl = `<button class="btn gold" data-act="double" title="A straight 50/50 coin flip: win and your prize is paid again, lose and it's gone">🪙 Double or nothing (${U.fmtMoney(Math.min(prize, G.Econ.DOUBLE_MAX))})</button>`;
+      UI.patch(this.el.foot, `<span class="muted">${left != null ? 'Garage opens in ' + left + ' s' : ''} · ${G.Game.readyLine()}</span>${dbl}<button class="btn ${me && me.ready ? 'green' : 'primary'}" data-act="ready">${me && me.ready ? '✓ Waiting…' : 'Continue'}</button>`);
     },
     update() {
       if (Math.floor(performance.now() / 1000) !== this._sec) {
@@ -221,6 +242,10 @@
     },
     acts: {
       ready() { G.Client.act({ t: 'ready', v: !G.Client.me.ready }); },
+      async double() {
+        const ok = await UI.confirm('Double or nothing?', 'Flip a coin for this race\'s prize: heads it\'s paid twice, tails you give it back. 50/50, no house edge.', 'Flip it 🪙');
+        if (ok) G.Client.act({ t: 'double' });
+      },
     },
   };
   UI.register('results', Results);
