@@ -2,6 +2,84 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v4.3 — "Open Rooms"
+
+- **Server list** (`js/ui/rooms.js`, `RoomBoard` in `js/relay.js`). Every host publishes a small retained "room card" to the public MQTT brokers (`slipstakes/rooms/v1/<CODE>`), with a Last Will that wipes it if the host vanishes. The list shows fresh cards live: 🌐 Public rooms let you straight in, 🔒 Private rooms (the default) put an Accept / Decline card in front of the host. Hosts set the room name, public/private, max drivers (2–8) and bots in the lobby, and can change them mid-session from the Esc menu.
+- **Host migration** (`game.js`, `HostSession.fromMigration`). The host sends its full state, seat tokens included, to the first two "heirs" (connected humans in the order they joined) every 2 s while it changes.
+  - **Host drops:** the first heir rebuilds the session and hosts it under `deriveCode(roomId, epoch+1)`, a code every player can compute on their own. Everyone else rejoins that code with their seat token. The second heir takes over under the code after that if the first never shows up. A race that was running is voided, bets are refunded, and the session carries on from the garage.
+  - **Host leaves on purpose:** it hands over immediately.
+  - **The host's own internet dropped:** it notices it's alone, finds the new room, and rejoins as a player in its own seat.
+  - **The autosave is gone.** Nothing is stored between visits.
+- **Join any time.** A late joiner spectates the race in progress, races from the next one, and starts with 80% of the poorest connected driver's net worth (never below the normal $3,000).
+- **Chat on every screen** (`js/ui/chat.js`). T or Enter opens it, even mid-race. Lines fade in the corner, and an unread badge counts what you missed. The host allows one line per 0.6 s per player.
+- **Fixes:**
+  - Test drives end when the round starts (the entry phase), not when the race does. Players used to miss the race-or-sit-out choice and the betting.
+  - Name tags are drawn above the car model, so they follow hills.
+  - On drag strips, bots hold their lane instead of swerving around speed pads. At 215 km/h that swerve spun the Apex on the Mile.
+- **Balance pass:** see the Balance guide below.
+
+## Balance guide (v4.3)
+
+**What "balanced" means here.**
+1. **Every car is the right pick somewhere, and no car is the right pick everywhere.** Each of the six cars wins 0–4 of the 12 tracks, and on any track the best and worst stock car are within about 8% of each other.
+2. **Money buys an edge, not a win.** One part is worth roughly 1–5% on the kind of track it's made for. Every big gain carries a real cost: running costs, wear, or a track type where it hurts.
+3. **Keyboard players are the baseline.** Most players are on Chromebook keyboards (all-or-nothing throttle, steering and brakes). A change that only works with a gamepad isn't balanced.
+4. **Nobody is ever out of it.** Reverse-standings grid, sponsor stipends, bounty on the leader, optional catch-up, and fair late-join money.
+5. **Measure, don't guess.** Time-trial every car on all 12 tracks with two drivers: the analogue bot (skill 0.95) and the keyboard proxy (the same bot squashed to key presses, `kbtt` / `T.kbLaps`).
+
+**Where it stands (stock cars, seconds, bot driver):**
+
+| Track (type) | Vandal | Brick | Sting | Mule | Dune | Apex | Best |
+|---|---|---|---|---|---|---|---|
+| Harbour Loop (circuit) | 148.8 | 150.6 | 148.4 | 149.7 | 151.5 | **147.9** | Apex |
+| Copper Canyon (sprint, dirt) | 60.4 | **59.5** | 60.1 | 61.6 | 60.7 | 61.6 | Brick |
+| Airstrip Quarter (drag) | 15.3 | 16.0 | 15.3 | **14.9** | 15.4 | 15.0 | Mule |
+| Dust Bowl (circuit, dirt) | 107.6 | 106.2 | 110.2 | 108.7 | **105.2** | 111.5 | Dune |
+| Rainline (circuit, wet) | 184.9 | 183.7 | **182.9** | 189.5 | 189.6 | 185.3 | Sting |
+| Salt Flat (drag) | 23.8 | 24.9 | 24.1 | **23.1** | 24.1 | 23.3 | Mule |
+| Pine Ridge (sprint, dirt) | 73.1 | **69.4** | 74.1 | 74.6 | 69.9 | 75.3 | Brick |
+| Kerbside City (circuit) | 181.5 | 183.4 | **177.2** | 184.3 | 185.7 | 179.0 | Sting |
+| Summit Pass (sprint) | 67.4 | 67.3 | 67.2 | 68.0 | 69.6 | **66.7** | Apex |
+| Coastal Highway (sprint) | 66.2 | 68.0 | 66.2 | 68.8 | 67.2 | **64.5** | Apex |
+| Scrapyard (circuit) | 122.3 | 123.1 | **120.3** | 124.2 | 125.9 | 121.3 | Sting |
+| Backstretch Mile (drag) | 38.8 | 40.9 | 39.6 | **37.4** | 40.5 | 37.6 | Mule |
+
+Track wins: bot driver Apex 3, Mule 3, Sting 3, Brick 2, Dune 1, Vandal 0. Keyboard driver Apex 4, Sting 3, Brick 2, Dune 2, Mule 1, Vandal 0. The Vandal wins nothing but is 2nd–4th everywhere: the safe pick for a random schedule. Before this pass, the keyboard driver's two AWD cars won almost everything; the quarter mile was 15.0–15.8 s for AWD against 18.7–20.8 s for RWD.
+
+**What changed and why (all measured):**
+- **Traction control** (new, Tuning → Assists, on by default). Physics trims drive so a tyre never passes its spin point, and trims more mid-corner. Keyboard throttle had been spinning every rear-drive car. Turn it off to powerslide.
+- **Apex MR:** 182 → 140 kW, $4,800 → $3,800. With traction control it won 7 of 12 tracks and every drag by 7%, which was the Mule's only job.
+- **Sting:** −8% grip on dirt and −5% in the wet. It won 5 tracks, dirt and wet included.
+- **Brick:** +7% on dirt (was +3%) and +8% in the wet. It won nothing.
+- **Dune:** 172 → 166 kW, dirt bonus 1.14 → 1.10. The keyboard driver won 5 tracks with it.
+- **Tyres:** soft +13% → +7% grip at $2,400, medium +6% → +3.5% at $1,000, wide +9% → +5% dry grip. Soft tyres used to take 8.4 s off Harbour for $1,900, against 1.2 s for a $3,200 turbo, so every build started with soft and wide.
+- **Wings:** downforce 2.4 → 3.2 and 3.8 → 5.2; the full kit is $5,200. It had been buying half what a stripped interior did.
+- **Big Turbo:** $5,800 → $4,200. It was barely quicker than the Street Turbo.
+- **Brakes:** cold-bite penalty much smaller; Big Brake Kit 14 → 8 kg; prices $600 / $1,600 / $3,200. The honest result is that brakes don't buy lap time in these tests, because every car has ABS. They're a consistency part: stock brakes fade hard late in stop-and-go races (City reaches the maximum fade level). Letting ABS work closer to the limit was tried and rejected, because full brakes then left less grip to steer with.
+
+**Upgrade value now** (Vandal, keyboard driver, seconds gained on Harbour / City):
+
+| Group | Parts | Gain |
+|---|---|---|
+| Grip (circuits) | Medium · Soft · Wide | −2.8 / −4.8 · −7.0 / −7.8 · −3.1 / −4.7 |
+| Weight (everywhere) | Stripped · Carbon · Race shell | −0.9 / −3.3 · −3.5 / −6.2 · −2.4 / −8.0 |
+| Aero (fast corners) | GT Wing · Full kit | −2.1 / −2.4 · −3.7 / −2.3 |
+
+- **Power:** mostly for drags. On the quarter mile, the Street Turbo gains 1.1 s (7%), the Big Turbo 1.4 s, the Supercharger 0.8 s and nitrous 0.6 s. On tight circuits it's about zero, because traction control caps what the tyres can use.
+- **Risk/reward:** Race dampers, Sequential box and Narrow tyres win on some tracks and lose on others.
+
+**Rules for what comes next:**
+- **A new car** gets one home (a track type where it's best by at most ~3%) and one real weakness. It stays within 8% of the field everywhere else and never wins more than 4 of 12 tracks. A premium car costs about 1.5 race purses and is a sidegrade, not an upgrade.
+- **A new part** is worth 1–5% on its specialty, zero or less elsewhere, costs roughly $700–900 per 1% gained on its best track type, and has a downside written in the shop.
+- **Tuning stays free.** It reshapes the car, it doesn't add speed.
+- **After any physics, car or part change,** re-run the two 6-car × 12-track matrices and the per-part table. Commit the numbers here.
+- **Watch list:**
+  - soft tyres are still the best value;
+  - the Vandal never wins outright;
+  - the Dune is strong for keyboard drivers;
+  - turbo bots are slow on tight circuits;
+  - brakes only matter in long races.
+
 ## v4.2 — "Smooth Starts"
 
 Fixes a desync that hit one or two players on the first race. The cause was a freeze (a hitch) on a slower device, and a Chromebook's first race has the most of those: cold code and first-time loads. It was measured by emulating the freezes with one host and two joiners (`js/hostrace.js` has the details):
