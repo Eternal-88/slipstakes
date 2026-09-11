@@ -1,0 +1,65 @@
+/* v4.css — Slipstream & Chaos update: HUD assists, nitrous, premium cars,
+   bounty / double-or-nothing, version badge and "What's new". */
+
+/* HUD: slipstream meter + catch-up chip above the speedo, nitrous gauge */
+.hud-assist { display: flex; justify-content: center; align-items: center; gap: 10px; min-height: 18px; margin-bottom: 2px; font-family: var(--body); font-weight: 900; font-size: 11px; letter-spacing: 1px; }
+.as-draft { opacity: 0; transition: opacity .2s; color: #bfe9ff; display: flex; align-items: center; gap: 6px; }
+.as-draft.on { opacity: 1; }
+.as-draft i { display: inline-block; width: 64px; height: 6px; background: rgba(255,255,255,.12); border-radius: 3px; overflow: hidden; }
+.as-draft b { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7fd6ff, #eaffff); }
+.as-cu { color: var(--yellow); }
+.gauge.nos i { background: linear-gradient(90deg, #3b7dff, #7fe0ff); }
+.gauge.nos.on span { color: #7fe0ff; animation: blink .25s steps(2) infinite; }
+.gauge.nos.on i { box-shadow: 0 0 8px #7fe0ff; }
+.gauge.nos.empty span { color: var(--muted); }
+
+/* touch: a nitrous button above handbrake / gas */
+.tc-right { grid-template-rows: auto auto auto; }
+.tc-right .nos { grid-column: 1 / 3; grid-row: 1; height: 52px; border-radius: 16px; font-size: 16px; background: rgba(59,125,255,.45); }
+.tc-right .hb { grid-row: 2; }
+.tc-right .br { grid-row: 3; }
+.tc-right .gas { grid-row: 2 / 4; }
+
+/* badges */
+.t-new { background: var(--pink); color: #fff; font-style: normal; font-family: var(--body); font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 6px; margin-left: 6px; letter-spacing: .5px; vertical-align: middle; }
+.cs-price { font-family: var(--body); font-weight: 900; font-size: 12px; color: var(--yellow); }
+.cs-car.locked { opacity: .62; }
+.cs-cars { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 900px) { .cs-cars { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* betting in the flow */
+.btn.gold { background: linear-gradient(180deg, #ffd84a, #e6a800); color: #1a1300; }
+.dbl-res { font-weight: 900; margin: 0 10px; }
+.dbl-res.won { color: var(--green); }
+.dbl-res.lost { color: var(--red); }
+.bounty { background: rgba(255,74,61,.14); border: 1px solid rgba(255,74,61,.45); border-radius: 10px; padding: 8px 12px; margin: 0 0 10px; font-size: 13px; }
+.qr-money .pos { color: var(--green); }
+.qr-money .neg { color: var(--red); }
+
+/* pit-crew tips (advisor.js) */
+.tip { display: flex; align-items: flex-start; gap: 8px; padding: 7px 9px; border-radius: 9px; margin: 0 0 6px; background: rgba(255,255,255,.05); box-shadow: inset 3px 0 0 var(--muted); font-size: 12px; line-height: 1.35; }
+.tip > span { font-size: 16px; line-height: 1.1; }
+.tip p { margin: 0; flex: 1; }
+.tip em { font-style: normal; font-weight: 900; color: var(--muted); align-self: center; }
+.tip.bad { box-shadow: inset 3px 0 0 var(--red); background: rgba(255,74,61,.1); }
+.tip.warn { box-shadow: inset 3px 0 0 var(--yellow); background: rgba(255,204,0,.08); }
+.tip.good { box-shadow: inset 3px 0 0 var(--green); background: rgba(47,224,122,.08); }
+.tip[data-act] { cursor: pointer; }
+.tip[data-act]:hover { background: rgba(255,255,255,.1); }
+.m-tips { margin-top: 10px; }
+.tabs button.dot, .tabs button.dotg { position: relative; }
+.tabs button.dot::after, .tabs button.dotg::after { content: ''; position: absolute; top: 5px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+.tabs button.dotg::after { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.tabs button.dot.dotg::after { background: var(--yellow); }
+
+/* version badge, quick-race options, What's new */
+.logo .ver { font-family: var(--body); font-style: normal; font-size: 12px; font-weight: 900; background: rgba(255,255,255,.12); color: var(--ink); border-radius: 8px; padding: 3px 8px; margin-left: 10px; vertical-align: middle; cursor: pointer; letter-spacing: 0; }
+.logo .ver:hover { background: var(--yellow); color: #1a1300; }
+.m-qopts { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; margin: -2px 0 2px; }
+.news-btn small { display: block; }
+.news-box { max-height: 60vh; overflow: auto; text-align: left; padding-right: 4px; }
+.news h3 { margin: 4px 0 8px; }
+.news.old { opacity: .72; margin-top: 12px; }
+.news-i { display: flex; gap: 10px; margin-bottom: 9px; }
+.news-i > span { font-size: 22px; line-height: 1; }
+.news-i p { margin: 2px 0 0; font-size: 13px; color: var(--muted); line-height: 1.35; }
