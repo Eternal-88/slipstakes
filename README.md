@@ -1,6 +1,28 @@
-# SLIPSTAKES
+# SLIPSTAKES v4.0 — "Slipstream & Chaos"
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
+
+## What's new in v4.0
+
+The version is shown on the main menu, and a "What's new" panel opens once after every update (`js/version.js` holds the changelog).
+
+- **Slipstream:** tuck in behind another car to cut your drag by up to 45%. A SLIPSTREAM meter, wind streaks and a buffeting sound show you're in the tow.
+- **Catch-up:** a host setting (Off / Mild / Wild) that gives cars trailing the leader up to +10% / +25% power. Quick races use your own setting.
+- **Nitrous:** a new part, Street Shot (+30%) or Race Shot (+60%). Hold Shift, X/LB on a gamepad, or N2O on touch. Drafting refills the bottle.
+- **4 new maps:** Summit Pass (a 58 m mountain climb with real hills, icy hairpins and fallen rocks), Coastal Highway (a 3 km sprint), Scrapyard Gauntlet (oil, mud, barrel stacks, boost pads) and Backstretch Mile (a mile drag with lane pads).
+- **2 new cars:** Dune Runner (AWD desert truck, $2,600) and Apex MR (mid-engine supercar, $4,800). Both are premium: bought once per session.
+- **Customisation:** paint finishes (gloss, metallic, chrome flake, matte), headlight colours, and Fade and Flames liveries.
+- **Sound that follows your mods:**
+  - exhaust: stock muffled, sport throaty with a drone, straight pipe raw and burbly;
+  - engine map: rougher, and Stage 2 crackles and bounces off the limiter;
+  - stripped weight: louder cabin;
+  - sequential box: straight-cut whine;
+  - wings: wind roar;
+  - race brakes: squeal.
+
+  Other cars use theirs too, and the garage has a **🔊 Listen** rev demo.
+- **Betting in the flow:** racers can back themselves, a bounty sits on the money leader, and there's double-or-nothing on your prize after each race. You can also back yourself before quick races.
+- **Hills and hazards:** tracks can climb and dip with real gravity, and have oil, mud, ice, speed pads and solid obstacles. Bots draft, use nitrous, dodge traps and no longer rear-end each other.
 
 ## Running it
 
@@ -24,6 +46,7 @@ All driving keys are rebindable in **Settings → Controls**. The arrow keys alw
 | S / ↓ | Brake; held at a standstill it reverses |
 | A D / ← → | Steer (tap for small corrections) |
 | Space | Handbrake |
+| Shift | Nitrous (needs a Nitrous part) |
 | R | Reset to track |
 | C | Cycle camera (chase / close / high / fixed-north) |
 | **Esc** | **Menu: resume, restart, garage, change car, settings, controls, fullscreen, leave** |
@@ -118,7 +141,50 @@ var s = document.createElement('script'); s.src = 'tools/telemetry.js'; document
 
 The `builds/phase1` … `builds/phase7` folders are runnable snapshots.
 
-## Self-evaluation (final round)
+## v4 balance check (measured, not guessed)
+
+All figures come from headless races in the browser, using the real physics and bots (`RaceSim`).
+
+**Mechanics audit.** A Vandal with each build, driven by a good bot:
+
+| Area | Result |
+|---|---|
+| Overheating | Boosted engines hit the heat limit on long straights: the Mile, the Salt Flat and Coastal Highway. Cooling parts fix it. The garage's "overheats after ~X s" matches, so cooling now matters on the long tracks. |
+| Tyres | Hard tyres lose ~17% per Harbour race; soft tyres lose ~48% (about two races of life). |
+| Engine | A Big Turbo held near overheat takes 6% engine wear in one race, against ~1% for stock. |
+| Nitrous | Each bottle bills its $120 / $240 with the fuel. Drafting refilled a whole second bottle in one race. |
+| Brakes | Road brakes reach full fade on Harbour (as in v3) and on Coast, where 60 m/s stops heat them twice as fast. That's why brake upgrades exist. |
+
+**Do power parts pay?** Measured with the keyboard-proxy driver (`T.kbLaps`):
+- Every power part gains 3–4 s on a standing start and wins every drag by 2–6 s.
+- On tight circuits the flying laps are within about a second of stock.
+- On Canyon (dirt), the Street Turbo is 6 s slower.
+
+Power wins straights and grip wins corners. That's the intended trade-off, and the shop's notes say so.
+
+**The field, v3 → v4:** the same bots and the older tracks, with catch-up off.
+- Canyon respawns 9.5 → 0–1.
+- Pine respawns 10.5 → 4.5–8.5.
+- Every car finishes on Harbour and City.
+
+Across the 8 twistiest tracks with mixed six-car fields, nitrous and Mild catch-up, 48 starters produced 13 respawns and 1 DNF, with 11% average body damage.
+
+**Catch-up:**
+- Mild tightens the field without extra wreckage: on Harbour, a 2.6 s spread with 1 hard hit.
+- Wild is chaos by design: tighter racing and more contact.
+
+**Found and fixed during testing:**
+1. Cars crossed sprint finishes at 60 m/s with 45 m before the end wall, so run-off was lengthened. Finished cars also take no more body damage, which used to cost repair money.
+2. A flat 8 s grace DNF'd the slowest car on the Mile; drag grace now scales with length.
+3. Bot changes:
+   - bots get traction control and a feed-forward traction limit (Big Turbo cars weaved off the drag strips);
+   - they avoid rear-ending, but only when contact is imminent (a harder cap set turbo cars weaving);
+   - they avoid speed pads that would fire them into a corner;
+   - they give obstacles more room;
+   - a lane rate-limit was tried and reverted, because it went from 13 to 69 respawns in the A/B.
+4. The Scrapyard's third lap ground a third of the field into DNFs, so it's now 2 laps, and tyre stacks and barrels do 25% of wall damage.
+
+## Self-evaluation (v3 final round)
 
 The overall score is the **lowest** category: **7/10**.
 
