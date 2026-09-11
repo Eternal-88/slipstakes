@@ -26,7 +26,7 @@
         };
       }
       return {
-        phase: sim.phase, countdown: sim.countdown, raceTime, format: tr.format, laps: sim.practice ? '∞' : tr.laps,
+        phase: sim.phase, countdown: sim.countdown, hold: sim.hold ? sim.holdN || 1 : 0, raceTime, format: tr.format, laps: sim.practice ? '∞' : tr.laps,
         practice: sim.practice, total: sim.cars.length,
         leaderLap: order[0] ? Math.max(1, Math.min(order[0].lapCount, tr.laps)) : 1,
         me, order: order.map((c) => ({ id: c.id, name: c.name, color: c.color, finished: c.finished, dnf: c.dnf })), cars,

@@ -107,11 +107,16 @@
       const tick = () => {
         const now = performance.now();
         if (now - this.lastRaf < 200) return; // rAF is alive: it does the work
+        // Pings that queued up behind a slow tick: skip them. Otherwise, on a
+        // slow device, the backlog grew without limit and every network
+        // message waited behind it (a 17 s gap in testing).
+        if (now - (this.lastBgEnd || 0) < 12) return;
         const dt = Math.min(0.1, (now - this.last) / 1000);
         this.last = now;
         this.bgTicks = (this.bgTicks || 0) + 1;
         this.tickAll(dt);
         G.Input.endFrame();
+        this.lastBgEnd = performance.now();
       };
       try {
         const src = 'setInterval(()=>postMessage(0),16)';

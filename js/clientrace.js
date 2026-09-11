@@ -104,6 +104,7 @@
       }
       this.phase = NP.PH_NAMES[m.ph];
       this.countdown = m.cd;
+      this.hold = m.hw || 0; // racers the host is still waiting for (start hold)
       // Host time of the green light, used for the countdown and for knowing
       // whether our predicted car should still be held on the grid.
       this.goHost = this.phase === 'grid' ? m.ts + m.cd * 1000 : m.ts - m.rt * 1000;
@@ -271,7 +272,7 @@
       }
       const lead = order[0] ? L(order[0].i).lapCount : 1;
       return {
-        phase, countdown, raceTime, format: tr.format, laps: tr.laps, total: this.entrants.length,
+        phase, countdown, hold: this.hold || 0, raceTime, format: tr.format, laps: tr.laps, total: this.entrants.length,
         leaderLap: Math.max(1, Math.min(lead, tr.laps)), me,
         order: order.map((o) => ({ id: o.e.id, name: o.e.name, color: o.e.color, finished: o.s.finished, dnf: o.s.dnf })),
         cars,

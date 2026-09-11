@@ -3,8 +3,15 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '4.1';
+  G.VERSION = '4.2';
   G.CHANGELOG = [
+    {
+      v: '4.2', name: 'Smooth Starts', items: [
+        ['🏁', 'First-race desync fixed', 'A slower device (usually a Chromebook on its first race) could freeze for a moment. Its car then carried on with the last keys pressed, straight into a wall, and everyone else\'s car jumped back if the host froze. Now the host catches up after a short freeze instead of losing time, and a bot keeps a frozen player\'s car on the road (at reduced power) until they\'re back.'],
+        ['⏳', 'Everyone starts together', 'The countdown waits, up to 8 seconds, until every racer has finished loading the track. The start lights say WAITING meanwhile.'],
+        ['🌙', 'Background tabs', 'A game left running in a background tab on a slow device no longer builds up a queue that held back its network messages.'],
+      ],
+    },
     {
       v: '4.1', name: 'School Wi-Fi', items: [
         ['🛰', 'Backup relay', 'Joining now works when two devices can\'t link directly, such as two Chromebooks on a school Wi-Fi that keeps devices apart. After about 8 seconds without a direct link, the game falls back to a relay through public servers on normal web ports. A message tells you when you\'re on it; expect a little more lag than a direct link.'],

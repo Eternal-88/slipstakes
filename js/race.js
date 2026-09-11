@@ -108,7 +108,7 @@
       this.tick++;
       const tr = this.track;
       if (this.phase === 'grid') {
-        this.countdown -= dt;
+        if (!this.hold) this.countdown -= dt; // hold: the host is waiting for a racer to finish loading (hostrace.js)
         if (this.countdown <= 0) {
           this.phase = 'race';
           this.raceStartT = this.t;
