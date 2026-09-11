@@ -15,6 +15,7 @@
   const TABS = [['parts', '🔩 Parts'], ['tuning', '🎛 Tuning'], ['paint', '🎨 Paint'], ['car', '🚗 Car'], ['service', '🛠 Service']];
   const signed = (v) => (v > 0 ? '+' : '') + v;
   function fmtTune(t, v) {
+    if (t.labels) return t.labels[Math.round(v)] || String(v);
     if (t.unit === '°') return v.toFixed(1) + '°';
     if (t.unit === 'psi' || t.unit === 'cm') return signed(v) + ' ' + t.unit;
     if (t.id === 'fd') return signed(v) + '%';

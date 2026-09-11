@@ -44,7 +44,11 @@
       const st = G.Client.state;
       if (!st) return;
       const isHost = G.Client.meId === st.hostId;
-      UI.patch(this.el.code, `<span>ROOM CODE</span><b>${U.esc(st.code || '')}</b><button class="btn small ghost" data-act="copy" title="Copy a link that opens the Join box with this code filled in">🔗 Copy invite link</button><p class="muted small">Friends open the game, click <b>Join</b> and type the code — or just open your invite link. Up to 8 drivers.</p>`);
+      const s = st.settings;
+      const hostP = st.players[st.hostId];
+      const roomName = s.name || `${hostP ? hostP.name : 'Host'}'s room`;
+      const vis = s.vis === 'public' ? '🌐 <b>Public</b> — on the server list; anyone can walk in' : '🔒 <b>Private</b> — on the server list; the host lets each new driver in';
+      UI.patch(this.el.code, `<span>ROOM CODE</span><b>${U.esc(st.code || '')}</b><button class="btn small ghost" data-act="copy" title="Copy a link that opens the Join box with this code filled in">🔗 Copy invite link</button><p class="muted small"><b>${U.esc(roomName)}</b> · up to ${s.maxPlayers || 8} drivers. Friends click <b>Join</b> and type the code, or find the room on the 🌐 Server list.</p><p class="lb-vis">${vis}</p>`);
       UI.patch(
         this.el.pl,
         st.order
@@ -53,16 +57,18 @@
           .map((p) => playerRow(p, st, isHost && !p.isBot && p.id !== st.hostId ? `<button class="btn small ghost kick" data-act="kick" data-id="${p.id}" title="Remove from the room">✖ Kick</button>` : ''))
           .join('')
       );
-      const s = st.settings;
       const CU = { off: 'Off (pure racing)', mild: 'Mild', wild: 'Wild (chaos)' };
       const cu = s.catchup || 'mild';
       UI.patch(
         this.el.set,
         isHost
-          ? `<label class="fld inline"><span>Races</span><input class="num-in" type="number" min="1" max="30" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 30, then press Enter"></label>
-             <label class="fld inline"><span>Bots</span><select data-input="bots">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option ${n === s.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+          ? `<label class="fld inline"><span>Room name</span><input class="txt-in" maxlength="28" value="${U.esc(s.name || '')}" placeholder="${U.esc(roomName)}" data-change="rname" title="How the room shows on the server list (press Enter)"></label>
+             <label class="fld inline" title="Private: listed with a lock, you let each new driver in. Public: anyone on the server list walks straight in."><span>Who can join</span><select data-input="vis"><option value="private" ${s.vis !== 'public' ? 'selected' : ''}>🔒 Private — I approve</option><option value="public" ${s.vis === 'public' ? 'selected' : ''}>🌐 Public — anyone</option></select></label>
+             <label class="fld inline"><span>Max drivers</span><select data-input="maxPlayers">${[2, 3, 4, 5, 6, 7, 8].map((n) => `<option ${n === (s.maxPlayers || 8) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+             <label class="fld inline"><span>Races</span><input class="num-in" type="number" min="1" max="30" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 30, then press Enter"></label>
+             <label class="fld inline" title="Bots fill empty grid slots (8 cars at most). You can change this between races too."><span>Bots</span><select data-input="bots">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option ${n === s.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
              <label class="fld inline" title="Cars trailing the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${Object.keys(CU).map((k) => `<option value="${k}" ${k === cu ? 'selected' : ''}>${CU[k]}</option>`).join('')}</select></label>
-             <span class="muted small">~${Math.round(s.races * 6)} min session · bots fill empty grid slots</span>`
+             <span class="muted small">~${Math.round(s.races * 6)} min session · drivers can join at any time (late joiners start with 80% of the poorest driver's worth)</span>`
           : `<span class="muted">${s.races} race${s.races === 1 ? '' : 's'} · ${s.bots} bots · catch-up ${CU[cu]} · waiting for the host to start</span>`
       );
       UI.patch(this.el.btns, `<button class="btn ghost" data-act="leave">Leave</button><button class="btn" data-act="garage">🎨 Car, tune & paint</button>${isHost ? '<button class="btn primary big" data-act="start">Start session →</button>' : ''}`);
@@ -75,9 +81,12 @@
     input(k, el) {
       if (k === 'bots') G.Client.act({ t: 'settings', bots: +el.value });
       if (k === 'catchup') G.Client.act({ t: 'settings', catchup: el.value });
+      if (k === 'vis') G.Client.act({ t: 'settings', vis: el.value });
+      if (k === 'maxPlayers') G.Client.act({ t: 'settings', maxPlayers: +el.value });
     },
-    // number field: act on Enter / leaving the field, not on every keystroke
+    // number / text fields: act on Enter or leaving the field, not per keystroke
     change(k, el) {
+      if (k === 'rname') return G.Client.act({ t: 'settings', name: el.value });
       if (k !== 'races') return;
       const n = Math.round(+el.value);
       if (!(n >= 1 && n <= 30)) {
@@ -111,7 +120,10 @@
       garage() { G.App.openCarTab('car'); },
       async leave() {
         const host = G.Game.role === 'host';
-        if (await UI.confirm(host ? 'Close the room?' : 'Leave the lobby?', host ? 'Everyone here is disconnected.' : 'You can rejoin with the same code.', host ? 'Close room' : 'Leave', true)) G.Game.leave();
+        const st = G.Client.state;
+        const heir = host && st && (st.heirs || [])[0] && st.players[st.heirs[0]];
+        const body = !host ? 'You can rejoin with the same code.' : heir ? `<b>${U.esc(heir.name)}</b> takes over as host and the room carries on without you.` : 'Nobody else is here, so the room closes.';
+        if (await UI.confirm(host ? 'Leave your room?' : 'Leave the lobby?', body, host ? (heir ? 'Hand over & leave' : 'Close room') : 'Leave', true)) G.Game.leave();
       },
     },
   };

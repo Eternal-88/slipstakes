@@ -148,7 +148,14 @@
       btns += b('settings', '⚙ Settings') + b('controls', '⌨ Controls');
       btns += b('fullscreen', document.fullscreenElement ? '🗗 Exit fullscreen' : '⛶ Fullscreen');
       if (drive) btns += b('leaveDrive', test ? '← Back to garage' : sess ? '← Back to the session' : '← Leave practice', 'ghost');
-      if (sess) btns += b('leaveSession', G.Game.role === 'host' ? '✖ Close room & leave' : '✖ Leave session', 'red');
+      // host: who can get in, room size and bots — any time (bots not mid-race)
+      if (sess && G.Game.role === 'host' && st) {
+        const s = st.settings;
+        btns += b('roomVis', s.vis === 'public' ? '🌐 Public room — make private' : '🔒 Private room — make public');
+        btns += b('roomMax', `👥 Max drivers: ${s.maxPlayers || 8}`);
+        btns += b('roomBots', `🤖 Bots: ${s.bots}`, '', st.phase === 'race');
+      }
+      if (sess) btns += b('leaveSession', G.Game.role === 'host' ? '✖ Leave room' : '✖ Leave session', 'red');
       if (!sess && mode !== 'menu') btns += b('mainMenu', '⌂ Main menu', 'ghost');
       return `<div class="ov-card pause"><h1>${title}</h1>${sub ? `<p class="muted">${U.esc(sub)}</p>` : ''}<div class="ov-btns">${btns}</div><p class="muted small ov-foot">Esc closes · M sound · F3 frame-rate</p></div>`;
     },
@@ -253,12 +260,22 @@
         if (A.mode === 'drive') A.endDrive(true);
         return A.showMenu();
       }
+      if (a === 'roomVis' || a === 'roomMax' || a === 'roomBots') {
+        const s = G.Client.state && G.Client.state.settings;
+        if (!s) return;
+        if (a === 'roomVis') G.Client.act({ t: 'settings', vis: s.vis === 'public' ? 'private' : 'public' });
+        if (a === 'roomMax') G.Client.act({ t: 'settings', maxPlayers: (s.maxPlayers || 8) >= 8 ? 2 : (s.maxPlayers || 8) + 1 });
+        if (a === 'roomBots') G.Client.act({ t: 'settings', bots: (s.bots + 1) % 8 });
+        return setTimeout(() => this.render(), 60);
+      }
       if (a === 'leaveSession') {
         const host = G.Game.role === 'host';
-        UI.confirm(host ? 'Close the room?' : 'Leave the session?', host ? 'Everyone in the room is disconnected. The session is autosaved — you can reopen it from the main menu with <b>Resume hosted session</b>.' : 'Your seat, car and money are kept for a while — use <b>Rejoin</b> on the main menu to come back.', host ? 'Close room' : 'Leave', true).then((ok) => {
+        const st = G.Client.state;
+        const heir = host && st && (st.heirs || [])[0] && st.players[st.heirs[0]];
+        const body = !host ? 'Your seat, car and money are kept for a while — use <b>Rejoin</b> on the main menu to come back.' : heir ? `<b>${U.esc(heir.name)}</b> takes over as host and the room carries on without you. Nothing is saved on this computer.` : 'Nobody else is here, so the room closes. Nothing is saved.';
+        UI.confirm(host ? 'Leave your room?' : 'Leave the session?', body, host ? (heir ? 'Hand over & leave' : 'Close room') : 'Leave', true).then((ok) => {
           if (!ok) return;
           this.hide();
-          if (host && G.Game.session) G.Game._save && G.Game._save();
           G.Game.leave();
         });
         return;

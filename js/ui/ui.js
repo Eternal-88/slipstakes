@@ -201,6 +201,26 @@
       });
     },
 
+    // One persistent notice bar (top centre) for things you're waiting on,
+    // e.g. "Asking the host to let you in…" — with an optional Cancel.
+    notice(html, onCancel) {
+      this.clearNotice();
+      const n = document.createElement('div');
+      n.className = 'notice';
+      n.innerHTML = `<span>${html}</span>` + (onCancel ? '<button class="btn small ghost">Cancel</button>' : '');
+      if (onCancel)
+        n.querySelector('button').addEventListener('click', () => {
+          this.clearNotice();
+          onCancel();
+        });
+      document.body.appendChild(n);
+      this._notice = n;
+    },
+    clearNotice() {
+      if (this._notice) this._notice.remove();
+      this._notice = null;
+    },
+
     async confirm(title, body, okLabel, danger) {
       const r = await this.modal(title, body, [{ label: 'Cancel', value: 0, cls: 'ghost' }, { label: okLabel || 'OK', value: 1, cls: danger ? 'red' : 'primary' }]);
       return !!r.value;

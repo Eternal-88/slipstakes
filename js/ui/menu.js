@@ -169,7 +169,7 @@
             <p><b>Slipstream, nitrous, catch-up.</b> Sit a few car-lengths behind someone and the wind stops fighting you (watch the SLIPSTREAM meter), then pull out and slingshot past. With a Nitrous part, hold ${kn(K.nitro)} for a burst of power — drafting refills it. When catch-up is on, cars far behind the leader get extra power, so nobody is ever out of it.</p>
             <p><b>Hazards.</b> Oil and ice kill grip for a moment — lift and keep it straight. Mud is slow unless you're on rally tyres or in the truck. Cyan chevrons are speed pads. Barrel stacks and rocks are solid.</p>
             <p><b>Betting in the flow.</b> Racers can back themselves before a race. There's a bounty on the money leader: finish highest ahead of them and it's yours. After every race you can flip a fair coin for double-or-nothing on your prize.</p>
-            <p><b>Multiplayer.</b> One person clicks <b>Host</b> and reads out the 5-letter code; up to 7 friends click <b>Join</b>. Bots fill empty grid slots. If anyone drops, they can rejoin with their car and money intact.</p>
+            <p><b>Multiplayer.</b> Open the <b>🌐 Server list</b> to find rooms from any classroom, or click <b>Host</b> to open your own. A room is <b>🔒 Private</b> (you let each new driver in) or <b>🌐 Public</b> (anyone walks in). Friends can also type the 5-letter code with <b>Join</b>. You can join at any time: you watch the race in progress and drive from the next one. Bots fill empty grid slots. If anyone drops, they rejoin with their car and money intact. If the <b>host</b> drops, the next driver who joined takes over and the room carries on. Press <b>T</b> to chat on any screen.</p>
           </div>
           <div class="m-btns row"><button class="btn ghost" data-act="home">← Back</button></div>`;
       }
@@ -228,11 +228,8 @@
       join() {
         this.openJoin();
       },
-      resume() {
-        G.Game.resume().catch((e) => {
-          G.Game.role = null;
-          UI.toast('Could not resume: ' + e.message, 'bad');
-        });
+      rooms() {
+        UI.show('rooms');
       },
       async rejoin() {
         const lc = G.Game.lastClient();

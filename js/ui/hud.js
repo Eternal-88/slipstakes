@@ -435,7 +435,10 @@
             t.textContent = c.name;
             t.style.borderColor = '#' + c.color.toString(16).padStart(6, '0');
           }
-          const p = world.project(c.rs.x, 2.4, c.rs.z, this._p);
+          // above the car MODEL, which sits on the road's real height (hills,
+          // banking). A fixed 2.4 m left tags floating off cars on Summit Pass.
+          const m = world.models.get(c.id);
+          const p = m ? world.project(m.root.position.x, m.root.position.y + 2.4, m.root.position.z, this._p) : world.project(c.rs.x, world.groundAt(c.rs.x, c.rs.z) + 2.4, c.rs.z, this._p);
           t.style.display = p.vis ? '' : 'none';
           if (p.vis) {
             t.style.transform = `translate(${p.x | 0}px, ${p.y | 0}px) translate(-50%,-100%)`;
