@@ -8,6 +8,21 @@
 .as-draft i { display: inline-block; width: 64px; height: 6px; background: rgba(255,255,255,.12); border-radius: 3px; overflow: hidden; }
 .as-draft b { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #7fd6ff, #eaffff); }
 .as-cu { color: var(--yellow); }
+/* v4.4.2: slipstream badge, top centre (clear of the car you're towing
+   behind), plus a cool glow on the screen edges that grows with the tow. */
+.hud-draft { position: absolute; left: 50%; top: 104px; transform: translate(-50%, -8px) scale(.9); display: flex; align-items: center; gap: 10px; padding: 6px 14px 8px; border-radius: 12px; background: rgba(6,26,44,.78); border: 2px solid rgba(127,214,255,.5); box-shadow: 0 0 16px rgba(127,214,255,.3); color: #eaffff; font-family: var(--body); font-weight: 900; text-align: center; opacity: 0; transition: opacity .18s, transform .18s, border-color .2s, box-shadow .2s; pointer-events: none; will-change: opacity, transform; }
+.hud-draft.on { opacity: 1; transform: translate(-50%, 0) scale(1); }
+.hud-draft.max { border-color: #eaffff; box-shadow: 0 0 28px rgba(127,214,255,.75); }
+.hud-draft .dr-t { display: block; font-size: 16px; letter-spacing: 3px; line-height: 1.1; }
+.hud-draft .dr-v { display: block; font-style: normal; font-size: 11px; letter-spacing: 1px; color: #9fdcff; margin: 1px 0 4px; }
+.hud-draft .dr-m { display: block; width: 132px; height: 5px; margin: 0 auto; border-radius: 3px; background: rgba(255,255,255,.14); overflow: hidden; }
+.hud-draft .dr-m u { display: block; height: 100%; width: 0; background: linear-gradient(90deg, #4fb8ff, #eaffff); }
+.hud-draft .dr-c { font-size: 24px; line-height: 1; letter-spacing: -4px; color: #7fd6ff; }
+.hud-draft.on .dr-c { animation: drchev .45s linear infinite; }
+.hud-draft.on .dr-c + div + .dr-c { animation-delay: -.22s; }
+@keyframes drchev { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+.hud-draftglow { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: linear-gradient(90deg, rgba(80,185,255,.5), rgba(80,185,255,0) 16%, rgba(80,185,255,0) 84%, rgba(80,185,255,.5)); transition: opacity .25s; will-change: opacity; }
+@media (prefers-reduced-motion: reduce) { .hud-draft.on .dr-c { animation: none; } }
 .gauge.nos i { background: linear-gradient(90deg, #3b7dff, #7fe0ff); }
 .gauge.nos.on span { color: #7fe0ff; animation: blink .25s steps(2) infinite; }
 .gauge.nos.on i { box-shadow: 0 0 8px #7fe0ff; }

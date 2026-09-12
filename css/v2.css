@@ -112,7 +112,7 @@
 .hud-flash { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, transparent 40%, rgba(255,40,30,.45) 100%); }
 .hud-flash.on { animation: hflash .45s ease-out; }
 @keyframes hflash { from { opacity: 1; } to { opacity: 0; } }
-.hud-tags .tag { transition: opacity .15s; }
+.hud-tags .tag { will-change: transform, opacity; } /* (no transition: it restarted every frame) */
 body.racing #toasts { left: 16px; right: auto; bottom: 16px; align-items: flex-start; }
 body.racing .toast { border-left-width: 5px; }
 @media (max-height: 700px) {
