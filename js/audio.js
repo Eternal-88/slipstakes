@@ -344,6 +344,7 @@
         v.w.stop();
         v.g.disconnect();
         v.ng.disconnect();
+        v.wg.disconnect();
       } catch (e) {}
     },
     // 0..1 loudness for a sound at (x, z) relative to the listener (camera focus).
@@ -510,6 +511,12 @@
       for (const v of this.others) {
         v.g.gain.setTargetAtTime(0, t, 0.1);
         v.ng.gain.setTargetAtTime(0, t, 0.06);
+        // v4.4.1: their turbo whistle / supercharger whine too. It was left
+        // out, so after a race next to a boosted bot the whine played on at
+        // its last level through the whole main menu.
+        v.wg.gain.setTargetAtTime(0, t, 0.06);
+        v.id = null;
+        v.o = null;
       }
     },
     // The nearest (up to 4) other cars within 120 m of the listener get a

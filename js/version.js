@@ -3,8 +3,13 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '4.4';
+  G.VERSION = '4.4.1';
   G.CHANGELOG = [
+    {
+      v: '4.4.1', name: 'Hotfix', items: [
+        ['🔇', 'Stuck sound fixed', 'After a race next to a bot with a supercharger or turbo, its whine could keep playing on the main menu. It now stops with every other car sound.'],
+      ],
+    },
     {
       v: '4.4', name: 'Crowd Control', items: [
         ['👀', 'Spectate after the flag', 'Once you finish, the camera moves to the cars still racing: 1–8 or Tab picks one, F goes back to your own car, WASD flies a free camera.'],
