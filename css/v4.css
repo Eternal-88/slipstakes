@@ -83,6 +83,10 @@
 body:not(.racing) #chatbox { bottom: 96px; } /* clear of screen footers (car select swatches, garage buttons) */
 body.racing #chatbox { bottom: 170px; }
 
+/* paint tab: you steer the showroom camera (preview.js) */
+body.showroom .g-center { cursor: grab; touch-action: none; }
+body.showroom .g-center:active { cursor: grabbing; }
+
 /* waiting notice (UI.notice) */
 .notice { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 12px; background: rgba(14,19,34,.94); color: #fff; border: 2px solid var(--yellow); border-radius: 14px; padding: 10px 14px; font-weight: 800; max-width: min(640px, 92vw); box-shadow: 0 8px 30px rgba(0,0,0,.4); }
 
