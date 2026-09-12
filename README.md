@@ -2,6 +2,24 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v4.4 — "Crowd Control"
+
+- **Spectate after the flag.** Once your car finishes (it cools down on autopilot), after 2 s the camera jumps to the first car still racing. 1–8 or Tab picks another car, F goes back to your own, WASD flies a free camera (`game.js` render, `RaceUI` in `lobby.js`).
+- **Bot variety** (`G.BotKit` in `bot.js`):
+  - 40 names, shuffled so no two bots in a room share one.
+  - A fully random look: paint, finish, livery, rims, tint, lights, sometimes underglow.
+  - A driving **style** (grip, power, rally, lightweight, drag, all-rounder) that picks the car and the shopping list. Bots start with a small build paid from their own money, buy along their style between races (`botsShop`), and a well-off bot may buy its style's premium car.
+  - Quick-race and practice bots use the same kit; Hard bots bring bigger builds and sometimes a premium car.
+- **Private rooms rethought.**
+  - **Joining:** anyone with the code joins at once. A private room's server-list card never contains its code. Strangers press **🔒 Ask to join**, and the host gets a Let in / No card.
+  - **The "yes" is encrypted:** it carries the code to that one player with WebCrypto ECDH P-256 + AES-GCM, because anyone can read the public brokers.
+  - **Topics:** room cards are now filed under a public list id plus the host epoch (`slipstakes/rooms/v2/<lid>-<epoch>`), and requests use `slipstakes/req/v1/<lid>`. The secret room id `rid` still derives the codes after a host change.
+- **Sound on by default.** Everyone gets it switched on once (`sound44` in settings); after that their choice sticks. The garage's live preview and showroom no longer drive the engine sound. Their engine and brake-squeal loops used to play through the menus and the whole between-rounds garage; the 🔊 Listen button still demos a build.
+- **Paint camera.** In the Paint tab you drag the car to turn and tilt it and scroll to zoom. It turns slowly by itself until you touch it, and again 8 s after you let go (`preview.js`).
+- **Idle rooms close** (`Game._idleCheck`, `Game.IDLE`). A lobby that's never started closes after 15 minutes; any room where no human has touched a control for 10 minutes closes too. Race inputs, actions, chat, joins and the host's own keys and clicks all count. Everyone gets a 2-minute warning and then a "Room closed" message. It's a real close, so nobody tries to find a new host.
+- **Up to 100 races.** Prize growth (+6% a race) stops at 3×, from race 35 on.
+- Protocol 7.
+
 ## v4.3 — "Open Rooms"
 
 - **Server list** (`js/ui/rooms.js`, `RoomBoard` in `js/relay.js`). Every host publishes a small retained "room card" to the public MQTT brokers (`slipstakes/rooms/v1/<CODE>`), with a Last Will that wipes it if the host vanishes. The list shows fresh cards live: 🌐 Public rooms let you straight in, 🔒 Private rooms (the default) put an Accept / Decline card in front of the host. Hosts set the room name, public/private, max drivers (2–8) and bots in the lobby, and can change them mid-session from the Esc menu.
