@@ -2,6 +2,18 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v4.4.2 — frame rate, slipstream badge, Harbour boats
+
+The frame rate fell from ~90 to ~20 fps near all 7 other cars on the reporter's PC, while the menu's background race stayed smooth. Measured in the preview, **main-thread JavaScript was not the difference**: a race frame surrounded by 7 cars took 0.68 ms against 0.64 ms for the menu, and the other-car audio took 0.05 ms per frame. That pointed at per-frame browser work that only the race does: `hud.js` rewrote every name tag's transform, display and opacity each frame, and `v2.css` gave the tags a 0.15 s opacity transition, so seven transitions restarted every frame. An A/B of tags on vs off (120 vs 98 fps) was taken during a load spike, so it is not a reliable figure. The fix set below was confirmed by the reporter in Chrome ("way smoother"), not by a clean measurement of each part.
+
+What changed:
+- **Name tags:** they write to the DOM only when a value actually changes (whole pixels, opacity in 0.05 steps). They use `translate3d` with `will-change` and no transition, and cars more than ~250 m away get no tag.
+- **Hit events** (`race.js`): one per touching pair per 0.35 s instead of one per 120 Hz tick, so a harder new hit still gets through. The physics is unchanged.
+- **Effect caps:** crash thuds at most ~11 a second (`audio.js`); other cars' exhaust crackle at most once per 0.7 s per car and once per 0.15 s overall; and at most 4 other-car contact effects drawn per frame (`raceview.js`).
+- **Sound profiles:** each other car's is cached per build instead of recomputed every frame.
+- **Slipstream badge** (`hud.js`, `v4.css`): the old SLIPSTREAM meter above the speedo never appeared, because its class went through `set(..., 'className')`, which writes `el.style.className`. It is replaced by a badge at the top centre (drag saved, a meter, brighter at full tow), a blue edge glow that follows the tow's strength, and a whoosh (`Audio.draftIn`) on catching one.
+- **Harbour Loop boats** (`trackmesh.js`): the five boats out in the bay started from the track's bounding-box centre and then added the full shore distance, counting the centre twice, which put a boat on the road at Harbour Loop. They are now measured from the shoreline and must be on water and clear of the track.
+
 ## v4.4.1 — hotfix
 
 `Audio.silenceOthers()` muted the other cars' engine and tyre voices but not their turbo whistle / supercharger whine (`wg`). After a race next to a boosted bot, that whine played on at its last level through the main menu (turning "Other cars" down hid it). It is now muted with the rest, and the voice's car assignment is cleared.
