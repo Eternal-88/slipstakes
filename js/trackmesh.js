@@ -1007,7 +1007,17 @@
           if (clearOf(x, z, 10)) cranes.push({ x, z, r: Math.atan2(dx, dz) });
         }
         lights.push({ x: px * (hi + 30) + dx * (shore + 14), z: pz * (hi + 30) + dz * (shore + 14), abs: true });
-        for (let k = 0; k < 5; k++) boats.push({ x: b.cx + px * (rng() - 0.5) * 400 + dx * (shore + 70 + rng() * 120), z: b.cz + pz * (rng() - 0.5) * 400 + dz * (shore + 70 + rng() * 120), y: -0.6, abs: true, r: rng() * 6.28, s: 0.8 + rng() * 0.5 });
+        // v4.4.2: boats out in the bay are placed along/out from the shoreline.
+        // They used to start from the track's centre (b.cx, b.cz) and then add
+        // the full shore distance on top, counting the centre twice, so on
+        // Harbour Loop (centre on the land side) a boat sat on the road.
+        const ac = b.cx * px + b.cz * pz;
+        for (let k = 0; k < 5; k++) {
+          const a = ac + (rng() - 0.5) * 400, out = shore + 70 + rng() * 120;
+          const r = rng() * 6.28, s = 0.8 + rng() * 0.5;
+          const x = px * a + dx * out, z = pz * a + dz * out;
+          if (clearOf(x, z, 14) && seaAt(x, z) > 0.9) boats.push({ x, z, y: -0.6, abs: true, r, s });
+        }
         instanced('dock', docks, group, false);
         instanced('boat', boats, group, true);
         instanced('crane', cranes, group, true);

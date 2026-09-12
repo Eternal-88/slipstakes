@@ -50,6 +50,7 @@
       this.byId = {};
       this.cars.forEach((c) => (this.byId[c.id] = c));
       this._q = {};
+      this._hits = new Map(); // pair -> last hit event {t, j} (see collideCars)
     }
 
     setInput(id, inp) {
@@ -233,7 +234,20 @@
           const dmg = Math.max(0, jn - 3000) * 0.000009;
           a.body = Math.min(1, a.body + dmg * (mb / ma));
           b.body = Math.min(1, b.body + dmg * (ma / mb));
-          if (jn > 1500) this.events.push({ type: 'hit', a: A.id, b: B.id, x: px, z: pz, j: jn });
+          // One 'hit' EVENT per contact, not one per physics tick. Two cars
+          // leaning on each other used to fire 120 events a second per pair,
+          // and each one made sparks, a dozen sound nodes and a network
+          // message: in a pack that took a fast PC from 90 to ~20 fps. The
+          // physics above still runs every tick; only the effects are
+          // throttled (a new, much harder hit still gets through).
+          if (jn > 1500) {
+            const key = A.id < B.id ? A.id + '|' + B.id : B.id + '|' + A.id;
+            const last = this._hits.get(key);
+            if (!last || this.t - last.t > 0.35 || (jn > last.j * 2.5 && this.t - last.t > 0.08)) {
+              this._hits.set(key, { t: this.t, j: jn });
+              this.events.push({ type: 'hit', a: A.id, b: B.id, x: px, z: pz, j: jn });
+            }
+          }
         }
       }
     }

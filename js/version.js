@@ -3,10 +3,13 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '4.4.1';
+  G.VERSION = '4.4.2';
   G.CHANGELOG = [
     {
-      v: '4.4.1', name: 'Hotfix', items: [
+      v: '4.4.2', name: 'Smooth Tow', items: [
+        ['⚡', 'Smoother in a pack', 'Racing in a pack of 7 cars costs far less frame rate: name tags only update when they move, glows from distant cars are skipped, and crash sparks, thuds and exhaust crackles are capped, so a pile-up can\'t flood the screen and speakers.'],
+        ['🌬', 'Slipstream you can see', 'Catch a tow and a SLIPSTREAM badge lights up at the top of the screen with how much drag you\'re saving, the screen edges glow blue, and a whoosh tells you you\'re in. The badge glows brighter at full tow: time to pull out and pass.'],
+        ['⚓', 'Harbour boats', 'A boat could sit on the track at Harbour Loop. The boats are back out on the water.'],
         ['🔇', 'Stuck sound fixed', 'After a race next to a bot with a supercharger or turbo, its whine could keep playing on the main menu. It now stops with every other car sound.'],
       ],
     },

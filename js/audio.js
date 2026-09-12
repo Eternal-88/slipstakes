@@ -579,7 +579,14 @@
         v.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.04);
         v.o3.frequency.setTargetAtTime(f0 * 2, t, 0.04);
         // their mods colour their note too (exhaust / ECU / stripped shell)
-        const oms = modSound(o.c.parts);
+        // their build's sound profile, worked out once per car (it used to be
+        // recomputed for every nearby car on every frame)
+        const pc = this._msCache || (this._msCache = new WeakMap());
+        let oms = o.c.parts && pc.get(o.c.parts);
+        if (!oms) {
+          oms = modSound(o.c.parts);
+          if (o.c.parts) pc.set(o.c.parts, oms);
+        }
         v.f.frequency.setTargetAtTime((320 + rpm * 1900 * prof.cut) * (0.8 + 0.2 * dop) * oms.cut, t, 0.05);
         v.f.Q.setTargetAtTime(1.4 * (oms.q / 1.6), t, 0.1);
         v.m3.gain.setTargetAtTime(0.3 * oms.rasp, t, 0.1);
@@ -587,7 +594,12 @@
         const fall = 1 / (1 + d / 11);
         v.g.gain.setTargetAtTime((0.035 + 0.06 * thr) * fall * oms.loud, t, 0.06);
         // straight pipes / race maps crackle as they lift past you
-        if (oms.pops > 0.4 && v.lt > 0.5 && !rs.thr && fall > 0.2 && Math.random() < 0.5) this.crackle(oms.pops * 0.6, fall * 0.7);
+        // (at most every 0.7 s per car: a bot's throttle flickers, and each
+        // lift used to fire another burst of pops)
+        if (oms.pops > 0.4 && v.lt > 0.5 && !rs.thr && fall > 0.2 && performance.now() - (v.crT || 0) > 700) {
+          v.crT = performance.now();
+          this.crackle(oms.pops * 0.6, fall * 0.7);
+        }
         v.lt = rs.thr ? 1 : 0;
         let slip = 0;
         if (rs.slip) for (let i = 0; i < 4; i++) {
@@ -685,6 +697,10 @@
       this.cheer(0.5);
     },
     thud(k) {
+      // at most ~11 crash sounds a second: each one is a dozen audio nodes
+      const now = performance.now();
+      if (now - (this._thudT || 0) < 90) return;
+      this._thudT = now;
       k = U.clamp(k || 0.5, 0.1, 1);
       this.noiseHit(0.28, 190, 0.55 * (0.4 + k));
       this.tone(72, 0.24, 'sine', 0.35 * k, 38);
@@ -700,6 +716,9 @@
       this.tone(90, 0.06, 'square', 0.12 * (m || 1), 50, bus || 'sfx');
     },
     crackle(amount, m) {
+      const now = performance.now();
+      if (now - (this._crT || 0) < 150) return; // several cars lifting at once: one burst is plenty
+      this._crT = now;
       const n = 2 + Math.round(amount * 4);
       for (let i = 0; i < n; i++) {
         const w = 0.04 + Math.random() * 0.45;
@@ -775,6 +794,11 @@
     overtake(up) {
       if (up) this.tone(620, 0.12, 'triangle', 0.08, 980);
       else this.tone(520, 0.14, 'triangle', 0.06, 330);
+    },
+    // v4.4.2: a soft rising whoosh when you catch a slipstream (hud.js)
+    draftIn() {
+      this.noiseHit(0.4, 600, 0.07, 'bandpass', 'sfx', 0, 2400, 1.2);
+      this.tone(520, 0.16, 'sine', 0.025, 880, 'sfx', 0.04);
     },
     wrongWay() {
       this.tone(180, 0.18, 'square', 0.08);

@@ -399,14 +399,20 @@
       if (rs.wallHit > 800) {
         for (let k = 0; k < 6; k++) fx.emit('spark', rs.x, y + 0.5, rs.z, (Math.random() - 0.5) * 8, 2 + Math.random() * 3, (Math.random() - 0.5) * 8, 1);
       }
-      // brake-light glow + underglow (one-frame additive sprites)
-      if (braking) {
+      // brake-light glow + underglow (one-frame additive sprites). v4.4.2:
+      // only near the camera. These sprites skip the particle budget, so a
+      // braking pack (plus underglow on some bots since v4.4) meant dozens of
+      // big see-through quads every frame even where the governor had turned
+      // particles down (Chromebooks).
+      const cdx = rs.x - this.cam.fx, cdz = rs.z - this.cam.fz;
+      const camD2 = cdx * cdx + cdz * cdz;
+      if (braking && camD2 < 90 * 90) {
         for (const t of m.tailLocal) {
           const [tx, ty, tz] = W(t[0], t[1], t[2]);
           fx.emit('glow', tx, ty, tz, 0, 0, 0, 0.9, [1, 0.1, 0.05]);
         }
       }
-      if (m.glowRGB) {
+      if (m.glowRGB && camD2 < 45 * 45 && fx.budget >= 0.6) {
         for (const lz of [-1.2, 0, 1.2]) {
           const [gx, gy, gz] = W(0, 0.12, lz);
           fx.emit('glow', gx, gy, gz, 0, 0, 0, 3.2, m.glowRGB);

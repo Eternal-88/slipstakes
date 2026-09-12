@@ -60,6 +60,7 @@
     // React to sim events (banners, camera shake, particles, sounds).
     events(evts, meId, hud, world, audio) {
       const lv = hud.lastView;
+      let hits = 0; // other cars' contacts drawn this frame (a pile-up: the first few are plenty)
       for (const e of evts) {
         if (e.type === 'go') {
           if (audio) audio.go();
@@ -91,6 +92,7 @@
           if (cheer && e.pos === 1) cheer(0.8);
         } else if (e.type === 'hit') {
           const mine = e.a === meId || e.b === meId;
+          if (!mine && ++hits > 4) continue;
           if (mine) {
             world.shake(Math.min(1.6, e.j / 6000));
             if (audio) audio.thud(Math.min(1, e.j / 8000));
