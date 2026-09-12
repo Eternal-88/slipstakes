@@ -67,7 +67,7 @@
         const tries = wantCode ? 25 : 6;
         for (let i = 0; i < tries; i++) {
           const c = wantCode || U.roomCode();
-          const n = new G.Net.NetHost(c);
+          const n = new G.Net.NetHost(c, { lid: s.state.lid, epoch: s.state.epoch || 0 });
           try {
             await n.open();
             net = n;
@@ -125,11 +125,11 @@
         setTimeout(() => net.dropPid(pid), 300);
       });
       if (!net) return;
-      net.on('hello', (L, d) => {
-        // private room + a driver we don't know yet: the host decides
-        if (s.needsApproval(String(d.token || ''))) return this._ask(L, d);
-        this._admit(L, d);
-      });
+      // v4.4: anyone who has the code walks straight in. Strangers from the
+      // server list ask first (relay 'request'), and only an accepted one is
+      // given the code.
+      net.on('hello', (L, d) => this._admit(L, d));
+      net.on('request', (r) => this._listRequest(r));
       net.on('ctrl', (pid, m) => s.handle(pid, m));
       net.on('fast', (pid, m) => {
         if (m.t === 'i' && this.hostRace) this.hostRace.onInput(pid, m);
@@ -154,14 +154,17 @@
       s.touch();
     },
 
-    // Private room: park the joiner (their link stays open and pinging) and
-    // ask the host. G.Requests (ui/rooms.js) shows Accept / Decline.
-    _ask(L, d) {
-      if (this.requests.has(L.id)) return;
-      const name = String(d.name || 'Driver').trim().slice(0, 16) || 'Driver';
-      L.waiting = true;
-      this.requests.set(L.id, { id: L.id, L, d, name, at: Date.now() });
-      this.net._sendRaw(L.ctrl, { t: 'wait', msg: `🔒 ${this.session.state.settings.name || 'This room'} is private — waiting for the host to let you in…` });
+    // A stranger on the server list asks to join this PRIVATE room (relay.js).
+    // The host gets a Let in / No card (G.Requests); "Let in" sends them the
+    // room code, encrypted so only they can read it. (A public room just says
+    // yes: its code is on the list anyway.)
+    _listRequest(r) {
+      const id = 'q:' + r.cid;
+      if (this.requests.has(id)) return;
+      if (this.session.state.settings.vis === 'public') return this._replyList(r, true);
+      if (this.requests.size >= 6) return; // don't let a flood bury the host
+      const name = String(r.name || 'Driver').trim().slice(0, 16) || 'Driver';
+      this.requests.set(id, { id, cid: r.cid, pub: r.pub, name, at: Date.now() });
       G.UI.toast(`${name} is asking to join`, 'money');
       this.reqSeq = (this.reqSeq || 0) + 1;
     },
@@ -172,9 +175,17 @@
       if (!r || !this.net) return;
       this.requests.delete(id);
       this.reqSeq = (this.reqSeq || 0) + 1;
-      if (r.L.dead) return;
-      if (ok) this._admit(r.L, r.d);
-      else this.net.reject(r.L, 'The host said no this time.');
+      this._replyList(r, ok);
+    },
+    async _replyList(r, ok) {
+      const relay = this.net && this.net.relay;
+      if (!relay) return;
+      if (!ok) return relay.answer(r.cid, { ok: 0 });
+      try {
+        relay.answer(r.cid, Object.assign({ ok: 1 }, await G.Relay.sealFor(r.pub, this.code)));
+      } catch (e) {
+        relay.answer(r.cid, { ok: 0 });
+      }
     },
 
     // Host housekeeping, every frame: the server-list card, the heirs' copy
@@ -184,13 +195,47 @@
       this._announce(now);
       this._sendHeirs(now);
       for (const r of Array.from(this.requests.values())) {
-        if (r.L.dead || Date.now() - r.at > 120000) {
+        if (Date.now() - r.at > 120000) {
           this.requests.delete(r.id);
           this.reqSeq = (this.reqSeq || 0) + 1;
-          if (!r.L.dead) this.net.reject(r.L, "The host didn't answer — try again in a bit.");
+          this._replyList(r, false);
         }
       }
       this._aloneCheck(now);
+      this._idleCheck();
+    },
+
+    // Rooms don't live for ever. A lobby that's never started closes after 15
+    // minutes, and a room where no human has touched anything for 10 minutes
+    // closes too (bots would otherwise race an empty room for hours, and it
+    // would sit on the server list). Everyone gets a 2-minute warning.
+    IDLE: { lobby: 15 * 60000, idle: 10 * 60000, warn: 2 * 60000 },
+    _idleCheck() {
+      const s = this.session, st = s.state, now = Date.now(), L = this.IDLE;
+      const lobby = st.phase === 'lobby' ? now - (st.lobbySince || st.createdAt || now) : 0;
+      const idle = now - (s.lastActive || now);
+      if (lobby > L.lobby) return this.closeRoom('The room closed: it sat in the lobby for 15 minutes without the host starting it.');
+      if (idle > L.idle) return this.closeRoom('The room closed: nobody touched the controls for 10 minutes.');
+      const warn = lobby > L.lobby - L.warn ? 'lobby' : idle > L.idle - L.warn ? 'idle' : null;
+      if (warn && this._idleWarned !== warn) {
+        this._idleWarned = warn;
+        const msg = warn === 'lobby' ? '⏳ This room closes in 2 minutes unless the host starts the session.' : '⏳ This room closes in 2 minutes unless someone plays.';
+        s.sys(msg);
+        G.UI.toast(msg, 'bad');
+      } else if (!warn) this._idleWarned = null;
+    },
+    // Close the room for everyone (no host migration: the room is done).
+    closeRoom(reason) {
+      if (this.role !== 'host') return;
+      const net = this.net;
+      if (net) {
+        net.broadcastCtrl({ t: 'closed', reason });
+        if (net.relay) net.relay.announce(null);
+      }
+      this._closing = true;
+      this.leave();
+      this._closing = false;
+      G.UI.modal('Room closed', `<p>${U.esc(reason)}</p>`, [{ label: 'OK', value: 1, cls: 'primary' }]);
     },
 
     // The room's card on the server list (relay.js RoomBoard). Re-sent when
@@ -206,7 +251,9 @@
         st.phase === 'final'
           ? null
           : {
-              code: this.code, rid: st.rid, epoch: st.epoch || 0, name: st.settings.name || `${hp ? hp.name : 'Host'}'s room`, host: hp ? hp.name : '',
+              // a private room's code is never published: strangers ask for it
+              lid: st.lid || this.code, code: st.settings.vis === 'public' ? this.code : undefined,
+              epoch: st.epoch || 0, name: st.settings.name || `${hp ? hp.name : 'Host'}'s room`, host: hp ? hp.name : '',
               vis: st.settings.vis || 'private', players: all.filter((p) => !p.isBot && p.connected).length, max: st.settings.maxPlayers || 8,
               bots: all.filter((p) => p.isBot).length, phase: st.phase, race: st.raceNo, races: st.settings.races, ver: G.VERSION, proto: G.Net.PROTO,
             };
@@ -316,6 +363,7 @@
       this.code = code;
       this.name = name;
       this.kicked = false;
+      this.roomClosed = false;
       this.rejoinToken = token || null;
       await this._connectClient();
       U.store.set(CLIENT_KEY, { code, name, token: this.token, at: Date.now() });
@@ -427,6 +475,13 @@
         return;
       }
       if (m.t === 'migrate') return this._lost('host-left'); // the host is leaving on purpose: hand over now
+      if (m.t === 'closed') {
+        // the room was closed (idle timeout): leave, don't hunt for a new host
+        this.roomClosed = true;
+        this.leave();
+        G.UI.modal('Room closed', `<p>${U.esc(m.reason || 'The host closed the room.')}</p>`, [{ label: 'OK', value: 1, cls: 'primary' }]);
+        return;
+      }
       if (m.t === 'kicked') {
         // Our seat was claimed by a newer connection with the same token
         // (the player reopened the game elsewhere). Don't fight over it.
@@ -448,7 +503,7 @@
     // (and the old one, in case the host comes back). If the first heir never
     // shows up, the second takes over under the code after that.
     async _lost(why) {
-      if (this.role !== 'client' || this.lost) return;
+      if (this.role !== 'client' || this.lost || this.roomClosed) return;
       if (this.kicked) return this.leave();
       this.lost = { since: Date.now(), why, tries: 0 };
       this.clientRace = null;
@@ -491,13 +546,14 @@
     leave() {
       const net = this.net;
       const st = this.role === 'host' && this.session ? this.session.state : null;
-      if (st && net && (st.heirs || []).length && st.phase !== 'final') {
+      if (st && net && !this._closing && (st.heirs || []).length && st.phase !== 'final') {
         // The host is leaving on purpose: send the freshest copy to the heirs
         // and tell everyone to move over now (no 6 s timeout to wait out).
         this._sendHeirs(performance.now(), true);
         net.broadcastCtrl({ t: 'migrate' });
         setTimeout(() => net.close(), 800);
-      } else if (net) net.close();
+      } else if (net && this._closing) setTimeout(() => net.close(), 700); // let "room closed" reach everyone first
+      else if (net) net.close();
       G.UI.clearNotice();
       this.role = null;
       this.session = null;
@@ -579,9 +635,27 @@
         else view = this.clientRace.view();
         const meRacing = view.cars.some((c) => c.id === G.Client.meId);
         // Spectators: number keys / Tab pick who to follow; WASD = free camera.
+        // v4.4: once your own car has finished (it cools down on autopilot)
+        // you spectate too: 2 s after the flag the camera jumps to the first
+        // car still racing; F goes back to your own car.
+        const done = meRacing && view.me && view.me.finished;
+        const rno = (this.hostRace || this.clientRace).no;
+        if (done && this._doneNo !== rno) {
+          this._doneNo = rno;
+          this._doneAt = performance.now();
+          this.freeCam = false;
+          const i = view.order.findIndex((o) => !o.finished && !o.dnf);
+          this.spectate = i >= 0 ? i : 0;
+        }
+        const specNow = !meRacing || (done && performance.now() - this._doneAt > 2000);
+        this.spectating = specNow;
         let focus = null, free = false;
-        if (meRacing) focus = G.Client.meId;
+        if (!specNow) focus = G.Client.meId;
         else {
+          if (done && G.Input.hit('KeyF')) {
+            this.spectate = Math.max(0, view.order.findIndex((o) => o.id === G.Client.meId));
+            this.freeCam = false;
+          }
           for (let k = 1; k <= 8; k++) if (G.Input.hit('Digit' + k) && view.cars[k - 1]) { this.spectate = k - 1; this.freeCam = false; }
           if (G.Input.hit('Tab')) { this.spectate = (this.spectate + 1) % view.cars.length; this.freeCam = false; }
           const K = G.Input.keys;
@@ -697,6 +771,13 @@
       return `${r}/${hs.length} ready${left != null ? ' · auto-start ' + Math.floor(left / 60) + ':' + String(left % 60).padStart(2, '0') : ''}`;
     },
   };
+
+  // A key or click on the host's own computer counts as activity (idle rooms close).
+  const markActive = () => {
+    if (Game.role === 'host' && Game.session) Game.session.lastActive = Date.now();
+  };
+  window.addEventListener('keydown', markActive);
+  window.addEventListener('pointerdown', markActive);
 
   G.Game = Game;
 })(window.G);

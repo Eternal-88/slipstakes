@@ -32,7 +32,9 @@
     BOUNTY: 400, // on the money leader's head: paid to the best finisher who beats them
     DOUBLE_MAX: 2000, // double-or-nothing on a race prize, capped
   };
-  E.mult = (raceNo) => 1 + E.GROWTH * (raceNo - 1);
+  // capped at 3x (race 35 on): with sessions of up to 100 races, uncapped
+  // growth would make a late win worth 7 early ones
+  E.mult = (raceNo) => Math.min(3, 1 + E.GROWTH * (raceNo - 1));
   E.prize = (pos, dnf, raceNo) => Math.round(((dnf ? E.DNF_PAY : E.PRIZES[pos - 1] || 400) * E.mult(raceNo)) / 10) * 10;
   E.canStake = (p, amount) => p.money - amount >= E.FLOOR;
 
@@ -369,9 +371,24 @@
       if (g.wear.tyre > 0.55 && b.money > q.tyre + 500) { b.money -= q.tyre; b.stats.repairs += q.tyre; g.wear.tyre = 0; }
       if (g.wear.engine > 0.35 && b.money > q.engine + 500) { b.money -= q.engine; b.stats.repairs += q.engine; g.wear.engine = 0; }
       if (g.wear.body > 0.3 && b.money > q.body + 500) { b.money -= q.body; b.stats.repairs += q.body; g.wear.body = 0; }
-      const roll = U.hashStr(b.id + ':' + st.raceNo) % 100;
-      if (roll < 55) {
-        for (const [slot, opt] of BOT_PREFS) {
+      const roll = (U.hashStr(b.id + ':' + st.raceNo) >>> 0) % 100;
+      // v4.4: each bot shops by its own style (bot.js BotKit), and a bot that's
+      // doing well may buy its style's premium chassis
+      const S = (G.BotKit && G.BotKit.STYLES[b.botStyle]) || null;
+      if (S && S.premium && roll < 30) {
+        Parts.fixGarage(g);
+        const c = Parts.CARS[S.premium];
+        if (!g.cars.includes(S.premium) && b.money - c.price - Parts.CAR_SWAP >= 2500) {
+          b.money -= c.price + Parts.CAR_SWAP;
+          b.stats.spent += c.price + Parts.CAR_SWAP;
+          g.cars.push(S.premium);
+          b.carId = g.carId = S.premium;
+          this.sys(`${b.name} bought a ${c.name}!`);
+          continue;
+        }
+      }
+      if (roll < 60) {
+        for (const [slot, opt] of (S ? S.buys.concat(BOT_PREFS) : BOT_PREFS)) {
           if (g.owned[slot].includes(opt)) continue;
           const o = Parts.opt(slot, opt);
           if (b.money - o.price >= 1500) {

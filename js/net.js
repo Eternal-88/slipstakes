@@ -30,7 +30,7 @@
 (function (G) {
   const U = G.U;
   const PREFIX = 'slipstakes-v1-';
-  const PROTO = 6; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup)
+  const PROTO = 7; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup; 7: v4.4 private-room asks via the list, "room closed")
   // ICE servers: how two devices find a path to each other.
   //  * STUN tells each device its public address so a direct path can be
   //    punched through both networks' routers.
@@ -57,9 +57,11 @@
 
   // ===================================================================== HOST
   class NetHost extends U.Emitter {
-    constructor(code) {
+    // opts: {lid, epoch} — the room's server-list id (relay.js RelayHost)
+    constructor(code, opts) {
       super();
       this.code = code;
+      this.opts = opts || {};
       this.links = new Map(); // remote peer id -> link {id, ctrl, fast, pid, lastSeen, rtt}
       this.byPid = new Map(); // player id -> link
       this.closed = false;
@@ -138,8 +140,9 @@
 
     _startRelay() {
       if (!this.relay && G.Relay) {
-        this.relay = new G.Relay.RelayHost(this.code);
+        this.relay = new G.Relay.RelayHost(this.code, this.opts);
         this.relay.on('connection', (c) => this._onConn(c)); // each relayed joiner is its own link
+        this.relay.on('request', (r) => this.emit('request', r)); // "let me in" from the server list (private rooms)
         this.relay.start();
       }
       return this.relay;

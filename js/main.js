@@ -264,6 +264,7 @@
     async quickRace(trackId) {
       const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag');
       const pick = trackId || ids[Math.floor(Math.random() * ids.length)];
+      this._qField = G.BotKit.field(8, G.Settings.s.botLevel); // a fresh, varied field every quick race
       await this._offerQuickBet(pick);
       this.startDrive({ trackId: pick, bots: 5, quick: true });
     },
@@ -279,15 +280,21 @@
 
     // Quick-race bots: same car / parts per grid slot every race, so the
     // bookie's odds (below) describe the field you actually get.
+    // v4.4: bots come from G.BotKit (bot.js): varied names, cars, looks and
+    // builds by driving style; Hard bots bring bigger builds and sometimes a
+    // premium car. One field per quick race (made in quickRace), so the
+    // bookie's odds describe the field you actually get.
+    _botField() {
+      if (!this._qField) this._qField = G.BotKit.field(8, G.Settings.s.botLevel);
+      return this._qField;
+    },
     _botCar(k) {
-      const hard = G.Settings.s.botLevel === 'hard';
-      return G.Parts.CAR_ORDER[(k + 1) % (hard ? 6 : 4)];
+      const f = this._botField();
+      return f[k % f.length].carId;
     },
     _botParts(k) {
-      const L = G.Settings.s.botLevel === 'hard'
-        ? [{ compound: 'medium', suspension: 'sport', brakes: 'sport', nitrous: 'n1' }, { induction: 'sc', compound: 'medium' }, { aero: 'a2', weight: 'w1', compound: 'medium' }, { induction: 't1', cooling: 'radiator', nitrous: 'n1' }, { ecu: 'stage1', exhaust: 'sport', weight: 'w1' }]
-        : [{}, { compound: 'medium', suspension: 'sport' }, { induction: 'sc' }, { aero: 'a1', weight: 'w1', nitrous: 'n1' }, { brakes: 'sport', exhaust: 'sport' }];
-      return L[k % L.length];
+      const f = this._botField();
+      return f[k % f.length].parts;
     },
 
     // v4: back yourself before a quick race, at the bookie's odds for this
@@ -370,7 +377,8 @@
       const lvl = G.Settings.s.botLevel;
       const [lo, hi] = lvl === 'easy' ? [0.8, 0.86] : lvl === 'hard' ? [0.95, 1.0] : [0.87, 0.95];
       for (let k = 0; k < (opts.bots || 0); k++) {
-        ents.push({ id: 'bot' + k, name: G.BOT_NAMES[k], carId: this._botCar(k), color: G.CarModel.PALETTE[(k + 1) % 8], parts: this._botParts(k), wear: {}, look: botLook('bot' + k + track.id), bot: { skill: lo + (hi - lo) * Math.random() } });
+        const f = this._botField()[k % 8];
+        ents.push({ id: 'bot' + k, name: f.name, carId: f.carId, color: G.CarModel.PALETTE[(k + 1) % 8], parts: f.parts, wear: {}, look: f.look, bot: { skill: lo + (hi - lo) * Math.random() } });
       }
       const quick = !!opts.quick;
       if (quick && ents.length > 3) ents.splice(3, 0, ents.shift()); // you start mid-pack

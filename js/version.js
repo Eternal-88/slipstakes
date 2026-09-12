@@ -3,8 +3,19 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '4.3';
+  G.VERSION = '4.4';
   G.CHANGELOG = [
+    {
+      v: '4.4', name: 'Crowd Control', items: [
+        ['👀', 'Spectate after the flag', 'Once you finish, the camera moves to the cars still racing: 1–8 or Tab picks one, F goes back to your own car, WASD flies a free camera.'],
+        ['🤖', 'Livelier bots', '40 names (never two alike), random paint, finishes, liveries, rims and lights. Each bot has a style (grip, power, rally, lightweight, drag or all-rounder) that picks its car, what it buys between races, and sometimes a premium car.'],
+        ['🔒', 'Private rooms, simpler', 'If you have the code, you walk straight in. Strangers on the server list ask first, and a private room\'s code is never shown there: the host\'s "yes" sends it, encrypted, to that player only.'],
+        ['🔊', 'Sound on by default', 'Engines, tyres and music start with your first click. No more engine or brake sounds left playing in the menus or the garage between rounds.'],
+        ['🎨', 'Paint camera', 'In the Paint tab, drag the car to turn it and scroll to zoom.'],
+        ['⏳', 'Idle rooms close', 'A lobby that\'s never started closes after 15 minutes, and a room where nobody touches the controls for 10 minutes closes too, with a 2-minute warning.'],
+        ['🏁', 'Up to 100 races', 'Sessions can now be 1–100 races long. Prize purses stop growing at 3× so late races don\'t dwarf early ones.'],
+      ],
+    },
     {
       v: '4.3', name: 'Open Rooms', items: [
         ['🌐', 'Server list', 'Find rooms from any classroom without passing codes around: Menu → 🌐 Server list. Hosts name their room and pick 🔒 Private (you let each new driver in) or 🌐 Public (anyone walks in), plus max drivers and bots, and can change them mid-session from the Esc menu.'],

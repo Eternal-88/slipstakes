@@ -38,10 +38,15 @@
         // rid: this room's id on the server list (kept through host
         // migrations); epoch: how many times the host has changed
         rid: opts.rid || U.uid(10), epoch: 0, heirs: [],
+        // lid: the room's PUBLIC id on the server list (rid stays secret: it
+        // derives the room codes after a host change); lobbySince: when the
+        // lobby opened (an unstarted lobby closes after 15 min, game.js)
+        lid: U.uid(10), lobbySince: Date.now(),
         raceNo: 0, schedule: [], players: {}, order: [], chat: [], race: null, results: null,
         bets: [], sideBets: [], odds: {}, casino: null, final: null, seq: 0, nextId: 1,
       };
       this.dirty = true;
+      this.lastActive = Date.now(); // last time a HUMAN did anything (idle rooms close: game.js)
     }
 
     // HOST MIGRATION. The host keeps sending its full state (tokens
@@ -143,6 +148,7 @@
     handle(pid, m) {
       const p = this.player(pid);
       if (!p || !m || typeof m.t !== 'string') return;
+      if (!p.isBot) this.lastActive = Date.now();
       const fn = this['on_' + m.t];
       if (fn) {
         try {
@@ -161,6 +167,7 @@
     // (crash, reload, network drop): they get their car, parts and money back.
     join(name, token) {
       const st = this.state;
+      this.lastActive = Date.now();
       name = String(name || 'Driver').trim().slice(0, 16) || 'Driver';
       if (token && (st.banned || []).includes(token)) return { ok: false, reason: 'The host removed you from this room.' };
       const ex = token ? Object.values(st.players).find((p) => !p.isBot && p.token === token) : null;
@@ -251,12 +258,22 @@
         const id = 'b' + st.nextId++;
         const used = new Set(Object.values(st.players).map((p) => p.color));
         const color = G.CarModel.PALETTE.find((c) => !used.has(c)) || G.CarModel.PALETTE[7];
-        const n = this.bots().length;
-        const bp = this.addPlayer({ id, name: G.BOT_NAMES[n % G.BOT_NAMES.length] + ' ⚙', isBot: true, color, carId: G.Parts.CAR_ORDER[(n + 1) % 4], botSkill: 0.88 + 0.025 * (n % 4) });
-        // bots get a livery so the grid isn't eight plain cars
-        const h = U.hashStr(id);
-        const L = Parts.LOOK;
-        bp.garage.look = Parts.cleanLook(bp.garage.look, { livery: L.liveries[1 + (h % (L.liveries.length - 1))][0], rims: L.rims[(h >>> 4) % L.rims.length][0], accent: L.accents[(h >>> 8) % L.accents.length], rimCol: L.rimCols[(h >>> 12) % L.rimCols.length] });
+        // v4.4 variety (bot.js BotKit): a name nobody here has, a driving style
+        // that picks the car and the shopping list, a random look, and a
+        // starting build paid out of the bot's own money
+        const K = G.BotKit, rnd = Math.random;
+        const name = K.names(1, Object.values(st.players).map((p) => p.name.replace(' ⚙', '')), rnd)[0];
+        const style = K.style(rnd);
+        const carId = K.car(style, rnd);
+        const bp = this.addPlayer({ id, name: name + ' ⚙', isBot: true, color, carId, botSkill: +(0.86 + 0.09 * rnd()).toFixed(3) });
+        bp.botStyle = style;
+        bp.garage.look = K.look(rnd);
+        const b = K.parts(style, Math.max(0, Math.min(1600, bp.money - 1400)), rnd);
+        for (const slot in b.parts) {
+          if (!bp.garage.owned[slot].includes(b.parts[slot])) bp.garage.owned[slot].push(b.parts[slot]);
+          bp.garage.installed[slot] = b.parts[slot];
+        }
+        bp.money -= b.spent;
         if (++k > 8) break;
       }
       this.touch();
@@ -274,7 +291,7 @@
       if (m.bots != null && isFinite(+m.bots) && st.phase !== 'race') s.bots = U.clamp(Math.round(+m.bots), 0, 7);
       // the shape of the session: lobby only
       if (st.phase === 'lobby') {
-        if (m.races != null && isFinite(+m.races)) s.races = U.clamp(Math.round(+m.races), 1, 30);
+        if (m.races != null && isFinite(+m.races)) s.races = U.clamp(Math.round(+m.races), 1, 100);
         if (m.catchup != null && G.Settings.CATCHUP[m.catchup] != null) s.catchup = m.catchup;
       }
       if (st.phase !== 'race') this.syncBots();
@@ -658,6 +675,7 @@
       Object.assign(st, { raceNo: 0, schedule: [], race: null, results: null, final: null, bets: [], sideBets: [], odds: {}, stipend: [], casino: null });
       this.syncBots();
       this.sys(`${p.name} started a rematch: fresh cars and ${U.fmtMoney(START_MONEY)} each.`);
+      st.lobbySince = Date.now();
       this.setPhase('lobby', 0);
     }
 

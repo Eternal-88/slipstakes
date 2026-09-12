@@ -45,7 +45,12 @@
     { id: 'mosquitto', url: 'wss://test.mosquitto.org:8081' },
   ];
   const NS = 'slipstakes/r1/'; // topics: NS+CODE+'/h' (to the host), NS+CODE+'/c/'+joinerId
-  const DIR = 'slipstakes/rooms/v1/'; // server list: one retained "room card" per room code
+  // Server list: one retained "room card" per room, filed under its PUBLIC
+  // list id and host epoch. A private room's code never appears in a topic or
+  // a card. Private-room join requests go to REQ + lid, and the host's answer
+  // to REQ + lid + '/' + joinerId, with the code encrypted for that joiner.
+  const DIR = 'slipstakes/rooms/v2/';
+  const REQ = 'slipstakes/req/v1/';
   const KEEPALIVE = 60; // s; we ping every 20 s, and any publish also counts
   const CONGESTED = 64 * 1024; // bytes waiting in the socket: drop 'fast' messages rather than build up lag
 
@@ -57,6 +62,31 @@
       return null;
     }
   };
+
+  // End-to-end encryption for the code in a private room's "yes". ECDH P-256
+  // key agreement + AES-GCM (WebCrypto). Anyone can read the public brokers,
+  // so the code travels encrypted to the asking player's one-off key.
+  const b64 = (buf) => {
+    let s = '';
+    const a = new Uint8Array(buf);
+    for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+    return btoa(s);
+  };
+  const unb64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+  const ECDH = { name: 'ECDH', namedCurve: 'P-256' };
+  const keyPair = () => crypto.subtle.generateKey(ECDH, false, ['deriveKey']);
+  async function aesKey(priv, pubB64) {
+    const pub = await crypto.subtle.importKey('raw', unb64(pubB64), ECDH, false, []);
+    return crypto.subtle.deriveKey({ name: 'ECDH', public: pub }, priv, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+  }
+  // host side: encrypt `text` for the joiner whose public key is pubB64
+  async function sealFor(pubB64, text) {
+    const mine = await keyPair();
+    const key = await aesKey(mine.privateKey, pubB64);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(text));
+    return { hpub: b64(await crypto.subtle.exportKey('raw', mine.publicKey)), iv: b64(iv), ct: b64(ct) };
+  }
 
   // ------------------------------------------------ minimal MQTT 3.1.1 client
   // Just what we need: CONNECT, SUBSCRIBE, PUBLISH (QoS 0), PING, DISCONNECT.
@@ -314,11 +344,15 @@
   // Also publishes the room's card for the server list (announce()), with a
   // Last Will that clears it if this host drops off the internet.
   class RelayHost extends U.Emitter {
-    constructor(code) {
+    // opts: {lid, epoch} — the room's public server-list id and host epoch
+    constructor(code, opts) {
       super();
+      const o = opts || {};
       this.code = code;
       this.base = NS + code;
-      this.dirTopic = DIR + code;
+      this.lid = o.lid || code;
+      this.dirTopic = DIR + this.lid + '-' + (o.epoch || 0);
+      this.reqTopic = REQ + this.lid;
       this.routes = new Map(); // brokerId:joinerId -> Route
       this.ms = new Map(); // brokerId -> Mqtt
       this.closed = false;
@@ -351,8 +385,9 @@
           if (this.closed) return m.close();
           this.ms.set(b.id, m);
           m.subscribe(this.base + '/h');
+          m.subscribe(this.reqTopic);
           if (this.card) m.publish(this.dirTopic, this.card, true);
-          m.on('msg', (t, s) => this._in(m, s));
+          m.on('msg', (t, s) => (t === this.reqTopic ? this._req(s) : this._in(m, s)));
           m.on('close', () => {
             if (this.ms.get(b.id) === m) this.ms.delete(b.id);
             for (const [k, R] of Array.from(this.routes)) {
@@ -366,6 +401,21 @@
           this.emit('ready', b.id);
         })
         .catch(() => setTimeout(() => this._keep(b, fails + 1), Math.min(60000, 5000 * 2 ** fails)));
+    }
+    // A stranger on the server list asking to join a private room: {cid, name, pub}
+    _req(s) {
+      const o = parse(s);
+      if (!o || typeof o.cid !== 'string' || !/^[\w-]{4,40}$/.test(o.cid) || typeof o.pub !== 'string' || o.pub.length > 200) return;
+      const now = performance.now();
+      this._asked = this._asked || new Map();
+      if (now - (this._asked.get(o.cid) || -1e9) < 5000) return; // the same ask arriving via several brokers
+      this._asked.set(o.cid, now);
+      this.emit('request', { cid: o.cid, name: String(o.name || 'Driver').slice(0, 16), pub: o.pub });
+    }
+    // The host's answer, to that joiner's own topic, on every broker.
+    answer(cid, payload) {
+      const s = JSON.stringify(payload);
+      for (const m of this.ms.values()) m.publish(this.reqTopic + '/' + cid, s);
     }
     _in(m, s) {
       const o = parse(s);
@@ -454,21 +504,23 @@
       return this.ms.length;
     }
     _in(topic, s, live) {
-      const code = topic.slice(DIR.length);
-      if (!/^[A-Z0-9]{5}$/.test(code)) return;
+      const key = topic.slice(DIR.length); // lid-epoch
+      if (!/^\w{4,16}-\d{1,3}$/.test(key)) return;
       if (!s) {
-        if (this.rooms.delete(code)) this.emit('change');
+        if (this.rooms.delete(key)) this.emit('change');
         return;
       }
       const o = parse(s);
-      if (!o || o.code !== code) return;
+      if (!o || typeof o.lid !== 'string' || key.indexOf(o.lid + '-') !== 0) return;
+      const vis = o.vis === 'public' ? 'public' : 'private';
       const info = {
-        code, rid: clip(o.rid, 16) || code, epoch: num(o.epoch, 0, 999), name: clip(o.name, 28), host: clip(o.host, 16),
-        vis: o.vis === 'public' ? 'public' : 'private', players: num(o.players, 0, 8), max: num(o.max, 1, 8), bots: num(o.bots, 0, 8),
-        phase: clip(o.phase, 14), race: num(o.race, 0, 99), races: num(o.races, 1, 99), ver: clip(o.ver, 8), proto: num(o.proto, 0, 999), at: +o.at || 0,
+        lid: o.lid, code: vis === 'public' && /^[A-Z0-9]{5}$/.test(o.code) ? o.code : null, // private rooms: no code, you ask
+        epoch: num(o.epoch, 0, 999), name: clip(o.name, 28), host: clip(o.host, 16),
+        vis, players: num(o.players, 0, 8), max: num(o.max, 1, 8), bots: num(o.bots, 0, 8),
+        phase: clip(o.phase, 14), race: num(o.race, 0, 100), races: num(o.races, 1, 100), ver: clip(o.ver, 8), proto: num(o.proto, 0, 999), at: +o.at || 0,
       };
-      const old = this.rooms.get(code);
-      this.rooms.set(code, { info, live: live || (old && old.live) || false, seen: Date.now() });
+      const old = this.rooms.get(key);
+      this.rooms.set(key, { info, live: live || (old && old.live) || false, seen: Date.now() });
       this.emit('change');
     }
     // Fresh rooms, one per room id (newest epoch), busiest first.
@@ -478,14 +530,60 @@
       for (const r of this.rooms.values()) {
         const fresh = r.live ? now - r.seen < 75000 : now - r.info.at < 120000;
         if (!fresh) continue;
-        const b = best.get(r.info.rid);
-        if (!b || r.info.epoch > b.epoch || (r.info.epoch === b.epoch && r.info.at > b.at)) best.set(r.info.rid, r.info);
+        const b = best.get(r.info.lid);
+        if (!b || r.info.epoch > b.epoch || (r.info.epoch === b.epoch && r.info.at > b.at)) best.set(r.info.lid, r.info);
       }
       return Array.from(best.values()).sort((a, b) => b.players - a.players || a.name.localeCompare(b.name));
+    }
+    // Private room: ask its host to let us in. Resolves with the room code
+    // (decrypted: only we can read it); rejects on "no", timeout or cancel.
+    async ask(room, name) {
+      if (!this.ms.length) throw new Error("Can't reach the room servers from here.");
+      const cid = U.uid(12);
+      const pair = await keyPair();
+      const pub = b64(await crypto.subtle.exportKey('raw', pair.publicKey));
+      const topic = REQ + room.lid + '/' + cid;
+      return new Promise((res, rej) => {
+        let done = false;
+        const offs = [];
+        const finish = (ok, v) => {
+          if (done) return;
+          done = true;
+          clearTimeout(to);
+          offs.forEach((f) => f());
+          this._cancel = null;
+          ok ? res(v) : rej(v);
+        };
+        const to = setTimeout(() => finish(false, new Error("The host didn't answer — try again in a bit.")), 125000);
+        this._cancel = () => finish(false, new Error('Cancelled.'));
+        for (const m of this.ms) {
+          m.subscribe(topic);
+          offs.push(
+            m.on('msg', (t, s) => {
+              if (t !== topic || !s || done) return;
+              const o = parse(s);
+              if (!o) return;
+              if (!o.ok) return finish(false, new Error('The host said no this time.'));
+              aesKey(pair.privateKey, o.hpub)
+                .then((key) => crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(o.iv) }, key, unb64(o.ct)))
+                .then((pt) => {
+                  const code = dec.decode(pt);
+                  if (/^[A-Z0-9]{5}$/.test(code)) finish(true, code);
+                })
+                .catch(() => {});
+            })
+          );
+          m.publish(REQ + room.lid, JSON.stringify({ cid, name: String(name || 'Driver').slice(0, 16), pub }));
+        }
+      });
+    }
+    cancelAsk() {
+      if (this._cancel) this._cancel();
     }
     close() {
       this.closed = true;
       clearInterval(this.tick);
+      this.cancelAsk();
       for (const m of this.ms) m.close();
       this.ms = [];
     }
@@ -588,5 +686,5 @@
     }
   }
 
-  G.Relay = { BROKERS, Mqtt, RelayHost, RelayJoin, RoomBoard };
+  G.Relay = { BROKERS, Mqtt, RelayHost, RelayJoin, RoomBoard, sealFor };
 })(window.G);

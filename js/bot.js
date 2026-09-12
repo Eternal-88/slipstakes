@@ -5,7 +5,14 @@
 'use strict';
 (function (G) {
   const U = G.U;
-  const NAMES = ['Dash Rivera', 'Ada Lockwood', 'Sprocket', 'Nina Volt', 'Grit McCall', 'Tex Tarmac', 'Juno Apex', 'Rook Hart'];
+  // v4.4: 40 names (was 8). BotKit (below) shuffles them per session.
+  const NAMES = [
+    'Dash Rivera', 'Ada Lockwood', 'Sprocket', 'Nina Volt', 'Grit McCall', 'Tex Tarmac', 'Juno Apex', 'Rook Hart',
+    'Mika Sato', 'Big Lou', 'Pixel Pete', 'Rosa Blaze', 'Diesel Dee', 'Zara Quick', 'Otto Burn', 'Kai Drift',
+    'Luna Nitro', 'Ivy Torque', 'Gus Gearbox', 'Penny Piston', 'Rex Redline', 'Skye Slide', 'Bruno Boost', 'Cleo Clutch',
+    'Axel Grind', 'Maya Mach', 'Hank Hairpin', 'Tilly Turbo', 'Vic Vroom', 'Jade Gravel', 'Frankie Flag', 'Olga Oval',
+    'Nico Nuts', 'Sunny Spoiler', 'Wes Wheelie', 'Bea Burnout', 'Ty Rewind', 'Echo Exhaust', 'Moe Mudflap', 'Quinn Kerb',
+  ];
 
   class Bot {
     // opts.aggressive: no traction control, only catches big slides. Used by the
@@ -204,6 +211,86 @@
     }
   }
 
+  // ------------------------------------------------------------ BOT VARIETY
+  // v4.4: every bot gets a driving STYLE that picks its car, and what it
+  // buys between races (economy.js botsShop), plus a fully random look. A grid
+  // used to be four stock Vandal/Brick/Sting/Mule in near-identical paint with
+  // the same eight names.
+  const STYLES = {
+    grip: { cars: ['vandal', 'sting'], premium: 'apex', buys: [['compound', 'medium'], ['suspension', 'sport'], ['width', 'wide'], ['weight', 'w1'], ['aero', 'a1'], ['compound', 'soft'], ['aero', 'a2'], ['weight', 'w2']] },
+    power: { cars: ['mule', 'vandal'], premium: 'apex', buys: [['exhaust', 'sport'], ['ecu', 'stage1'], ['induction', 'sc'], ['cooling', 'radiator'], ['nitrous', 'n1'], ['ecu', 'stage2'], ['induction', 't1'], ['weight', 'w1']] },
+    rally: { cars: ['brick'], premium: 'dune', buys: [['width', 'narrow'], ['suspension', 'rally'], ['compound', 'medium'], ['weight', 'w1'], ['diff', 'clutch'], ['ecu', 'stage1'], ['nitrous', 'n1']] },
+    light: { cars: ['sting'], premium: 'apex', buys: [['weight', 'w1'], ['brakes', 'sport'], ['compound', 'medium'], ['suspension', 'sport'], ['weight', 'w2'], ['aero', 'a2']] },
+    drag: { cars: ['mule'], premium: null, buys: [['gearing', 'short'], ['induction', 't1'], ['cooling', 'race'], ['nitrous', 'n1'], ['exhaust', 'straight'], ['weight', 'w1'], ['ecu', 'stage1']] },
+    allround: { cars: ['vandal', 'brick', 'sting', 'mule'], premium: 'dune', buys: [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator']] },
+  };
+  const STYLE_KEYS = Object.keys(STYLES);
+  const pick = (list, rnd) => list[Math.floor(rnd() * list.length)];
+  const BotKit = {
+    STYLES,
+    NAMES,
+    // n different names, none of them in `taken`
+    names(n, taken, rnd) {
+      rnd = rnd || Math.random;
+      const skip = new Set(taken || []);
+      const pool = NAMES.filter((x) => !skip.has(x));
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(rnd() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      while (pool.length < n) pool.push('Bot ' + (pool.length + 1));
+      return pool.slice(0, n);
+    },
+    style(rnd) {
+      return pick(STYLE_KEYS, rnd || Math.random);
+    },
+    car(style, rnd) {
+      return pick((STYLES[style] || STYLES.allround).cars, rnd || Math.random);
+    },
+    look(rnd) {
+      rnd = rnd || Math.random;
+      const L = G.Parts.LOOK;
+      return G.Parts.cleanLook(null, {
+        paint: rnd() < 0.75 ? pick(L.paints, rnd) : null, // null = the driver's colour
+        accent: pick(L.accents, rnd),
+        livery: rnd() < 0.15 ? 'none' : pick(L.liveries.slice(1), rnd)[0],
+        rims: pick(L.rims, rnd)[0],
+        rimCol: pick(L.rimCols, rnd),
+        finish: pick(L.finishes, rnd)[0],
+        tint: pick(L.tints, rnd)[0],
+        glow: rnd() < 0.12 ? pick(L.glows.slice(1), rnd)[0] : 'none',
+        lights: pick(L.lights, rnd)[0],
+        num: 1 + Math.floor(rnd() * 99),
+      });
+    },
+    // Parts off the style's shopping list that fit `budget` (some bots stop early).
+    parts(style, budget, rnd) {
+      rnd = rnd || Math.random;
+      const out = {};
+      let spent = 0;
+      for (const [slot, id] of (STYLES[style] || STYLES.allround).buys) {
+        const o = G.Parts.opt(slot, id);
+        if (out[slot] || spent + o.price > budget) continue;
+        out[slot] = id;
+        spent += o.price;
+        if (rnd() < 0.3) break;
+      }
+      return { parts: out, spent };
+    },
+    // A whole field for single-player races (quick race, practice).
+    field(n, level, rnd) {
+      rnd = rnd || Math.random;
+      return this.names(n, [], rnd).map((name) => {
+        const style = this.style(rnd);
+        const S = STYLES[style];
+        const carId = level === 'hard' && S.premium && rnd() < 0.35 ? S.premium : this.car(style, rnd);
+        const budget = level === 'easy' ? (rnd() < 0.5 ? 0 : 1000) : level === 'hard' ? 5500 : 2200;
+        return { name, style, carId, look: this.look(rnd), parts: this.parts(style, budget, rnd).parts };
+      });
+    },
+  };
+
   G.Bot = Bot;
   G.BOT_NAMES = NAMES;
+  G.BotKit = BotKit;
 })(window.G);

@@ -75,6 +75,7 @@
       let I = this.inputs[pid];
       if (!I) I = this.inputs[pid] = { q: [], cur: null, seq: -1, ticks: 0, rs: 0 };
       if (typeof m.q !== 'number') return;
+      if (m.th || m.s || m.b || m.hb || m.n) this.session.lastActive = Date.now(); // someone is actually driving (idle rooms close)
       this._insert(I, m.q, m.s, m.th, m.b, m.hb, m.n);
       // redundant copies of the previous blocks: recover any we lost
       if (Array.isArray(m.p)) for (const r of m.p.slice(0, 3)) if (Array.isArray(r)) this._insert(I, r[0], r[1], r[2], r[3], r[4], r[5]);

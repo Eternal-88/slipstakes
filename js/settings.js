@@ -15,7 +15,7 @@
     weather: true, // rain on wet tracks, drifting clouds
     showFps: false,
     // audio
-    sound: false, // the original brief: OFF until the player turns it on
+    sound: true, // v4.4: on by default (browsers still wait for your first click or key)
     vMaster: 80, vEngine: 80, vOthers: 70, vSfx: 85, vUi: 60, vMusic: 45,
     raceMusic: false,
     // camera / HUD
@@ -45,6 +45,13 @@
   if (!saved.quality && U.store.get('ss.quality', null)) s.quality = U.store.get('ss.quality');
   if (saved.sound == null && U.store.get('ss.sound', null) != null) s.sound = !!U.store.get('ss.sound');
   if (!saved.cam && U.store.get('ss.cam', null)) s.cam = U.store.get('ss.cam');
+  // v4.4: sound on by default. Switch it on once for everyone (a saved "off"
+  // was just the old default for most players); after that their choice sticks.
+  if (!saved.sound44) {
+    s.sound = true;
+    s.sound44 = true;
+    U.store.set('ss.settings', s);
+  }
 
   const subs = [];
   const Settings = {

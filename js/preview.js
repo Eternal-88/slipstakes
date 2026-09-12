@@ -64,6 +64,8 @@
       on = !!on;
       if (on === this.showroom) return;
       this.showroom = on;
+      if (on) this.cam.yaw = null; // start the orbit from wherever the camera is
+      document.body.classList.toggle('showroom', on);
       if (this.world) this.world.cam.snap = !on;
     },
 
@@ -72,6 +74,7 @@
     stop() {
       this.active = false;
       this.showroom = false;
+      document.body.classList.remove('showroom');
       if (this.world) this.world.removeCar('preview');
     },
 
@@ -92,12 +95,8 @@
         st.slip = [0, 0, 0, 0];
         const rs = Object.assign({}, st, { vx: st.vx, vz: st.vz });
         this.world.updateCar('preview', rs, dt);
-        this.world.orbit(st.x, st.z, dt, 9, 18, 0.28);
-        if (G.Audio) {
-          G.Audio.update(rs, dt, { carId: this.carId, parts: this.parts, vol: 0.25 });
-          G.Audio._fed = true;
-        }
-        return;
+        this._orbit(st, dt);
+        return; // silent: the brake-squeal and engine loops kept playing in the garage (use 🔊 Listen)
       }
       this.acc += dt;
       let n = 0;
@@ -133,11 +132,25 @@
       const rs = Object.assign({}, st, { x: U.lerp(this.px, st.x, a), z: U.lerp(this.pz, st.z, a), h: U.lerpAngle(this.ph, st.h, a) });
       this.world.updateCar('preview', rs, dt);
       this.world.follow(rs, dt, { pitch: 38, dist: 17, lead: 0.15 });
-      // you HEAR the build too (turbo whistle, straight-pipe crackle), quietly
-      if (G.Audio) {
-        G.Audio.update(rs, dt, { carId: this.carId, parts: this.parts, vol: 0.4 });
-        G.Audio._fed = true;
-      }
+      // v4.4: no engine sound here. The preview's engine and tyre loops played
+      // on through the whole between-rounds garage; the garage's 🔊 Listen
+      // button plays the build's sound on demand instead.
+    },
+
+    // Paint tab camera (v4.4): you steer it. Drag on the car to turn round it
+    // and tilt, scroll to zoom. It turns slowly by itself until you touch it,
+    // and again 8 s after you let go.
+    cam: { yaw: null, pitch: 18, dist: 9, touchedAt: 0 },
+    camTouched() {
+      if (this.cam.yaw == null && this.world) this.cam.yaw = this.world.cam.yaw || 0;
+      this.cam.touchedAt = performance.now();
+    },
+    _orbit(st, dt) {
+      const c = this.cam, w = this.world;
+      if (c.yaw == null) c.yaw = w.cam.yaw || 0;
+      if (performance.now() - c.touchedAt > 8000) c.yaw += dt * 0.28;
+      w.cam.yaw = c.yaw;
+      w.orbit(st.x, st.z, dt, c.dist, c.pitch, 0);
     },
 
     _respawn() {
@@ -155,6 +168,36 @@
       return this.m;
     },
   };
+
+  // Paint tab: mouse / touch drag and wheel over the car view (the garage's
+  // .g-center area, or the 3D canvas itself) steer the showroom camera.
+  let drag = null;
+  const inView = (e) => Preview.active && Preview.showroom && e.target && (e.target.id === 'c' || (e.target.closest && e.target.closest('.g-center')));
+  window.addEventListener('pointerdown', (e) => {
+    if (!inView(e)) return;
+    drag = { x: e.clientX, y: e.clientY };
+    Preview.camTouched();
+  });
+  window.addEventListener('pointermove', (e) => {
+    if (!drag || !Preview.showroom) return;
+    const c = Preview.cam;
+    c.yaw -= (e.clientX - drag.x) * 0.008;
+    c.pitch = U.clamp(c.pitch + (e.clientY - drag.y) * 0.25, 5, 70);
+    drag.x = e.clientX;
+    drag.y = e.clientY;
+    Preview.camTouched();
+  });
+  window.addEventListener('pointerup', () => (drag = null));
+  window.addEventListener('pointercancel', () => (drag = null));
+  window.addEventListener(
+    'wheel',
+    (e) => {
+      if (!inView(e)) return;
+      Preview.cam.dist = U.clamp(Preview.cam.dist * (e.deltaY > 0 ? 1.1 : 0.9), 4.5, 24);
+      Preview.camTouched();
+    },
+    { passive: true }
+  );
 
   G.Preview = Preview;
 })(window.G);
