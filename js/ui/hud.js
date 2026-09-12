@@ -12,7 +12,7 @@
     constructor(root) {
       this.root = root;
       root.innerHTML = `
-        <div class="hud-vig"></div><div class="hud-flash"></div>
+        <div class="hud-vig"></div><div class="hud-flash"></div><div class="hud-draftglow"></div>
         <div class="hud-tl">
           <div class="hud-pos"><span class="pos-n">-</span><span class="pos-of">/-</span><em class="pos-d"></em></div>
           <div class="hud-lap">LAP <b class="lap-n">-</b></div>
@@ -25,8 +25,9 @@
         <div class="hud-tower"></div>
         <canvas class="hud-map" width="200" height="200"></canvas>
         <div class="hud-prog"><div class="pg-bar"></div><div class="pg-dots"></div></div>
+        <div class="hud-draft"><span class="dr-c">›››</span><div><b class="dr-t">SLIPSTREAM</b><em class="dr-v"></em><i class="dr-m"><u></u></i></div><span class="dr-c">‹‹‹</span></div>
         <div class="hud-br">
-          <div class="hud-assist"><span class="as-draft">SLIPSTREAM <i><b></b></i></span><span class="as-cu"></span></div>
+          <div class="hud-assist"><span class="as-cu"></span></div>
           <canvas class="speedo" width="260" height="150"></canvas>
           <div class="gauges">
             <div class="gauge nos"><span>N2O</span><div><i></i></div></div>
@@ -49,7 +50,7 @@
         boost: $('.boost i'), heat: $('.heat i'), heatBox: $('.gauge.heat'), boostBox: $('.gauge.boost'), brk: $('.brk i'), brkBox: $('.gauge.brk'), tyre: $('.tyre i'), eng: $('.eng i'),
         cd: $('.cd'), banner: $('.banner'), sub: $('.sub'), tags: $('.hud-tags'), br: $('.hud-br'), tl: $('.hud-tl'), debug: $('.hud-debug'), help: $('.hud-help'),
         lights: root.querySelectorAll('.hud-lights i'), lightsBox: $('.hud-lights'), prog: $('.hud-prog'), pgDots: $('.pg-dots'), vig: $('.hud-vig'), flash: $('.hud-flash'),
-        nos: $('.nos i'), nosBox: $('.gauge.nos'), asDraft: $('.as-draft'), asDraftBar: $('.as-draft b'), asCu: $('.as-cu'),
+        nos: $('.nos i'), nosBox: $('.gauge.nos'), dr: $('.hud-draft'), drBar: $('.dr-m u'), drV: $('.dr-v'), drGlow: $('.hud-draftglow'), asCu: $('.as-cu'),
       };
       this.ctx = this.el.map.getContext('2d');
       this.sctx = this.el.speedo.getContext('2d');
@@ -373,9 +374,17 @@
         this.set('nosBox', el.nosBox, me.hasNos ? '' : 'none', 'display');
         this.set('nos', el.nos, Math.round(U.clamp(rs.nos == null ? 1 : rs.nos, 0, 1) * 100) + '%', 'width');
         el.nosBox.className = 'gauge nos' + (rs.nosOn ? ' on' : (rs.nos || 0) < 0.05 ? ' empty' : '');
-        const dr = rs.draft || 0;
-        this.set('draftOn', el.asDraft, dr > 0.12 ? 'on' : '', 'className');
-        this.set('draftW', el.asDraftBar, Math.round(dr * 100) + '%', 'width');
+        // v4.4.2: slipstream badge (top centre), blue edge glow and a whoosh
+        // on catching a tow. The old meter went through set(..., 'className'),
+        // which wrote el.style.className, so it never actually appeared.
+        const dr = rs.draft || 0, drOn = dr > 0.12, drMax = drOn && dr > 0.7;
+        const drCls = 'hud-draft' + (drOn ? ' on' : '') + (drMax ? ' max' : '');
+        if (this.cache.drCls !== drCls) { this.cache.drCls = drCls; el.dr.className = drCls; }
+        this.set('drW', el.drBar, Math.round(dr * 100) + '%', 'width');
+        if (drOn) this.set('drV', el.drV, (drMax ? 'MAX TOW  ' : '') + '−' + Math.round(dr * 45) + '% DRAG');
+        this.set('drGlow', el.drGlow, drOn ? (dr * 0.9).toFixed(2) : '0', 'opacity');
+        if (dr > 0.35 && !this._drIn) { this._drIn = true; if (G.Audio) G.Audio.draftIn(); }
+        else if (dr < 0.1) this._drIn = false;
         const cu = rs.cu || 0;
         this.set('cu', el.asCu, cu > 0.012 ? 'CATCH-UP +' + Math.round(cu * 100) + '%' : '');
         this.set('tyre', el.tyre, Math.round((1 - U.clamp(rs.tyreWear || 0, 0, 1)) * 100) + '%', 'width');
@@ -397,6 +406,8 @@
         this.set('lap', el.lap, v.format === 'circuit' ? v.leaderLap + '/' + v.laps : v.format.toUpperCase());
         this.set('cur', el.cur, U.fmtTime(v.raceTime * 1000));
         this.set('vig', el.vig, '0', 'opacity');
+        if (this.cache.drCls !== 'hud-draft') { this.cache.drCls = 'hud-draft'; el.dr.className = 'hud-draft'; }
+        this.set('drGlow', el.drGlow, '0', 'opacity');
       }
       // standings tower
       const tower = v.order.map((c, i) => `${i + 1}|${c.name}|${c.color}|${c.finished ? 1 : 0}|${c.dnf ? 1 : 0}|${c.id === (me && me.id) ? 1 : 0}|${c.bet || ''}`).join(';');
@@ -439,11 +450,28 @@
           // banking). A fixed 2.4 m left tags floating off cars on Summit Pass.
           const m = world.models.get(c.id);
           const p = m ? world.project(m.root.position.x, m.root.position.y + 2.4, m.root.position.z, this._p) : world.project(c.rs.x, world.groundAt(c.rs.x, c.rs.z) + 2.4, c.rs.z, this._p);
-          t.style.display = p.vis ? '' : 'none';
-          if (p.vis) {
-            t.style.transform = `translate(${p.x | 0}px, ${p.y | 0}px) translate(-50%,-100%)`;
-            const op = U.clamp(1.35 - (p.depth - 0.94) * 12, 0.25, 1);
-            t.style.opacity = op.toFixed(2);
+          // v4.4.2: only touch the DOM when something visibly changed, and
+          // hide tags for cars more than ~250 m away (depth 0.98). Writing
+          // every tag's style every frame (with a CSS opacity transition
+          // restarting each time) cost ~20% of the frame rate with 7 cars
+          // round you, even on a fast PC.
+          const vis = p.vis && p.depth < 0.98;
+          if (t._vis !== vis) {
+            t._vis = vis;
+            t.style.display = vis ? '' : 'none';
+          }
+          if (vis) {
+            const x = p.x | 0, y = p.y | 0;
+            if (x !== t._x || y !== t._y) {
+              t._x = x;
+              t._y = y;
+              t.style.transform = `translate3d(${x}px, ${y}px, 0) translate(-50%,-100%)`;
+            }
+            const op = Math.round(U.clamp(1.35 - (p.depth - 0.94) * 12, 0.25, 1) * 20) / 20;
+            if (op !== t._op) {
+              t._op = op;
+              t.style.opacity = op;
+            }
           }
         }
         for (const id in this.tagEls) {

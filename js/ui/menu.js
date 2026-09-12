@@ -139,7 +139,7 @@
             <button class="btn" data-act="casino">🎰 Casino <small>practice chips</small></button>
             <button class="btn" data-act="settings">⚙ Settings</button>
             <button class="btn ghost" data-act="help">❓ How to play</button>
-            <button class="btn ghost news-btn" data-act="news">✨ What's new <small>v${G.VERSION}: 4 maps, 2 cars, nitrous, slipstream</small></button>
+            <button class="btn ghost news-btn" data-act="news">✨ What's new <small>v${G.VERSION} — ${G.CHANGELOG[0].name}</small></button>
           </div>
           <div class="m-help">${kn(K.up)}/↑ throttle · ${kn(K.down)}/↓ brake & reverse · ${kn(K.left)}/${kn(K.right)} steer · ${kn(K.hb)} handbrake · ${kn(K.nitro)} nitrous · ${kn(K.reset)} reset · ${kn(K.cam)} camera · Esc menu</div>`;
       } else if (this.tab === 'practice') {
