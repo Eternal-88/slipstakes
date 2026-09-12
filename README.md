@@ -2,6 +2,10 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v4.4.1 — hotfix
+
+`Audio.silenceOthers()` muted the other cars' engine and tyre voices but not their turbo whistle / supercharger whine (`wg`). After a race next to a boosted bot, that whine played on at its last level through the main menu (turning "Other cars" down hid it). It is now muted with the rest, and the voice's car assignment is cleared.
+
 ## v4.4 — "Crowd Control"
 
 - **Spectate after the flag.** Once your car finishes (it cools down on autopilot), after 2 s the camera jumps to the first car still racing. 1–8 or Tab picks another car, F goes back to your own, WASD flies a free camera (`game.js` render, `RaceUI` in `lobby.js`).
