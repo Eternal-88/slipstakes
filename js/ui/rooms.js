@@ -24,6 +24,8 @@
       this.off = this.board ? this.board.on('change', () => UI.refresh()) : null;
     },
     unmount() {
+      if (this._asking) UI.clearNotice();
+      this._asking = false;
       if (this.off) this.off();
       if (this.board) this.board.close();
       this.board = this.off = null;
@@ -32,6 +34,7 @@
       const b = this.board;
       if (!b) return UI.patch(this.el.status, 'The server list needs the relay (js/relay.js).');
       const list = b.list();
+      this._list = list;
       const waited = performance.now() - this.t0 > 3000;
       let status;
       if (!b.reached()) status = b.failed >= b.tried ? "⚠ This network blocks the room servers — you can still join with a code." : 'Connecting to the room servers…';
@@ -46,7 +49,7 @@
             ? `<button class="btn small" disabled title="That room runs a different version of the game — both of you should reload.">v${U.esc(r.ver)}</button>`
             : full
             ? '<button class="btn small" disabled>Full</button>'
-            : `<button class="btn small ${r.vis === 'public' ? 'primary' : ''}" data-act="join" data-code="${r.code}">${r.vis === 'public' ? 'Join' : '🔒 Ask to join'}</button>`;
+            : `<button class="btn small ${r.vis === 'public' ? 'primary' : ''}" data-act="join" data-lid="${U.esc(r.lid)}">${r.vis === 'public' ? 'Join' : '🔒 Ask to join'}</button>`;
           return `<div class="rm-row ${old ? 'old' : ''}"><div class="rm-name"><b>${r.vis === 'public' ? '🌐' : '🔒'} ${U.esc(r.name)}</b><span class="muted small">host ${U.esc(r.host)} · ${U.esc(where)}</span></div><div class="rm-pl"><b>${r.players}/${r.max}</b><span class="muted small">drivers${r.bots ? ` +${r.bots} bot${r.bots === 1 ? '' : 's'}` : ''}</span></div>${btn}</div>`;
         })
         .join('');
@@ -73,9 +76,28 @@
       code() {
         if (UI.screens.menu && UI.screens.menu.openJoin) UI.screens.menu.openJoin();
       },
+      // Public: straight in with the code on the card. Private: ask the host
+      // (the card has no code); if they say yes, their encrypted reply carries
+      // the code and we join with it.
       async join(el) {
-        const code = el.dataset.code;
-        UI.toast('Connecting to ' + code + '…');
+        const r = (this._list || []).find((x) => x.lid === el.dataset.lid);
+        if (!r) return;
+        let code = r.vis === 'public' ? r.code : null;
+        if (!code) {
+          if (this._asking || !this.board) return;
+          this._asking = true;
+          UI.notice(`🔒 Asked the host of <b>${U.esc(r.name)}</b> to let you in…`, () => this.board && this.board.cancelAsk());
+          try {
+            code = await this.board.ask(r, G.App.name());
+            UI.clearNotice();
+            UI.toast("You're in — joining…", 'good');
+          } catch (e) {
+            UI.clearNotice();
+            if (e.message !== 'Cancelled.') UI.toast(e.message, 'bad');
+          }
+          this._asking = false;
+          if (!code) return;
+        } else UI.toast('Connecting to ' + r.name + '…');
         try {
           await G.Game.join(code, G.App.name());
         } catch (e) {

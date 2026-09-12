@@ -47,7 +47,7 @@
       const s = st.settings;
       const hostP = st.players[st.hostId];
       const roomName = s.name || `${hostP ? hostP.name : 'Host'}'s room`;
-      const vis = s.vis === 'public' ? '🌐 <b>Public</b> — on the server list; anyone can walk in' : '🔒 <b>Private</b> — on the server list; the host lets each new driver in';
+      const vis = s.vis === 'public' ? '🌐 <b>Public</b> — on the server list; anyone can walk in' : '🔒 <b>Private</b> — friends with the code walk in; strangers on the server list ask the host first (the code is never shown there)';
       UI.patch(this.el.code, `<span>ROOM CODE</span><b>${U.esc(st.code || '')}</b><button class="btn small ghost" data-act="copy" title="Copy a link that opens the Join box with this code filled in">🔗 Copy invite link</button><p class="muted small"><b>${U.esc(roomName)}</b> · up to ${s.maxPlayers || 8} drivers. Friends click <b>Join</b> and type the code, or find the room on the 🌐 Server list.</p><p class="lb-vis">${vis}</p>`);
       UI.patch(
         this.el.pl,
@@ -63,12 +63,12 @@
         this.el.set,
         isHost
           ? `<label class="fld inline"><span>Room name</span><input class="txt-in" maxlength="28" value="${U.esc(s.name || '')}" placeholder="${U.esc(roomName)}" data-change="rname" title="How the room shows on the server list (press Enter)"></label>
-             <label class="fld inline" title="Private: listed with a lock, you let each new driver in. Public: anyone on the server list walks straight in."><span>Who can join</span><select data-input="vis"><option value="private" ${s.vis !== 'public' ? 'selected' : ''}>🔒 Private — I approve</option><option value="public" ${s.vis === 'public' ? 'selected' : ''}>🌐 Public — anyone</option></select></label>
+             <label class="fld inline" title="Private: anyone with the code walks in; strangers on the server list ask you first and never see the code. Public: anyone on the server list walks straight in."><span>Who can join</span><select data-input="vis"><option value="private" ${s.vis !== 'public' ? 'selected' : ''}>🔒 Private — code, or ask me</option><option value="public" ${s.vis === 'public' ? 'selected' : ''}>🌐 Public — anyone</option></select></label>
              <label class="fld inline"><span>Max drivers</span><select data-input="maxPlayers">${[2, 3, 4, 5, 6, 7, 8].map((n) => `<option ${n === (s.maxPlayers || 8) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-             <label class="fld inline"><span>Races</span><input class="num-in" type="number" min="1" max="30" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 30, then press Enter"></label>
+             <label class="fld inline"><span>Races</span><input class="num-in" type="number" min="1" max="100" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 100, then press Enter"></label>
              <label class="fld inline" title="Bots fill empty grid slots (8 cars at most). You can change this between races too."><span>Bots</span><select data-input="bots">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option ${n === s.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
              <label class="fld inline" title="Cars trailing the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${Object.keys(CU).map((k) => `<option value="${k}" ${k === cu ? 'selected' : ''}>${CU[k]}</option>`).join('')}</select></label>
-             <span class="muted small">~${Math.round(s.races * 6)} min session · drivers can join at any time (late joiners start with 80% of the poorest driver's worth)</span>`
+             <span class="muted small">~${s.races * 6 >= 90 ? (s.races * 6 / 60).toFixed(1) + ' h' : Math.round(s.races * 6) + ' min'} session · drivers can join at any time (late joiners start with 80% of the poorest driver's worth)</span>`
           : `<span class="muted">${s.races} race${s.races === 1 ? '' : 's'} · ${s.bots} bots · catch-up ${CU[cu]} · waiting for the host to start</span>`
       );
       UI.patch(this.el.btns, `<button class="btn ghost" data-act="leave">Leave</button><button class="btn" data-act="garage">🎨 Car, tune & paint</button>${isHost ? '<button class="btn primary big" data-act="start">Start session →</button>' : ''}`);
@@ -89,8 +89,8 @@
       if (k === 'rname') return G.Client.act({ t: 'settings', name: el.value });
       if (k !== 'races') return;
       const n = Math.round(+el.value);
-      if (!(n >= 1 && n <= 30)) {
-        UI.toast('Races: pick a number from 1 to 30.', 'bad');
+      if (!(n >= 1 && n <= 100)) {
+        UI.toast('Races: pick a number from 1 to 100.', 'bad');
         el.value = G.Client.state.settings.races;
         return;
       }
@@ -201,7 +201,11 @@
       const racing = G.Game.racing();
       const tr = st.race ? G.getTrack(st.race.trackId) : null;
       let h = '';
-      if (!racing) h = `<b>SPECTATING</b> ${tr ? U.esc(tr.name) : ''} · <span>1–8 / Tab</span> follow · <span>WASD Q E</span> free cam · <span>wheel</span> zoom${G.Game.spectateExtra ? G.Game.spectateExtra() : ''}`;
+      const lv = G.Game.lastView;
+      const tgt = lv && !G.Game.freeCam && lv.order[Math.min(G.Game.spectate || 0, lv.order.length - 1)];
+      const who = tgt ? ` · watching <b>${U.esc(tgt.name)}</b>` : G.Game.freeCam ? ' · free camera' : '';
+      if (!racing) h = `<b>SPECTATING</b> ${tr ? U.esc(tr.name) : ''}${who} · <span>1–8 / Tab</span> follow · <span>WASD Q E</span> free cam · <span>wheel</span> zoom${G.Game.spectateExtra ? G.Game.spectateExtra() : ''}`;
+      else if (G.Game.spectating) h = `<b>FINISHED</b> — spectating${who} · <span>1–8 / Tab</span> another car · <span>F</span> your car · <span>WASD</span> free cam`;
       else if (st.race) h = `<b>RACE ${st.race.no}/${st.settings.races}</b> ${tr ? U.esc(tr.name) : ''}`;
       UI.patch(this.el.top, h);
       UI.patch(this.el.net, G.Game.lost ? '<span class="bad">⚠ Reconnecting to host…</span>' : '');

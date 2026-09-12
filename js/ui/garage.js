@@ -364,7 +364,7 @@
     update() {
       const m = G.Preview.info();
       let html;
-      if (this.tab === 'paint') html = `<span>SHOWROOM</span> your ${U.esc(Parts.CARS[(G.Client.me && G.Client.me.carId) || 'vandal'].name)} · switch tabs to drive it again`;
+      if (this.tab === 'paint') html = `<span>SHOWROOM</span> your ${U.esc(Parts.CARS[(G.Client.me && G.Client.me.carId) || 'vandal'].name)} · <b>drag</b> to turn it · <b>scroll</b> to zoom`;
       else {
         // Live numbers for the lap in progress (updates within a corner), plus
         // the last complete lap time once there is one for this build.
