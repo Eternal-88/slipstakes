@@ -71,10 +71,5 @@ button { font-family: var(--body); }
 .hud-help { position: absolute; left: 50%; bottom: 18px; transform: translateX(-50%); background: rgba(14,19,34,.72); padding: 8px 14px; border-radius: 10px; font-family: var(--body); font-size: 13px; color: var(--muted); }
 .hud-debug { position: absolute; left: 50%; top: 8px; transform: translateX(-50%); font-family: monospace; font-size: 12px; background: rgba(0,0,0,.6); padding: 3px 8px; border-radius: 6px; }
 
-/* Small screens (Chromebook 1366x768 is the design target) */
-@media (max-height: 700px) {
-  .hud-pos { font-size: 48px; }
-  .hud-tower { top: 196px; }
-  .hud-map { width: 160px; height: 160px; }
-  .hud-br { transform: scale(.88); transform-origin: bottom right; }
-}
+/* Chromebook 1366x768 is the design target; since v4.5 everything else is
+   zoomed to fit the screen (ui.js, hud.js) instead of small-screen rules. */
