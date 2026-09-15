@@ -64,17 +64,38 @@
       this._wrongT = 0;
       this._sp = {};
       G.Settings.on(() => this.applySettings());
+      window.addEventListener('resize', () => this.applySettings());
       this.applySettings();
     }
 
     applySettings() {
       const s = ST();
-      this.root.style.setProperty('--hud', String(s.hudScale / 100));
+      // v4.5: HUD size × the screen fit (laid out for 1366x768, see ui.js)
+      this.z = (s.hudScale / 100) * (G.UI && G.UI.fitScale ? G.UI.fitScale() : 1);
+      this.root.style.setProperty('--hud', this.z.toFixed(3));
+      this._crisp();
       this.el.map.style.display = s.minimap ? '' : 'none';
       this.el.tags.style.display = s.tags ? '' : 'none';
       const K = s.keys, n = G.Settings.keyName;
       this.el.help.textContent = `${n(K.up)}/↑ throttle · ${n(K.down)}/↓ brake/reverse · ${n(K.left)} ${n(K.right)} steer · ${n(K.hb)} handbrake · ${n(K.nitro)} nitrous · ${n(K.reset)} reset · ${n(K.cam)} camera · Esc menu · tuck in behind a car to slipstream`;
       this.cache = {};
+    }
+
+    // Canvas backing stores at the real on-screen pixel size (HUD zoom ×
+    // device pixel ratio), so the minimap and speedo stay sharp at any size.
+    _crisp() {
+      const k = U.clamp((window.devicePixelRatio || 1) * this.z, 1, 4);
+      if (Math.abs(k - (this.k || 0)) < 0.01) return;
+      this.k = k;
+      this.el.map.width = this.el.map.height = Math.round(200 * k);
+      this.el.speedo.width = Math.round(260 * k);
+      this.el.speedo.height = Math.round(150 * k);
+      this._spk = null;
+      if (this.track) {
+        const keep = [this.bestSeen, this.lastPos, this._wearTold];
+        this.setTrack(this.track); // redraw the map background at the new size
+        [this.bestSeen, this.lastPos, this._wearTold] = keep;
+      }
     }
 
     set(key, el, val, prop) {
@@ -97,8 +118,10 @@
       const s = Math.min((size - pad * 2) / (b.x1 - b.x0 || 1), (size - pad * 2) / (b.z1 - b.z0 || 1));
       this.mapT = { s, ox: size / 2 - b.cx * s, oz: size / 2 + b.cz * s };
       const off = document.createElement('canvas');
-      off.width = off.height = size;
+      const k = this.k || 1;
+      off.width = off.height = Math.round(size * k);
       const c = off.getContext('2d');
+      c.scale(k, k);
       const draw = (w, col) => {
         c.beginPath();
         for (let i = 0; i < track.N; i++) {
@@ -176,8 +199,9 @@
     drawMap(cars, meId) {
       if (!ST().minimap) return;
       const c = this.ctx;
+      c.setTransform(this.k || 1, 0, 0, this.k || 1, 0, 0);
       c.clearRect(0, 0, 200, 200);
-      if (this.mapBg) c.drawImage(this.mapBg, 0, 0);
+      if (this.mapBg) c.drawImage(this.mapBg, 0, 0, 200, 200);
       const draw = (car, me) => {
         const [x, y] = this.mapXY(car.x, car.z);
         const r = me ? 7.5 : 5.5;
@@ -211,6 +235,7 @@
       if (this._spk === k) return;
       this._spk = k;
       const c = this.sctx, W = 260, H = 150;
+      c.setTransform(this.k || 1, 0, 0, this.k || 1, 0, 0);
       c.clearRect(0, 0, W, H);
       const cx = 118, cy = 128, R = 104;
       const a0 = Math.PI * 1.02, a1 = Math.PI * 1.98;

@@ -18,6 +18,14 @@
     init() {
       this.root = document.getElementById('ui');
       this.toastBox = document.getElementById('toasts');
+      this._fit();
+      window.addEventListener('resize', () => this._fit());
+      G.Settings.on((k) => {
+        // (after a pause: the slider sits inside the menu it's resizing)
+        if (k !== 'uiScale') return;
+        clearTimeout(this._fitT);
+        this._fitT = setTimeout(() => this._fit(), 350);
+      });
       const r = this.root;
       r.addEventListener('click', (e) => {
         const el = e.target.closest('[data-act]');
@@ -145,7 +153,24 @@
       el.innerHTML = html;
     },
 
-    toast(msg, kind) {
+    // v4.5: the interface is laid out for a 1366x768 screen (a Chromebook)
+    // and zoomed to fit the real one. Bigger screens scale up a little less
+    // than in proportion; tiny windows stop at 60% (and scroll).
+    fitScale() {
+      let f = Math.min(window.innerWidth / 1366, window.innerHeight / 768);
+      if (f > 1) f = 1 + (f - 1) * 0.8;
+      return U.clamp(f, 0.6, 1.6);
+    },
+    // Menus, pop-ups and toasts: CSS zoom --uiz (css/v4.css), times the
+    // player's menu size. The HUD scales itself (hud.js) with the same fit.
+    _fit() {
+      const z = this.fitScale() * ((G.Settings.s.uiScale || 100) / 100);
+      document.documentElement.style.setProperty('--uiz', z.toFixed(3));
+    },
+
+    // kind: info | good | bad | money (colour and sound). snd: false = silent,
+    // or an Audio.notify() sound to play instead of the kind's.
+    toast(msg, kind, snd) {
       const t = document.createElement('div');
       t.className = 'toast ' + (kind || 'info');
       t.textContent = msg;
@@ -154,10 +179,12 @@
       setTimeout(() => t.remove(), 3300);
       while (this.toastBox.children.length > 5) this.toastBox.firstChild.remove();
       const a = A();
-      if (a) {
-        if (kind === 'bad') a.error();
+      if (a && snd !== false) {
+        if (typeof snd === 'string') a.notify(snd);
+        else if (kind === 'bad') a.error();
         else if (kind === 'good') a.good();
         else if (kind === 'money') a.money();
+        else a.notify('info');
       }
     },
 

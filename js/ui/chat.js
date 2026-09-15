@@ -9,6 +9,7 @@
 (function (G) {
   const U = G.U;
   const SHOW_MS = 12000; // how long a new line stays visible while the box is closed
+  const SND_RANK = { notify: 1, leave: 2, drop: 2, join: 3, warn: 4, host: 5 };
 
   const Chat = {
     init() {
@@ -97,17 +98,20 @@
       // new lines since last time (a fresh session starts clean)
       const newest = chat.length ? chat[chat.length - 1].at : null;
       if (this.lastAt == null || (newest != null && newest < this.lastAt)) this.lastAt = newest != null ? newest - 1 : 0;
-      let fresh = 0;
+      let fresh = 0, snd = null;
       for (const c of chat) {
         if (c.at <= this.lastAt) continue;
         this.arrived.set(c.at + '|' + c.text, now);
         if (!c.sys && c.from !== G.Client.meId) fresh++;
+        // v4.5: system lines can carry a sound (someone joined / left / is
+        // the new host / the room is closing): the most important one plays
+        if (c.snd && (!snd || (SND_RANK[c.snd] || 0) > (SND_RANK[snd] || 0))) snd = c.snd;
       }
       if (newest != null && newest > this.lastAt) this.lastAt = newest;
-      if (fresh) {
-        if (!this.open) this.unread += fresh;
-        if (G.Audio && G.Audio.chat && on) G.Audio.chat();
-      }
+      if (fresh && !this.open) this.unread += fresh;
+      // (on every session screen, lobby panels included)
+      if (snd && G.Audio && G.Audio.notify && this.available()) G.Audio.notify(snd);
+      else if (fresh && G.Audio && G.Audio.chat && on) G.Audio.chat();
       if (this.arrived.size > 80) for (const k of Array.from(this.arrived.keys()).slice(0, 40)) this.arrived.delete(k);
       this.chat = chat;
       if (on) this.render();

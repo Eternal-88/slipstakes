@@ -210,7 +210,8 @@
           row('Name tags', chk('tags')) +
           row('Minimap', chk('minimap')) +
           row('Control hints', chk('hints'), 'The key reminder on the starting grid.') +
-          row('HUD size', rng('hudScale', 80, 120, 5, '%'));
+          row('HUD size', rng('hudScale', 70, 130, 5, '%'), 'On top of the automatic fit to your screen.') +
+          row('Menu size', rng('uiScale', 80, 130, 5, '%'), 'Menus and pop-ups, on top of the automatic fit.');
       }
       return `<div class="ov-card settings"><div class="ov-head"><button class="btn small ghost" data-oact="back">←</button><h1>SETTINGS</h1><div class="ov-tabs">${TABS.map(([k, l]) => `<button class="${this.tab === k ? 'on' : ''}" data-oact="stab" data-t="${k}">${l}</button>`).join('')}</div></div><div class="ov-body">${body}</div></div>`;
     },
