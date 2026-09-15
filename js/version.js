@@ -3,8 +3,17 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '4.4.2';
+  G.VERSION = '4.5';
   G.CHANGELOG = [
+    {
+      v: '4.5', name: 'Sound & Scale', items: [
+        ['🖥', 'Fits every screen', 'The whole interface is laid out for a Chromebook screen and scales to yours: no more cut-off menus in small windows, and a HUD that isn\'t tiny on a big monitor. The minimap and speedo stay sharp at any size. New Menu size setting next to HUD size (now 70–130%).'],
+        ['🔊', 'Engines with grit', 'Every engine has combustion rasp pulsed at its firing rate and an exhaust that rings at its own pitch, and idles wander like real ones. Turbos whistle with a blade overtone and sing loudest while they spool; superchargers whine locked to the crank with a rotor whirr, and hiss through the bypass valve when you lift.'],
+        ['🔔', 'Sounds for the room', 'A knock and a bell when someone asks to join your private room, chimes when drivers join or leave, a fanfare for a new host, and a warning before an idle room closes. Info pop-ups blip softly.'],
+        ['👋', 'Left or lost?', 'The chat now says whether a driver left the game or lost their connection (their seat is saved either way).'],
+        ['📡', 'Lighter netcode', 'Snapshots are smaller (your own car\'s part is less than half the size), and a weak Wi-Fi link now skips stale packets instead of queueing them up as lag. The race loop and car sounds also create less throwaway data every frame.'],
+      ],
+    },
     {
       v: '4.4.2', name: 'Smooth Tow', items: [
         ['⚡', 'Smoother in a pack', 'Racing in a pack of 7 cars costs far less frame rate: name tags only update when they move, glows from distant cars are skipped, and crash sparks, thuds and exhaust crackles are capped, so a pile-up can\'t flood the screen and speakers.'],

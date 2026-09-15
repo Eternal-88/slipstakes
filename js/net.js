@@ -49,6 +49,18 @@
   const PEER_OPTS = { debug: 0, config: { iceServers: STUN.concat(TURN) } };
   const REVERSE_AFTER = 5000; // joiner's link not open by now -> host dials the joiner
   const RELAY_AFTER = 8000; // still no direct link (reverse dial included) -> joiner knocks on the backup relay
+  // v4.5: on a link that can't keep up (weak or busy Wi-Fi) the browser queues
+  // 'fast' packets, and every queued snapshot / input then arrives late. Past
+  // this backlog we skip the packet instead: the next one supersedes it, and
+  // inputs carry copies of the previous blocks anyway. (The relay has its own.)
+  const FAST_BACKLOG = 32 * 1024;
+  const NETSTAT = (G.NetStat = { skipped: 0 });
+  const backlogged = (conn) => {
+    const dc = conn && conn.dataChannel;
+    if (!(dc && dc.bufferedAmount > FAST_BACKLOG)) return false;
+    NETSTAT.skipped++;
+    return true;
+  };
   const JOIN_TIMEOUT = 22000; // client gives up (covers all three routes)
 
   function peerAvailable() {
@@ -262,7 +274,8 @@
     }
     sendFast(pid, msg) {
       const L = this.byPid.get(pid);
-      return L ? this._sendRaw(L.fast, msg) : false;
+      if (!L || backlogged(L.fast)) return false;
+      return this._sendRaw(L.fast, msg);
     }
     broadcastCtrl(msg) {
       for (const pid of this.byPid.keys()) this.sendCtrl(pid, msg);
@@ -327,6 +340,7 @@
     // join through the backup relay straight away.
     return { lag: +(q.get('lag') || 0), jitter: +(q.get('jitter') || 0), loss: +(q.get('loss') || 0), forceRev: q.has('forcerev'), forceRelay: q.has('forcerelay') };
   })();
+  G.NetSim = SIMNET; // (adjustable at runtime by the test tools)
   let _ctrlClock = 0; // keeps delayed ctrl messages in order
   function simDeliver(fast, fn) {
     if (!SIMNET.lag && !SIMNET.jitter && !SIMNET.loss) return fn();
@@ -526,7 +540,7 @@
     }
     sendFast(m) {
       simDeliver(true, () => {
-        if (this.fast && this.fast.open) {
+        if (this.fast && this.fast.open && !backlogged(this.fast)) {
           try {
             this.fast.send(m);
           } catch (e) {}

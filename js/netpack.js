@@ -61,10 +61,14 @@
   }
 
   // Full core state for reconciliation. Order = P.CORE, then fy[0..3], then hint.
+  // v4.5: rounded to 1e-4. Full doubles were ~400 bytes of JSON in every
+  // snapshot; rounded it's ~175, and replaying 0.3 s of physics from the
+  // rounded state drifts less than 0.1 mm (measured, sliding or not).
+  const q4 = (v) => (typeof v === 'number' ? Math.round(v * 1e4) / 1e4 : v);
   function packFull(st) {
     const out = new Array(P.CORE.length + 5);
-    for (let i = 0; i < P.CORE.length; i++) out[i] = st[P.CORE[i]];
-    for (let i = 0; i < 4; i++) out[P.CORE.length + i] = st.fy[i];
+    for (let i = 0; i < P.CORE.length; i++) out[i] = q4(st[P.CORE[i]]);
+    for (let i = 0; i < 4; i++) out[P.CORE.length + i] = q4(st.fy[i]);
     out[P.CORE.length + 4] = st.hint;
     return out;
   }

@@ -117,7 +117,8 @@
         }
       }
       const frozen = this.phase === 'grid';
-      const others = this.cars.map((c) => c.st);
+      if (!this._others || this._others.length !== this.cars.length) this._others = this.cars.map((c) => c.st);
+      const others = this._others;
       if (!frozen) this.assist(dt);
       for (const c of this.cars) {
         c.px = c.st.x; c.pz = c.st.z; c.ph = c.st.h;
@@ -348,12 +349,17 @@
     // Interpolated render state for a car (alpha = fraction into the next step).
     renderState(c, alpha) {
       const st = c.st;
-      const rs = this._rs || (this._rs = {});
-      return Object.assign({}, st, {
-        x: U.lerp(c.px, st.x, alpha),
-        z: U.lerp(c.pz, st.z, alpha),
-        h: U.lerpAngle(c.ph, st.h, alpha),
-      });
+      // v4.5: one reused object per car. A fresh copy of the whole state for
+      // every car on every frame was the biggest source of garbage (and so
+      // of garbage-collection hitches) on the host.
+      const m = this._rsm || (this._rsm = new WeakMap());
+      let rs = m.get(c);
+      if (!rs) m.set(c, (rs = {}));
+      Object.assign(rs, st);
+      rs.x = U.lerp(c.px, st.x, alpha);
+      rs.z = U.lerp(c.pz, st.z, alpha);
+      rs.h = U.lerpAngle(c.ph, st.h, alpha);
+      return rs;
     }
 
     popEvents() {

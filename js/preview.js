@@ -64,7 +64,14 @@
       on = !!on;
       if (on === this.showroom) return;
       this.showroom = on;
-      if (on) this.cam.yaw = null; // start the orbit from wherever the camera is
+      if (on) {
+        this.cam.yaw = null; // start the orbit from wherever the camera is
+        // v4.5: stand back far enough that the whole car fits in the space
+        // beside the paint panel (which is most of the screen on a small one)
+        const panel = document.querySelector('.g-right');
+        const free = Math.max(260, innerWidth - (panel ? panel.getBoundingClientRect().width + 28 : 0));
+        this.cam.dist = U.clamp(9 * U.clamp(660 / free, 1, 1.9), 9, 18);
+      }
       document.body.classList.toggle('showroom', on);
       if (this.world) this.world.cam.snap = !on;
     },
@@ -150,7 +157,14 @@
       if (c.yaw == null) c.yaw = w.cam.yaw || 0;
       if (performance.now() - c.touchedAt > 8000) c.yaw += dt * 0.28;
       w.cam.yaw = c.yaw;
-      w.orbit(st.x, st.z, dt, c.dist, c.pitch, 0);
+      // v4.5: the paint panel covers the right of the screen, so look at a
+      // point half a panel to the car's right — the car then sits in the
+      // middle of what you can actually see, instead of half behind it.
+      const panel = document.querySelector('.g-right');
+      const px = panel ? panel.getBoundingClientRect().width / 2 : 0;
+      const wpp = (2 * c.dist * Math.tan(Math.PI / 9) * (innerWidth / Math.max(1, innerHeight))) / Math.max(1, innerWidth);
+      const s = px * wpp;
+      w.orbit(st.x - Math.cos(c.yaw) * s, st.z + Math.sin(c.yaw) * s, dt, c.dist, c.pitch, 0);
     },
 
     _respawn() {
@@ -172,10 +186,15 @@
   // Paint tab: mouse / touch drag and wheel over the car view (the garage's
   // .g-center area, or the 3D canvas itself) steer the showroom camera.
   let drag = null;
-  const inView = (e) => Preview.active && Preview.showroom && e.target && (e.target.id === 'c' || (e.target.closest && e.target.closest('.g-center')));
+  // v4.5: anything that isn't a panel counts as the car view. The garage
+  // screen's own container lies over the 3D canvas, so every drag landed on
+  // that container instead of the canvas and the turntable never moved.
+  const PANELS = '.g-right, .g-left, .g-head, .drivebar, #corner, #ops, #chatbox, #requests, .notice, .modal-bg, #overlay';
+  const inView = (e) => Preview.active && Preview.showroom && e.target && !(e.target.closest && e.target.closest(PANELS));
   window.addEventListener('pointerdown', (e) => {
     if (!inView(e)) return;
     drag = { x: e.clientX, y: e.clientY };
+    document.body.classList.add('dragging');
     Preview.camTouched();
   });
   window.addEventListener('pointermove', (e) => {
@@ -187,8 +206,12 @@
     drag.y = e.clientY;
     Preview.camTouched();
   });
-  window.addEventListener('pointerup', () => (drag = null));
-  window.addEventListener('pointercancel', () => (drag = null));
+  const drop = () => {
+    drag = null;
+    document.body.classList.remove('dragging');
+  };
+  window.addEventListener('pointerup', drop);
+  window.addEventListener('pointercancel', drop);
   window.addEventListener(
     'wheel',
     (e) => {

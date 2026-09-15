@@ -135,7 +135,7 @@
         if (m.t === 'i' && this.hostRace) this.hostRace.onInput(pid, m);
       });
       net.on('leave', (pid, why) => {
-        s.leave(pid);
+        s.leave(pid, why);
         this._lastDrop = { t: performance.now(), why };
       });
       net.on('signal', (st) => {
@@ -165,7 +165,7 @@
       if (this.requests.size >= 6) return; // don't let a flood bury the host
       const name = String(r.name || 'Driver').trim().slice(0, 16) || 'Driver';
       this.requests.set(id, { id, cid: r.cid, pub: r.pub, name, at: Date.now() });
-      G.UI.toast(`${name} is asking to join`, 'money');
+      G.UI.toast(`${name} is asking to join`, 'money', 'request');
       this.reqSeq = (this.reqSeq || 0) + 1;
     },
 
@@ -220,8 +220,8 @@
       if (warn && this._idleWarned !== warn) {
         this._idleWarned = warn;
         const msg = warn === 'lobby' ? '⏳ This room closes in 2 minutes unless the host starts the session.' : '⏳ This room closes in 2 minutes unless someone plays.';
-        s.sys(msg);
-        G.UI.toast(msg, 'bad');
+        s.sys(msg, 'warn');
+        G.UI.toast(msg, 'bad', false); // (the chat line plays the warning for everyone)
       } else if (!warn) this._idleWarned = null;
     },
     // Close the room for everyone (no host migration: the room is done).
@@ -469,6 +469,7 @@
     },
 
     _onCtrl(m) {
+      if (m.t.slice(0, 4) === 'ops_') return G.Ops && G.Ops.onMsg(m);
       if (m.t === 'heir') {
         // I'm next in line to host: keep the full state in case the host drops
         this.heirPkg = { s: m.s, code: m.code, at: Date.now() };
@@ -553,7 +554,12 @@
         net.broadcastCtrl({ t: 'migrate' });
         setTimeout(() => net.close(), 800);
       } else if (net && this._closing) setTimeout(() => net.close(), 700); // let "room closed" reach everyone first
-      else if (net) net.close();
+      else if (net && this.role === 'client') {
+        // v4.5: tell the host this is on purpose, so the room reads "left the
+        // game" rather than "lost connection"; close once that has gone out
+        net.sendCtrl({ t: 'bye' });
+        setTimeout(() => net.close(), 200);
+      } else if (net) net.close();
       G.UI.clearNotice();
       this.role = null;
       this.session = null;
@@ -772,6 +778,18 @@
     },
   };
 
+  // v4.5: closing the tab counts as leaving on purpose too (see leave())
+  window.addEventListener('pagehide', () => {
+    // Then close the link ourselves: a data channel's close flushes what's
+    // queued first, and the host hears the close at once instead of timing
+    // the link out 10 s later. (A tab that's killed outright can't send
+    // anything: that still reads "lost connection".)
+    const g = G.Game;
+    if (g && g.role === 'client' && g.net) {
+      g.net.sendCtrl({ t: 'bye' });
+      g.net.close();
+    }
+  });
   // A key or click on the host's own computer counts as activity (idle rooms close).
   const markActive = () => {
     if (Game.role === 'host' && Game.session) Game.session.lastActive = Date.now();

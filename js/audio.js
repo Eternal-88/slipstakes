@@ -32,14 +32,15 @@
   //   brick : rally four — gravelly distortion, boxer-style burble (lope at f0/2)
   //   sting : high-revving four — thin, bright, screams at the top
   //   mule  : V8 — deep sub, heavy lumpy lope, dark filter
+  // v4.5: res = where the exhaust rings (Hz), grit = combustion rasp amount
   const PROFILES = {
-    vandal: { cyl: 6, cut: 1.05, rasp: 1.6, lope: 0.04, lopeDiv: 4, sub: 0.45, h2: 0.45 },
-    brick: { cyl: 4, cut: 1.15, rasp: 7.5, lope: 0.3, lopeDiv: 2, sub: 0.35, h2: 0.3 },
-    sting: { cyl: 4, cut: 1.7, rasp: 4.5, lope: 0.0, lopeDiv: 4, sub: 0.16, h2: 0.8 },
-    mule: { cyl: 8, cut: 0.68, rasp: 2.4, lope: 0.62, lopeDiv: 4, sub: 1.15, h2: 0.18 },
+    vandal: { cyl: 6, cut: 1.05, rasp: 1.6, lope: 0.04, lopeDiv: 4, sub: 0.45, h2: 0.45, res: 420, grit: 0.6 },
+    brick: { cyl: 4, cut: 1.15, rasp: 7.5, lope: 0.3, lopeDiv: 2, sub: 0.35, h2: 0.3, res: 300, grit: 1.35 },
+    sting: { cyl: 4, cut: 1.7, rasp: 4.5, lope: 0.0, lopeDiv: 4, sub: 0.16, h2: 0.8, res: 620, grit: 1.0 },
+    mule: { cyl: 8, cut: 0.68, rasp: 2.4, lope: 0.62, lopeDiv: 4, sub: 1.15, h2: 0.18, res: 190, grit: 1.1 },
     // v4: truck = low, gruff, lumpy V6; Apex = high, clean flat-six shriek
-    dune: { cyl: 6, cut: 0.72, rasp: 3.4, lope: 0.24, lopeDiv: 3, sub: 0.95, h2: 0.22 },
-    apex: { cyl: 6, cut: 2.0, rasp: 3.6, lope: 0.02, lopeDiv: 4, sub: 0.18, h2: 0.95 },
+    dune: { cyl: 6, cut: 0.72, rasp: 3.4, lope: 0.24, lopeDiv: 3, sub: 0.95, h2: 0.22, res: 230, grit: 1.2 },
+    apex: { cyl: 6, cut: 2.0, rasp: 3.6, lope: 0.02, lopeDiv: 4, sub: 0.18, h2: 0.95, res: 560, grit: 0.85 },
   };
   const vol = (v) => Math.pow(U.clamp(v, 0, 100) / 100, 1.6);
 
@@ -198,7 +199,24 @@
       e.sh.curve = shaperCurve(prof.rasp);
       e.f = this._filt('lowpass', 800, 1.6);
       e.amp = this._gain(0);
-      e.mix.connect(e.sh).connect(e.f).connect(e.amp).connect(E);
+      // v4.5: exhaust body — a resonant peak where the pipe rings
+      e.pk = this._filt('peaking', prof.res || 400, 1.6);
+      e.pk.gain.value = 5;
+      e.mix.connect(e.sh).connect(e.pk).connect(e.f).connect(e.amp).connect(E);
+      // v4.5 combustion rasp: every exhaust pulse is a burst of broadband
+      // noise, which is what gives a real engine its grit (a pure oscillator
+      // stack sounds like a synth). Noise, gated by a pulse train at the
+      // firing frequency, into the same amp as the tone, so shifts, the
+      // limiter and the lope shape it too.
+      e.cn = c.createBufferSource();
+      e.cn.buffer = this.noise;
+      e.cn.loop = true;
+      e.cnf = this._filt('bandpass', 900, 0.9);
+      e.cng = this._gain(0);
+      e.cn.connect(e.cnf).connect(e.cng).connect(e.amp);
+      e.am = this._osc('sawtooth', 50);
+      e.amg = this._gain(0);
+      e.am.connect(e.amg).connect(e.cng.gain);
       // lope: uneven firing -> amplitude wobble at ~1/4 firing frequency
       e.lfo = this._osc('sine', 10);
       e.lfoG = this._gain(0);
@@ -207,9 +225,23 @@
       e.tw = this._osc('sine', 2000);
       e.twg = this._gain(0);
       e.tw.connect(e.twg).connect(E);
+      // v4.5: the compressor's blade-pass overtone, and a slight shaft wobble
+      e.tw2 = this._osc('sine', 4000);
+      e.tw2g = this._gain(0);
+      e.tw2.connect(e.tw2g).connect(E);
+      e.twl = this._osc('sine', 5.5);
+      e.twlg = this._gain(0);
+      e.twl.connect(e.twlg);
+      e.twlg.connect(e.tw.frequency);
+      e.twlg.connect(e.tw2.frequency);
       // supercharger: two rev-locked gear-whine partials through a nasal bandpass
       e.swf = this._filt('bandpass', 2500, 1.2);
-      e.swf.connect(E);
+      e.swo = this._gain(1);
+      e.swf.connect(e.swo).connect(E);
+      // v4.5: rotor pulses — a fast whirr riding on the whine
+      e.swl = this._osc('sine', 30);
+      e.swlg = this._gain(0);
+      e.swl.connect(e.swlg).connect(e.swo.gain);
       e.sw = this._osc('triangle', 900);
       e.swg = this._gain(0);
       e.sw.connect(e.swg).connect(e.swf);
@@ -232,14 +264,15 @@
       e.gwg = this._gain(0);
       e.gw.connect(e.gwg).connect(E);
       e.exKey = null;
-      for (const o of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs, e.gw]) o.start();
+      for (const o of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs, e.gw, e.am, e.tw2, e.twl, e.swl]) o.start();
+      e.cn.start(0, Math.random() * 1.5);
       this.eng = e;
       this._startEnv();
     },
     _stopEngine() {
       const e = this.eng;
       if (e) {
-        for (const n of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs, e.gw]) {
+        for (const n of [e.o1, e.o2, e.o3, e.lfo, e.tw, e.sw, e.sw2, e.hs, e.gw, e.cn, e.am, e.tw2, e.twl, e.swl]) {
           try {
             n.stop();
           } catch (x) {}
@@ -359,8 +392,11 @@
       // a garage rev demo owns the engine voice until it ends
       if (this._demoUntil && performance.now() < this._demoUntil && !(meta && meta.demo)) return;
       if (!rs || !this.ok()) {
-        if (this.eng && this.ctx) {
+        // once is enough: the fades are scheduled (menus call this every frame)
+        if (this.eng && this.ctx && !this._hushed) {
+          this._hushed = true;
           const t = this.ctx.currentTime;
+          for (const k of ['cng', 'amg', 'tw2g', 'twlg', 'swlg']) this.eng[k].gain.setTargetAtTime(0, t, 0.08);
           this.eng.amp.gain.setTargetAtTime(0, t, 0.08);
           this.eng.lfoG.gain.setTargetAtTime(0, t, 0.08);
           this.eng.twg.gain.setTargetAtTime(0, t, 0.08);
@@ -380,8 +416,17 @@
       if (this.eng && this.eng.prof !== prof) this._stopEngine();
       if (!this.eng) this._startEngine(prof);
       const e = this.eng, t = this.ctx.currentTime;
-      const parts = Object.assign({}, G.Parts.STOCK, meta.parts || {});
-      const ms = modSound(parts);
+      this._hushed = false;
+      // the build's sound profile, redone only when the build changes (v4.5:
+      // it was rebuilt from scratch every frame — needless garbage)
+      const mp = meta.parts || G.Parts.STOCK;
+      const sig = mp.exhaust + '|' + mp.ecu + '|' + mp.weight + '|' + mp.gearing + '|' + mp.aero + '|' + mp.brakes + '|' + mp.compound + '|' + mp.suspension + '|' + mp.induction;
+      if (this._pSig !== sig) {
+        this._pSig = sig;
+        const p = Object.assign({}, G.Parts.STOCK, meta.parts || {});
+        this._pk = { parts: p, ms: modSound(p), kind: G.Parts.opt('induction', p.induction).kind };
+      }
+      const parts = this._pk.parts, ms = this._pk.ms;
       this._ms = ms;
       const master = meta.vol == null ? 1 : meta.vol;
       const rpm = U.clamp(rs.rpm || 0.14, 0.1, 1.05);
@@ -396,15 +441,30 @@
       }
       e.f.Q.setTargetAtTime(ms.q, t, 0.1);
       e.g2.gain.setTargetAtTime(prof.sub * 0.5 * ms.sub, t, 0.1);
-      // firing frequency: rpm/60 * cylinders/2
-      const f0 = ((rpm * car.redline) / 60) * (prof.cyl / 2);
+      // firing frequency: crank revs per second * cylinders/2
+      const crank = (rpm * car.redline) / 60;
+      let f0 = crank * (prof.cyl / 2);
+      // v4.5: a real idle hunts a little instead of sitting on one pitch
+      if (rpm < 0.3) f0 *= 1 + (0.3 - rpm) * (Math.sin(this._limT * 2.3) * 0.05 + Math.sin(this._limT * 6.1) * 0.025);
       e.o1.frequency.setTargetAtTime(f0, t, 0.025);
       e.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.025);
       e.o3.frequency.setTargetAtTime(f0 * 2, t, 0.025);
       e.lfo.frequency.setTargetAtTime(f0 / (prof.lopeDiv || 4), t, 0.05);
       const loud = ms.loud;
       e.f.frequency.setTargetAtTime((350 + rpm * 2300 * prof.cut + thr * 1300) * ms.cut, t, 0.04);
-      let g = (0.04 + thr * 0.075) * loud * master * (rs.nosOn ? 1.25 : 1);
+      const over = thr < 0.1 && rpm > 0.3; // lifted at speed: the overrun
+      let g = (0.04 + thr * 0.075) * loud * master * (rs.nosOn ? 1.25 : 1) * (over ? 0.8 : 1);
+      // v4.5 combustion rasp (see _startEngine): gritty under load, a softer
+      // burble on the overrun; stronger for rougher engines and freer pipes
+      const grit = Math.min(1.6, (prof.grit || 1) * ms.rasp);
+      const rl = (0.14 + thr * 0.46 + (over ? 0.16 * ms.lope : 0)) * (0.4 + 0.6 * rpm) * grit;
+      e.cng.gain.setTargetAtTime(rl * 0.5, t, 0.04);
+      e.amg.gain.setTargetAtTime(rl * 0.5, t, 0.04);
+      e.am.frequency.setTargetAtTime(f0, t, 0.025);
+      e.cnf.frequency.setTargetAtTime(650 + rpm * 2400 * prof.cut + thr * 700, t, 0.05);
+      // exhaust body: a freer pipe rings higher and harder
+      e.pk.frequency.setTargetAtTime((prof.res || 400) * (ms.q > 3 ? 1.15 : ms.q > 2 ? 1.05 : 0.9), t, 0.2);
+      e.pk.gain.setTargetAtTime(2.5 + ms.q * 1.1, t, 0.2);
       // exhaust drone: a resonant band that follows the firing frequency,
       // strongest at part throttle / cruise (that's when a sport exhaust booms)
       e.dr.frequency.setTargetAtTime(f0 * 1.02, t, 0.05);
@@ -437,18 +497,35 @@
       //                intake whoosh, "pssh" blow-off when you lift
       //  big turbo   : deeper, louder whoosh and a "stu-tu-tu" flutter on lift
       const b = rs.boost || 0;
-      const kind = G.Parts.opt('induction', parts.induction).kind;
+      const kind = this._pk.kind;
       const big = parts.induction === 't2';
-      e.tw.frequency.setTargetAtTime((big ? 1100 : 1750) + b * (big ? 2300 : 3100), t, 0.08);
-      e.twg.gain.setTargetAtTime(kind === 'turbo' ? b * (big ? 0.036 : 0.026) * master : 0, t, 0.06);
+      // v4.5 turbo: the whistle tracks shaft speed (boost, plus exhaust flow
+      // with the revs), with its blade-pass overtone and a slight shaft
+      // wobble, and sings loudest while it's spooling up under load
+      const spool = U.clamp(((b - this._lastBoost) / Math.max(dt, 0.001)) * 0.6, 0, 1);
+      const twf = ((big ? 1100 : 1750) + b * (big ? 2300 : 3100)) * (0.85 + 0.15 * rpm);
+      const tg = kind === 'turbo' ? b * (big ? 0.036 : 0.026) * (0.55 + 0.45 * thr + 0.5 * spool) * master : 0;
+      e.tw.frequency.setTargetAtTime(twf, t, 0.08);
+      e.tw2.frequency.setTargetAtTime(twf * 2.02, t, 0.08);
+      e.twg.gain.setTargetAtTime(tg, t, 0.06);
+      e.tw2g.gain.setTargetAtTime(tg * 0.3, t, 0.06);
+      e.twlg.gain.setTargetAtTime(kind === 'turbo' ? twf * 0.004 : 0, t, 0.1);
       e.hg.gain.setTargetAtTime(kind === 'turbo' ? b * (0.3 + 0.7 * thr) * (big ? 0.055 : 0.03) * master : 0, t, 0.06);
-      e.sw.frequency.setTargetAtTime(f0 * 3.3, t, 0.02);
-      e.sw2.frequency.setTargetAtTime(f0 * 6.6, t, 0.02);
-      e.swf.frequency.setTargetAtTime(1200 + rpm * 3200, t, 0.03);
-      const scg = kind === 'sc' ? (0.012 + thr * 0.034) * (0.3 + 0.7 * rpm) * master : 0;
+      // v4.5 supercharger: belt-driven, so the whine is locked to the crank
+      // (pulley ratio × rotor lobes) whatever the cylinder count, with a fast
+      // rotor whirr on top; loud on load, and the bypass valve drops it (with
+      // a soft whoosh) when you lift
+      const fsc = crank * 14;
+      e.sw.frequency.setTargetAtTime(fsc, t, 0.02);
+      e.sw2.frequency.setTargetAtTime(fsc * 2, t, 0.02);
+      e.swf.frequency.setTargetAtTime(900 + rpm * 3000, t, 0.03);
+      e.swl.frequency.setTargetAtTime(crank * 2, t, 0.03);
+      e.swlg.gain.setTargetAtTime(kind === 'sc' ? 0.3 : 0, t, 0.05);
+      const scg = kind === 'sc' ? (0.01 + thr * 0.036) * (0.3 + 0.7 * rpm) * master : 0;
       e.swg.gain.setTargetAtTime(scg, t, 0.03);
       e.sw2g.gain.setTargetAtTime(scg * 0.5, t, 0.03);
       if (kind === 'turbo' && this._lastBoost > 0.45 && b < 0.25) big ? this.flutter(master) : this.blowoff(master);
+      if (kind === 'sc' && this._lastThr > 0.6 && thr < 0.15 && rpm > 0.4) this.noiseHit(0.3, 1800, 0.05 * master, 'bandpass', 'sfx', 0, 600, 0.8);
       this._lastBoost = b;
       // overrun crackle (free-flowing exhausts), backfire pops on shifts
       const pops = ms.pops;
@@ -525,37 +602,54 @@
     // half your own car's level up close (plus its own volume slider).
     // cars: [{id, rs, carId}], lx/lz/lyaw = listener position + facing,
     // lvx/lvz = listener velocity (your car's, when you're racing).
-    othersUpdate(cars, lx, lz, lyaw, lvx, lvz) {
+    othersUpdate(cars, lx, lz, lyaw, lvx, lvz, skipId) {
       if (!this.ok()) return;
       const t = this.ctx.currentTime;
       this._lx = lx;
       this._lz = lz;
-      const near = cars
-        .map((c) => ({ c, d: Math.hypot(c.rs.x - lx, c.rs.z - lz) }))
-        .filter((o) => o.d < 120)
-        .sort((a, b) => a.d - b.d)
-        .slice(0, 4);
-      while (this.others.length < near.length) this.others.push(this._voice(PROFILES.vandal));
+      // The (up to) 4 nearest within 120 m, by insertion into reused arrays.
+      // (v4.5: the old map/filter/sort/slice built a dozen objects a frame.)
+      const nc = this._nc || (this._nc = [null, null, null, null]);
+      const nd = this._nd || (this._nd = [0, 0, 0, 0]);
+      let n = 0;
+      for (let i = 0; i < cars.length; i++) {
+        const c = cars[i];
+        if (c.id === skipId) continue;
+        const d = Math.hypot(c.rs.x - lx, c.rs.z - lz);
+        if (d >= 120 || (n === 4 && d >= nd[3])) continue;
+        let k = n < 4 ? n++ : 3;
+        while (k > 0 && nd[k - 1] > d) {
+          nc[k] = nc[k - 1];
+          nd[k] = nd[k - 1];
+          k--;
+        }
+        nc[k] = c;
+        nd[k] = d;
+      }
+      while (this.others.length < n) this.others.push(this._voice(PROFILES.vandal));
       // keep each car on the same voice while it stays near (no pitch jumps)
-      const byId = {};
-      for (const o of near) byId[o.c.id] = o;
-      const free = [];
+      let taken = 0; // bit k: nc[k] already has its voice
       for (const v of this.others) {
-        if (v.id != null && byId[v.id]) {
-          v.o = byId[v.id];
-          delete byId[v.id];
-        } else free.push(v);
-      }
-      for (const id in byId) {
-        const v = free.shift();
-        if (!v) break;
-        v.id = id;
-        v.o = byId[id];
-        v.bf = false;
-      }
-      for (const v of free) {
-        v.id = null;
         v.o = null;
+        if (v.id == null) continue;
+        let k = 0;
+        while (k < n && nc[k].id !== v.id) k++;
+        if (k < n) {
+          v.o = nc[k];
+          v.d = nd[k];
+          taken |= 1 << k;
+        } else v.id = null;
+      }
+      for (let k = 0; k < n; k++) {
+        if (taken & (1 << k)) continue;
+        for (const v of this.others) {
+          if (v.id != null) continue;
+          v.id = nc[k].id;
+          v.o = nc[k];
+          v.d = nd[k];
+          v.bf = false;
+          break;
+        }
       }
       const rx = Math.cos(lyaw), rz = -Math.sin(lyaw); // listener's "left" (+x of heading frame)
       for (const v of this.others) {
@@ -566,15 +660,16 @@
           v.wg.gain.setTargetAtTime(0, t, 0.06);
           continue;
         }
-        const rs = o.c.rs;
-        const car = G.Parts.CARS[o.c.carId] || G.Parts.CARS.vandal;
+        const rs = o.rs;
+        const car = G.Parts.CARS[o.carId] || G.Parts.CARS.vandal;
         const prof = PROFILES[car.id] || PROFILES.vandal;
         const rpm = U.clamp(rs.rpm || 0.14, 0.1, 1.05);
-        const dx = rs.x - lx, dz = rs.z - lz, d = o.d || 1;
+        const dx = rs.x - lx, dz = rs.z - lz, d = v.d || 1;
         // Doppler: closing speed along the line between car and listener
         const closing = -(((rs.vx || 0) - (lvx || 0)) * dx + ((rs.vz || 0) - (lvz || 0)) * dz) / d;
         const dop = U.clamp(343 / (343 - closing), 0.82, 1.22);
-        const f0 = ((rpm * car.redline) / 60) * (prof.cyl / 2) * dop;
+        const crank = (rpm * car.redline) / 60;
+        const f0 = crank * (prof.cyl / 2) * dop;
         v.o1.frequency.setTargetAtTime(f0, t, 0.04);
         v.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.04);
         v.o3.frequency.setTargetAtTime(f0 * 2, t, 0.04);
@@ -582,10 +677,10 @@
         // their build's sound profile, worked out once per car (it used to be
         // recomputed for every nearby car on every frame)
         const pc = this._msCache || (this._msCache = new WeakMap());
-        let oms = o.c.parts && pc.get(o.c.parts);
+        let oms = o.parts && pc.get(o.parts);
         if (!oms) {
-          oms = modSound(o.c.parts);
-          if (o.c.parts) pc.set(o.c.parts, oms);
+          oms = modSound(o.parts);
+          if (o.parts) pc.set(o.parts, oms);
         }
         v.f.frequency.setTargetAtTime((320 + rpm * 1900 * prof.cut) * (0.8 + 0.2 * dop) * oms.cut, t, 0.05);
         v.f.Q.setTargetAtTime(1.4 * (oms.q / 1.6), t, 0.1);
@@ -613,16 +708,16 @@
           v.p.pan.setTargetAtTime(U.clamp(-side, -0.9, 0.9), t, 0.05);
         }
         // their induction: supercharger whine on the revs, turbo whistle on boost
-        const ind = (o.c.parts && o.c.parts.induction) || 'na';
+        const ind = (o.parts && o.parts.induction) || 'na';
         const okind = G.Parts.opt('induction', ind).kind;
         const bst = rs.boost || 0;
         if (okind === 'sc') {
           if (v.w.type !== 'triangle') v.w.type = 'triangle';
-          v.w.frequency.setTargetAtTime(f0 * 3.3, t, 0.03);
+          v.w.frequency.setTargetAtTime(crank * 14 * dop, t, 0.03); // crank-locked, like your own
           v.wg.gain.setTargetAtTime((0.008 + 0.022 * thr) * rpm * fall, t, 0.04);
         } else if (okind === 'turbo') {
           if (v.w.type !== 'sine') v.w.type = 'sine';
-          v.w.frequency.setTargetAtTime(((ind === 't2' ? 1100 : 1750) + bst * (ind === 't2' ? 2300 : 3100)) * dop, t, 0.08);
+          v.w.frequency.setTargetAtTime(((ind === 't2' ? 1100 : 1750) + bst * (ind === 't2' ? 2300 : 3100)) * (0.85 + 0.15 * rpm) * dop, t, 0.08);
           v.wg.gain.setTargetAtTime(bst * 0.024 * fall, t, 0.06);
           if (v.lb > 0.45 && bst < 0.25 && fall > 0.15) ind === 't2' ? this.flutter(fall, 'others') : this.blowoff(fall, 'others');
         } else v.wg.gain.setTargetAtTime(0, t, 0.06);
@@ -640,8 +735,7 @@
       if (!this.ok()) return;
       if (!this.env) this._startEnv();
       const c = world.cam;
-      const others = v.cars.filter((x) => !me || x.id !== me.id);
-      this.othersUpdate(others.map((x) => ({ id: x.id, rs: x.rs, carId: x.carId, parts: x.parts })), c.fx, c.fz, c.yaw, me ? me.rs.vx : 0, me ? me.rs.vz : 0);
+      this.othersUpdate(v.cars, c.fx, c.fz, c.yaw, me ? me.rs.vx : 0, me ? me.rs.vz : 0, me ? me.id : null);
     },
 
     // --------------------------------------------------------- one-shots
@@ -863,6 +957,44 @@
     },
     tick() {
       this.tone(1000, 0.03, 'square', 0.03, 0, 'ui');
+    },
+    // v4.5: session notifications — toasts (ui.js) and system lines in the
+    // chat (chat.js: someone joined / left / took over as host, the room is
+    // about to close). Each one is recognisable without looking.
+    notify(kind) {
+      const now = performance.now();
+      if (now - (this._ntT || 0) < 120) return; // two at once: one is plenty
+      this._ntT = now;
+      const T = (f, d, ty, v, sl, w) => this.tone(f, d, ty, v, sl, 'ui', w);
+      if (kind === 'request') {
+        // someone at the door: two knocks, then a bell
+        this.noiseHit(0.07, 420, 0.22, 'bandpass', 'ui', 0, 0, 3);
+        this.noiseHit(0.07, 400, 0.2, 'bandpass', 'ui', 0.15, 0, 3);
+        T(1568, 0.55, 'sine', 0.07, 0, 0.33);
+        T(2349, 0.45, 'sine', 0.035, 0, 0.33);
+        T(3136, 0.3, 'sine', 0.015, 0, 0.33);
+      } else if (kind === 'join') {
+        T(784, 0.12, 'triangle', 0.06);
+        T(1175, 0.22, 'triangle', 0.06, 0, 0.09);
+      } else if (kind === 'leave') {
+        T(880, 0.12, 'triangle', 0.045);
+        T(587, 0.24, 'triangle', 0.045, 0, 0.1);
+      } else if (kind === 'drop') {
+        // lost connection: a falling tone that breaks up
+        T(740, 0.09, 'square', 0.035);
+        T(523, 0.07, 'square', 0.03, 0, 0.11);
+        T(392, 0.24, 'triangle', 0.045, 260, 0.2);
+        this.noiseHit(0.12, 2600, 0.03, 'bandpass', 'ui', 0.1, 0, 2);
+      } else if (kind === 'host') {
+        [659, 880, 1109, 1319].forEach((f, i) => T(f, 0.16, 'square', 0.035, 0, i * 0.07));
+      } else if (kind === 'warn') {
+        T(330, 0.18, 'square', 0.05);
+        T(330, 0.18, 'square', 0.05, 0, 0.24);
+        T(247, 0.32, 'square', 0.05, 0, 0.48);
+      } else if (kind === 'notify') {
+        T(1320, 0.1, 'sine', 0.05);
+        T(1760, 0.18, 'sine', 0.04, 0, 0.08);
+      } else T(1500, 0.05, 'sine', 0.03, 1900); // info: a soft blip
     },
     // --- casino
     chip() {

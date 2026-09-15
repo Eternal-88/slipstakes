@@ -36,6 +36,9 @@
   };
   const CAM_ORDER = ['follow', 'near', 'far', 'fixed'];
   const CAM_NAMES = { follow: 'Chase', near: 'Close chase', far: 'High chase', fixed: 'Fixed north' };
+  // Particle colours emitted every frame, made once (v4.5: a new array per
+  // particle was needless garbage for the collector)
+  const RGB = { sand: [0.85, 0.72, 0.5], dirt: [0.52, 0.36, 0.22], mud: [0.3, 0.2, 0.1], nos: [0.25, 0.5, 1], nosSpark: [0.3, 0.8, 1], pad: [0.2, 0.7, 1], smoke: [0.22, 0.22, 0.24], tail: [1, 0.1, 0.05] };
 
   const rgbOf = (hex) => {
     const c = new THREE.Color(hex);
@@ -331,7 +334,7 @@
           // rooster tails: rear wheels throw more, and more when spinning
           const amt = (rear ? Math.min(speed / 25, 1) * 0.6 : 0.15) + slip;
           if (speed > 4 && Math.random() < amt * dt * 44) fx.emit(sf.id === 'sand' ? 'sand' : 'dust', wx, y + 0.3, wz, bvx * 2 + (Math.random() - 0.5) * 2, 0.5 + slip, bvz * 2 + (Math.random() - 0.5) * 2, 0.7 + slip);
-          if (rear && slip > 0.4 && Math.random() < dt * 20) fx.emit('debris', wx, y + 0.2, wz, bvx * 1.5 + (Math.random() - 0.5) * 3, 1 + Math.random() * 2, bvz * 1.5 + (Math.random() - 0.5) * 3, 0.8, sf.id === 'sand' ? [0.85, 0.72, 0.5] : [0.52, 0.36, 0.22]);
+          if (rear && slip > 0.4 && Math.random() < dt * 20) fx.emit('debris', wx, y + 0.2, wz, bvx * 1.5 + (Math.random() - 0.5) * 3, 1 + Math.random() * 2, bvz * 1.5 + (Math.random() - 0.5) * 3, 0.8, sf.id === 'sand' ? RGB.sand : RGB.dirt);
           this.skids.add(key, wx, y + 0.05, wz, 0.3, rear && (slip > 0.2 || speed > 12) ? 0.22 : 0, [0.35, 0.22, 0.12]);
         } else if (sf.fx === 'grass') {
           if (speed > 4 && Math.random() < (0.3 + slip) * dt * 30) fx.emit('grass', wx, y + 0.2, wz, bvx + (Math.random() - 0.5) * 2, 1.5, bvz + (Math.random() - 0.5) * 2, 1);
@@ -345,7 +348,7 @@
         } else if (sf.fx === 'mud') {
           const amt = (rear ? Math.min(speed / 25, 1) * 0.7 : 0.25) + slip;
           if (speed > 3 && Math.random() < amt * dt * 40) fx.emit('mud', wx, y + 0.3, wz, bvx * 2 + (Math.random() - 0.5) * 2, 1 + slip, bvz * 2 + (Math.random() - 0.5) * 2, 0.8 + slip);
-          if (rear && Math.random() < dt * 14 * (0.3 + slip)) fx.emit('debris', wx, y + 0.2, wz, bvx * 1.5 + (Math.random() - 0.5) * 3, 1.5 + Math.random() * 2, bvz * 1.5 + (Math.random() - 0.5) * 3, 0.9, [0.3, 0.2, 0.1]);
+          if (rear && Math.random() < dt * 14 * (0.3 + slip)) fx.emit('debris', wx, y + 0.2, wz, bvx * 1.5 + (Math.random() - 0.5) * 3, 1.5 + Math.random() * 2, bvz * 1.5 + (Math.random() - 0.5) * 3, 0.9, RGB.mud);
           this.skids.add(key, wx, y + 0.05, wz, 0.32, 0.45, [0.22, 0.14, 0.08]);
         } else if (sf.fx === 'ice') {
           if (speed > 5 && Math.random() < (0.2 + slip) * dt * 30) fx.emit('snow', wx, y + 0.2, wz, bvx * 1.5, 0.6, bvz * 1.5, 0.6 + slip);
@@ -357,13 +360,13 @@
         for (const e of m.exhaust) {
           const [ex, ey, ez] = W(e[0], e[1], e[2]);
           fx.emit('nos', ex, ey, ez, -sinH * 9 + rs.vx * 0.9, 0, -cosH * 9 + rs.vz * 0.9, 1.3);
-          fx.emit('glow', ex - sinH * 0.4, ey, ez - cosH * 0.4, 0, 0, 0, 1.6, [0.25, 0.5, 1]);
+          fx.emit('glow', ex - sinH * 0.4, ey, ez - cosH * 0.4, 0, 0, 0, 1.6, RGB.nos);
         }
       }
       // v4: speed pad — a cyan burst the moment the car hits it
       const onPad = rs.padT > 0.6 || !!rs.pad;
       if (onPad && !m.padPrev) {
-        for (let k = 0; k < 14; k++) fx.emit('spark', rs.x, y + 0.3, rs.z, (Math.random() - 0.5) * 6 + rs.vx * 0.5, 1 + Math.random() * 2, (Math.random() - 0.5) * 6 + rs.vz * 0.5, 1, [0.3, 0.8, 1]);
+        for (let k = 0; k < 14; k++) fx.emit('spark', rs.x, y + 0.3, rs.z, (Math.random() - 0.5) * 6 + rs.vx * 0.5, 1 + Math.random() * 2, (Math.random() - 0.5) * 6 + rs.vz * 0.5, 1, RGB.nosSpark);
         m.padFlash = 0.35;
         if (m.id === this.focusId) this.shake(0.25);
         if (this.onPad) this.onPad(m.id === this.focusId);
@@ -371,7 +374,7 @@
       m.padPrev = onPad;
       if (m.padFlash > 0) {
         m.padFlash -= dt;
-        fx.emit('glow', rs.x, y + 0.2, rs.z, 0, 0, 0, 5 * m.padFlash, [0.2, 0.7, 1]);
+        fx.emit('glow', rs.x, y + 0.2, rs.z, 0, 0, 0, 5 * m.padFlash, RGB.pad);
       }
       // v4: slipstream — wind streaks streaming past the camera car
       if (m.id === this.focusId && (rs.draft || 0) > 0.2 && speed > 14) {
@@ -394,7 +397,7 @@
       // a battered car shows it: dark smoke from under the bonnet
       if (rs.body > 0.3 && Math.random() < dt * rs.body * 16) {
         const [hx, hy, hz] = W(0, 0.85, m.len * 0.28);
-        fx.emit('puff', hx, hy, hz, rs.vx * 0.3, 0.8, rs.vz * 0.3, 0.8 + rs.body, [0.22, 0.22, 0.24]);
+        fx.emit('puff', hx, hy, hz, rs.vx * 0.3, 0.8, rs.vz * 0.3, 0.8 + rs.body, RGB.smoke);
       }
       if (rs.wallHit > 800) {
         for (let k = 0; k < 6; k++) fx.emit('spark', rs.x, y + 0.5, rs.z, (Math.random() - 0.5) * 8, 2 + Math.random() * 3, (Math.random() - 0.5) * 8, 1);
@@ -409,7 +412,7 @@
       if (braking && camD2 < 90 * 90) {
         for (const t of m.tailLocal) {
           const [tx, ty, tz] = W(t[0], t[1], t[2]);
-          fx.emit('glow', tx, ty, tz, 0, 0, 0, 0.9, [1, 0.1, 0.05]);
+          fx.emit('glow', tx, ty, tz, 0, 0, 0, 0.9, RGB.tail);
         }
       }
       if (m.glowRGB && camD2 < 45 * 45 && fx.budget >= 0.6) {
@@ -625,6 +628,9 @@
       if (anim) anim(this.time, dt);
       this.sky.position.copy(this.camera.position);
       this.renderer.render(this.scene, this.camera);
+      const ri = this.renderer.info.render;
+      this._calls = ri.calls; // (kept: stats() can be read between frames)
+      this._tris = ri.triangles;
       this.frameMs = U.lerp(this.frameMs, performance.now() - t0, 0.1);
       this._governor(dt);
     }
@@ -656,7 +662,7 @@
 
     stats() {
       const i = this.renderer.info;
-      return { fps: this.fps, calls: i.render.calls, tris: i.render.triangles, level: this.level, pr: this.pr, tier: this.tier, gpu: this.gpu.name, ms: this.frameMs, parts: this.fx.norm.live + this.fx.add.live };
+      return { fps: this.fps, calls: this._calls || i.render.calls, tris: this._tris || i.render.triangles, level: this.level, pr: this.pr, tier: this.tier, gpu: this.gpu.name, ms: this.frameMs, parts: this.fx.norm.live + this.fx.add.live };
     }
   }
 

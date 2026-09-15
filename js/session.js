@@ -82,7 +82,7 @@
         st.phaseEnds = Date.now() + T.intermission;
       } else if (st.phaseEnds) st.phaseEnds = Math.max(st.phaseEnds, Date.now() + 20000); // time for everyone to find the new host
       const me = st.players[newHostId];
-      s.sys(`${me ? me.name : 'Someone'} is now the host${old ? ` — ${old.name} ${left ? 'left' : 'lost connection'} (their seat is saved)` : ''}.`);
+      s.sys(`${me ? me.name : 'Someone'} is now the host${old ? ` — ${old.name} ${left ? 'left' : 'lost connection'} (their seat is saved)` : ''}.`, 'host');
       return s;
     }
 
@@ -110,8 +110,10 @@
     toast(pid, msg, kind) {
       this.emit('toPlayer', pid, { t: 'toast', msg, kind: kind || 'info' });
     }
-    sys(text) {
-      this.state.chat.push({ sys: 1, text, at: Date.now() });
+    // snd (v4.5): a sound every client plays when the line arrives (chat.js):
+    // join | leave | host | warn | notify
+    sys(text, snd) {
+      this.state.chat.push(snd ? { sys: 1, text, at: Date.now(), snd } : { sys: 1, text, at: Date.now() });
       if (this.state.chat.length > 50) this.state.chat.shift();
       this.touch();
     }
@@ -174,7 +176,7 @@
       if (ex) {
         ex.connected = true;
         ex.name = name;
-        this.sys(`${ex.name} is back.`);
+        this.sys(`${ex.name} is back.`, 'join');
         return { ok: true, pid: ex.id, rejoin: true };
       }
       if (st.phase === 'final') return { ok: false, reason: 'That session has finished.' };
@@ -189,7 +191,7 @@
       const color = G.CarModel.PALETTE.find((c) => !used.has(c)) || G.CarModel.PALETTE[0];
       const p = this.addPlayer({ id, name, token, color, carId: 'vandal' });
       if (late != null) p.money = late;
-      this.sys(late != null ? `${p.name} joined with ${U.fmtMoney(late)} — they race from the next round.` : `${p.name} joined.`);
+      this.sys(late != null ? `${p.name} joined with ${U.fmtMoney(late)} — they race from the next round.` : `${p.name} joined.`, 'join');
       return { ok: true, pid: id };
     }
 
@@ -231,13 +233,22 @@
         .map((p) => p.id);
     }
 
+    // The player's link closed. v4.5: a 'bye' just before it (they left from
+    // the menu, or closed the tab: game.js) means they left on purpose;
+    // otherwise their connection dropped. Either way the seat is kept.
     leave(pid) {
       const p = this.player(pid);
       if (!p || p.isBot) return;
       p.connected = false;
       p.ready = false;
-      this.sys(`${p.name} disconnected — their seat is saved.`);
+      const bye = p.bye && Date.now() - p.bye < 15000;
+      delete p.bye;
+      if (bye) this.sys(`${p.name} left the game.`, 'leave');
+      else this.sys(`${p.name} lost connection — their seat is saved if they come back.`, 'drop');
       this.touch();
+    }
+    on_bye(p) {
+      p.bye = Date.now(); // leaving on purpose: the link closes right after
     }
 
     removeBot() {
@@ -646,7 +657,7 @@
       if (t.token) (this.state.banned = this.state.banned || []).push(t.token);
       delete this.state.players[t.id];
       this.state.order = this.state.order.filter((x) => x !== t.id);
-      this.sys(`${t.name} was removed by the host.`);
+      this.sys(`${t.name} was removed by the host.`, 'leave');
       this.emit('kick', t.id);
       this.syncBots();
       this.touch();

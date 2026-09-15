@@ -26,6 +26,7 @@
     tags: true,
     minimap: true,
     hudScale: 100,
+    uiScale: 100, // v4.5: menu size, on top of the automatic fit to the screen
     hints: true,
     // controls
     steerSpeed: 'normal', // slow | normal | fast (keyboard steering ramp)
