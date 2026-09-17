@@ -272,8 +272,8 @@
     // out-earn finishing last, with zero wear.
     const trk = G.getTrack(R.trackId);
     const need = (sim && sim.laps && trk.closed ? trk.length * sim.laps : trk.raceDistance) * 0.5;
-    // v5: an endurance race is ~2.5× as long and a session has fewer of them
-    const km = R.endu ? 2.2 : 1;
+    // v5: the endurance race is about twice as long as a normal one
+    const km = R.endu ? 1.9 : 1;
     for (const row of R.rows) {
       const p = this.player(row.id);
       const ran = !row.dnf || (row.dist || 0) >= need;

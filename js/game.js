@@ -267,8 +267,8 @@
               epoch: st.epoch || 0, name: st.settings.name || `${hp ? hp.name : 'Host'}'s room`, host: hp ? hp.name : '',
               vis: st.settings.vis || 'private', players: all.filter((p) => !p.isBot && p.connected).length, max: st.settings.maxPlayers || 8,
               bots: all.filter((p) => p.isBot).length, phase: st.phase, race: st.raceNo, races: st.settings.races, ver: G.VERSION, proto: G.Net.PROTO,
-              // v5: what kind of session it is, for the server list
-              mode: st.settings.mode || 'classic', track: (st.race && st.race.trackId) || (st.schedule && st.schedule[st.raceNo]) || '', lvl: st.settings.botLevel || 'normal', champ: st.settings.champ || 'money',
+              // v5: what they're racing, for the server list
+              track: (st.race && st.race.trackId) || (st.schedule && st.schedule[st.raceNo]) || '', lvl: st.settings.botLevel || 'normal', champ: st.settings.champ || 'money',
             };
       // v4.6: the code and drivers, sealed so only the maintainer's key can
       // read them (ops.js); older games ignore the extra field

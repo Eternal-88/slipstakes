@@ -33,7 +33,6 @@
     touch: 'auto', // auto (after the first screen touch) | on | off
     botLevel: 'normal', // rookie | easy | normal | hard | pro | legend (single-player bots; bot.js LEVELS)
     catchup: 'mild', // off | mild | wild (single-player quick races; the host picks for multiplayer)
-    quickMode: 'classic', // v5 classic | endurance (single-player quick races)
     raceWeather: 'auto', // v5 auto (sometimes a shower mid-race) | dry | rain (single-player quick races)
     keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH' },
   };

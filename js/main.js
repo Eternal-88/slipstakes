@@ -277,9 +277,7 @@
       const ids = this._quickIds().filter((id) => id !== cur);
       this.quickRace(ids[Math.floor(Math.random() * ids.length)]);
     },
-    // v5: endurance quick races only go to circuits with a pit box
     _quickIds() {
-      if (G.Settings.s.quickMode === 'endurance') return G.TrackDefs.ENDURANCE.slice();
       return G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag');
     },
 
@@ -342,7 +340,7 @@
       const res = sim.results();
       const meRow = res.find((r) => r.id === 'me');
       const PRIZES = [1500, 1100, 850, 650, 500, 400, 300, 250];
-      const prize = meRow.finished ? Math.round(((PRIZES[meRow.pos - 1] || 200) * (sim.endu ? 2.2 : 1)) / 10) * 10 : 0;
+      const prize = meRow.finished ? Math.round(((PRIZES[meRow.pos - 1] || 200) * (sim.endu ? 1.9 : 1)) / 10) * 10 : 0;
       const fuel = Math.round(sim.byId.me.st.fuel);
       const me = this.host.player('me');
       // settle a "back yourself" bet
@@ -389,7 +387,7 @@
       if (quick && ents.length > 3) ents.splice(3, 0, ents.shift()); // you start mid-pack
       // catch-up only in real (quick) races, at the player's chosen strength
       const catchup = quick ? G.Settings.CATCHUP[G.Settings.s.catchup] || 0 : 0;
-      const endu = quick && G.Settings.s.quickMode === 'endurance' && track.pit ? G.RaceEnv.endu(track) : null;
+      const endu = quick && track.def.endurance ? G.RaceEnv.endu(track) : null; // v5: the endurance track brings its own rules
       const weather = quick ? G.RaceEnv.roll(track, G.Settings.s.raceWeather, null, endu && endu.laps) : null;
       this.sim = new G.RaceSim(track, ents, { countdown: quick ? 3.5 : 2.5, practice: !quick, catchup, weather, endu });
       this.attract = null;

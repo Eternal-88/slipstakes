@@ -66,7 +66,6 @@
   const TRACKS = [
     {
       id: 'harbour', name: 'Harbour Loop', format: 'circuit', laps: 3, theme: 'harbour', runoff: 10,
-      pit: { at: 0, side: -1, len: 50 }, enduLaps: 7,
       blurb: 'Fast sweepers and a tight inner complex. Pure tarmac — grip builds shine.',
       pts: [
         [80, 0, { w: 7, s: 'tarmac', kerb: 1 }],
@@ -116,7 +115,6 @@
     },
     {
       id: 'dustbowl', name: 'Dustbowl Oval', format: 'circuit', laps: 4, theme: 'dustbowl', runoff: 7,
-      pit: { at: 0, side: -1, len: 50 }, enduLaps: 14,
       blurb: 'Banked dirt oval. Throttle-steer it round, flat out. Wide slicks will hate it.',
       pts: [
         [0, -50, { w: 8.5, s: 'dirt', kerb: 0, bank: 11 }],
@@ -345,7 +343,6 @@
     },
     {
       id: 'tour', name: 'Grand Tour', format: 'circuit', laps: 1, theme: 'tour', runoff: 6, isNew: 1,
-      pit: { at: 150, side: -1, len: 70 }, enduLaps: 2,
       blurb: 'One lap of a 3.6 km countryside loop as evening falls: a gravel-trap S you can cut if you dare, a gusty causeway, a dirt rally stage and a ford.',
       pts: [
         [0, 0, { w: 8, s: 'tarmac', kerb: 1, y: 0 }],
@@ -405,9 +402,11 @@
       ],
     },
     {
-      id: 'endu', name: 'Endurance Park', format: 'circuit', laps: 2, theme: 'endu', runoff: 7, isNew: 1,
-      pit: { at: 170, side: -1, len: 70 }, enduLaps: 4,
-      blurb: 'A flowing 2.5 km parkland circuit with a proper pit lane. The sun goes down as you race: lamps come on, headlights on.',
+      // v5: the endurance track. Raced like any other track in the rotation,
+      // but this one is a long race with fuel, tyres and pit stops.
+      id: 'endu', name: 'Endurance Park', format: 'circuit', laps: 3, theme: 'endu', runoff: 7, isNew: 1,
+      pit: { at: 170, side: -1, len: 70 }, endurance: 1, enduLaps: 3,
+      blurb: 'The endurance race: three laps of parkland with a proper pit lane. Fuel and tyres run down, so you stop and work your pit crew. The sun goes down as you race.',
       pts: [
         [0, 0, { w: 8, s: 'tarmac', kerb: 1, y: 0 }],
         [420, 0, { r: 40 }],
@@ -430,12 +429,10 @@
     },
   ];
 
-  // (pit {at, side, len}: the endurance pit box beside the main straight;
-  //  enduLaps: race length in an endurance session, ~6 minutes)
+  // (endurance: this track is raced as an endurance race — enduLaps long, with
+  //  fuel, tyre wear and a pit box at pit {at, side, len})
   // Format rotation: never the same format twice in a row, cycles all tracks.
-  // v5 endurance sessions: circuits with a pit box (laps: def.enduLaps)
-  const ENDURANCE = ['endu', 'harbour', 'tour', 'dustbowl'];
   const ROTATION = ['harbour', 'canyon', 'quarter', 'dustbowl', 'serpent', 'rainline', 'saltflat', 'pine', 'city', 'summit', 'coast', 'scrap', 'mile', 'neon', 'tour', 'endu'];
 
-  G.TrackDefs = { THEMES, TRACKS, ROTATION, ENDURANCE, PROVING, byId: (id) => (id === 'proving' ? PROVING : TRACKS.find((t) => t.id === id)) };
+  G.TrackDefs = { THEMES, TRACKS, ROTATION, PROVING, byId: (id) => (id === 'proving' ? PROVING : TRACKS.find((t) => t.id === id)) };
 })(window.G);

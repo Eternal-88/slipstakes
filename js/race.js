@@ -516,16 +516,17 @@
     },
 
     // v5 endurance for a track: laps from the definition, and drain rates
-    // set from the race distance so a typical car wants one stop: the tank
-    // lasts ~60% of the race, tyres are finished at ~60%. CAL = [fuel, tyre
+    // set from the race distance so a typical car wants exactly one stop: the
+    // tank lasts ~80% of the race (2.4 of 3 laps — enough to reach the box on
+    // lap 2 but never the flag), tyres are finished at ~70%. CAL = [fuel, tyre
     // wear] a Normal-level field uses per metre on that track (measured with
     // headless races; they differ a lot: flat-out ovals vs stop-start loops).
-    CAL: { endu: [0.0187, 7.5e-5], harbour: [0.022, 5.5e-5], tour: [0.0203, 8.9e-5], dustbowl: [0.0181, 6.7e-5] },
+    CAL: { endu: [0.0187, 7.5e-5] },
     endu(track) {
       const laps = track.def.enduLaps || Math.max(3, track.laps * 2);
       const dist = track.length * laps;
       const [fm, wm] = this.CAL[track.id] || [0.02, 7e-5];
-      return { laps, fuelK: 1 / (fm * dist * 0.6), tyreK: 1 / (wm * dist * 0.6) };
+      return { laps, fuelK: 1 / (fm * dist * 0.8), tyreK: 1 / (wm * dist * 0.7) };
     },
     // metres from `along` forward to the pit box centre (-L/2 .. L/2 on circuits)
     pitAhead(track, along) {
@@ -556,7 +557,7 @@
     },
     // what a sensible crew does: fuel to the flag (+8%), tyres if worn
     autoPlan(st, need) {
-      const fuel = U.clamp(need * 1.12 - st.tank, 0, 1 - st.tank);
+      const fuel = U.clamp(need * 1.2 - st.tank, 0, 1 - st.tank);
       return { fuel: Math.max(fuel, Math.min(0.15, 1 - st.tank)), tyres: st.tw > 0.45 ? 1 : 0 };
     },
   };

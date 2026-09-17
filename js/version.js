@@ -3,8 +3,15 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.0.1';
+  G.VERSION = '5.0.2';
   G.CHANGELOG = [
+    {
+      v: '5.0.2', name: 'Fits the screen', items: [
+        ['⛽', 'Endurance lives on its own track', 'Endurance is no longer a session mode you pick. Endurance Park simply IS the endurance race: whenever it comes up in a session or a quick race, it is a three-lap run where fuel and tyres wear out and you stop in the pits. Harbour Loop, Dustbowl Oval and Grand Tour are back to normal races.'],
+        ['🖥', 'A lobby that fits', 'The host lobby is three panels now — drivers, settings and chat — each scrolling on its own. A full grid of eight drivers can no longer push the settings or the Start button off the bottom of the screen.'],
+        ['🌐', 'Roomier server list', 'More space inside the panel and inside every room row, so no text sits against an edge. The old Endurance filter is now "Racing now".'],
+      ],
+    },
     {
       v: '5.0.1', name: 'After Dark hotfix', items: [
         ['🔋', 'Volt garage fix', 'Choosing the Volt E in the garage no longer turns the screen white.'],
@@ -13,7 +20,7 @@
     },
     {
       v: '5.0', name: 'After Dark', items: [
-        ['⛽', 'Endurance mode', 'Pick Endurance in the lobby (or Race: Endurance for a quick race): ~6-minute races on circuits with a pit box. Fuel and tyres run down, so stop in the box and work your crew: choose tyres and fuel, hold to fill and let go on the line, then hit the wheel gun in the green. Your HUD tells you when to box. Bots pit too.'],
+        ['⛽', 'Endurance racing', 'Endurance Park is the endurance race: a longer run where fuel and tyres wear out, so you stop in the pit box and work your crew — choose tyres and fuel, hold to fill and let go on the line, then hit the wheel gun in the green. Your HUD tells you when to box. Bots pit too.'],
         ['🗺', 'Four new tracks', 'Serpent Pass, a true two-minute mountain sprint. Grand Tour, one long lap as evening falls. Neon Nights, downtown after dark. Endurance Park, a parkland circuit with a pit lane where the sun sets as you race.'],
         ['🌙', 'Night and weather', 'Street lamps, neon signs and headlights light the way at night. On Changeable weather a shower can start mid-race and the road turns slippery: narrow tyres and rain tyres cope best. Set the weather in the lobby or next to Quick race.'],
         ['⚠', 'New hazards', 'Falling rocks in a mountain gorge (watch for the shadow), swinging wrecking balls, gusty crosswinds, water splashes that grab your wheels, and a gravel trap you can cut across if you dare.'],

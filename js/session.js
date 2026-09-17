@@ -36,7 +36,7 @@
         phase: opts.sandbox ? 'sandbox' : 'lobby', phaseEnds: 0,
         // vis: 'private' = listed with a lock, the host approves each new
         // driver; 'public' = anyone on the server list walks in.
-        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 'mild', vis: 'private', maxPlayers: 8, name: '', botLevel: 'normal', weather: 'auto', mode: 'classic', champ: 'money' },
+        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 'mild', vis: 'private', maxPlayers: 8, name: '', botLevel: 'normal', weather: 'auto', champ: 'money' },
         // rid: this room's id on the server list (kept through host
         // migrations); epoch: how many times the host has changed
         rid: opts.rid || U.uid(10), epoch: 0, heirs: [],
@@ -314,11 +314,6 @@
         if (m.catchup != null && G.Settings.CATCHUP[m.catchup] != null) s.catchup = m.catchup;
         // v5: who wins the session — the richest, or the championship points leader
         if (m.champ === 'money' || m.champ === 'points') s.champ = m.champ;
-        // v5: classic (every kind of track) or endurance (long races with pit stops)
-        if ((m.mode === 'classic' || m.mode === 'endurance') && m.mode !== s.mode) {
-          s.mode = m.mode;
-          if (m.mode === 'endurance' && s.races > 4) s.races = 3; // each one is ~6 minutes
-        }
       }
       if (st.phase !== 'race') this.syncBots();
       this.touch();
@@ -390,8 +385,7 @@
     // is used before any repeats (a shuffled "bag"), and the same FORMAT is
     // never raced twice in a row (so no build can dominate a stretch).
     makeSchedule(n) {
-      // (v5 endurance sessions: only circuits with a pit box)
-      const all = (this.state.settings.mode === 'endurance' ? G.TrackDefs.ENDURANCE : G.TrackDefs.ROTATION).slice();
+      const all = G.TrackDefs.ROTATION.slice();
       const fmt = (id) => G.getTrack(id).format;
       const out = [];
       let bag = [];
@@ -453,8 +447,8 @@
         no: st.raceNo + 1, trackId, startedAt: Date.now(),
         // catch-up strength travels with the race so the host's sim uses it
         catchup: G.Settings.CATCHUP[st.settings.catchup || 'mild'] || 0,
-        // v5 endurance: laps + fuel/tyre drain (RaceEnv.endu), or null
-        endu: st.settings.mode === 'endurance' && G.getTrack(trackId).pit ? G.RaceEnv.endu(G.getTrack(trackId)) : null,
+        // v5: an endurance track brings its own long race with pit stops
+        endu: G.getTrack(trackId).def.endurance ? G.RaceEnv.endu(G.getTrack(trackId)) : null,
         entrants: racers.map((p) => ({
           id: p.id, name: p.name, carId: p.carId, color: p.color,
           parts: Object.assign({}, p.garage.installed), wear: Object.assign({}, p.garage.wear),
