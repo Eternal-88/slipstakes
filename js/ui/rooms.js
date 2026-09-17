@@ -11,7 +11,7 @@
   const PHASE = { lobby: 'In the lobby', carselect: 'Picking cars', entry: 'Starting a race', betting: 'Placing bets', race: 'Racing', results: 'Results', intermission: 'In the garage', final: 'Finished', sandbox: 'Sandbox' };
   // status pill colour by what the room is doing
   const TONE = { lobby: 'open', carselect: 'open', sandbox: 'open', race: 'live', entry: 'live', betting: 'live', results: 'break', intermission: 'break', final: 'done' };
-  const FILTERS = [['all', 'All rooms'], ['open', 'Can join'], ['public', 'Public'], ['lobby', 'In the lobby'], ['endurance', 'Endurance']];
+  const FILTERS = [['all', 'All rooms'], ['open', 'Can join'], ['public', 'Public'], ['lobby', 'In the lobby'], ['racing', 'Racing now']];
 
   // v5: the server list, redone. Rows are keyed by room and only rewritten
   // when that room changes, so the list no longer blinks (and loses your
@@ -66,7 +66,6 @@
       const seats = Array.from({ length: r.max }, (_, i) => `<i class="${i < r.players ? 'on' : ''}"></i>`).join('');
       const tags = [
         `<span class="rm-tag ${r.vis}">${r.vis === 'public' ? 'Public' : 'Private'}</span>`,
-        r.mode === 'endurance' ? '<span class="rm-tag endu">Endurance</span>' : '',
         r.champ === 'points' ? '<span class="rm-tag">Championship</span>' : '',
       ].join('');
       const detail = [tr ? `${racing ? 'on' : 'next'} ${U.esc(tr.name)}` : '', r.bots ? `${r.bots} ${lvl ? lvl.toLowerCase() + ' ' : ''}bot${r.bots === 1 ? '' : 's'}` : '', `host ${U.esc(r.host)}`].filter(Boolean).join(' · ');
@@ -137,7 +136,7 @@
       if (f === 'open') return r.proto === G.Net.PROTO && r.players < r.max && r.phase !== 'final';
       if (f === 'public') return r.vis === 'public';
       if (f === 'lobby') return r.phase === 'lobby';
-      if (f === 'endurance') return r.mode === 'endurance';
+      if (f === 'racing') return r.phase === 'race' || r.phase === 'entry' || r.phase === 'betting';
       return true;
     },
     update() {

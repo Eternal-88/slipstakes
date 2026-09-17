@@ -23,12 +23,16 @@
   // ------------------------------------------------------------------ lobby
   const Lobby = {
     mount(root) {
+      // v5: three panels, each one its own scroll area, so a full grid of
+      // drivers can never push the settings or the buttons off the screen.
       root.innerHTML = `
         <div class="lobby">
           <div class="panel lb-main">
             <div class="lb-code"></div>
-            <h3>Drivers</h3>
+            <h3>Drivers <span class="lb-count muted small"></span></h3>
             <div class="lb-players"></div>
+          </div>
+          <div class="panel lb-side">
             <div class="lb-set"></div>
             <div class="lb-btns"></div>
           </div>
@@ -38,7 +42,7 @@
             <div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small" data-act="send">Send</button></div>
           </div>
         </div>`;
-      this.el = { code: root.querySelector('.lb-code'), pl: root.querySelector('.lb-players'), set: root.querySelector('.lb-set'), btns: root.querySelector('.lb-btns'), log: root.querySelector('.chat-log'), inp: root.querySelector('.chat-in input') };
+      this.el = { code: root.querySelector('.lb-code'), count: root.querySelector('.lb-count'), pl: root.querySelector('.lb-players'), set: root.querySelector('.lb-set'), btns: root.querySelector('.lb-btns'), log: root.querySelector('.chat-log'), inp: root.querySelector('.chat-in input') };
     },
     render() {
       const st = G.Client.state;
@@ -49,6 +53,8 @@
       const roomName = s.name || `${hostP ? hostP.name : 'Host'}'s room`;
       const vis = s.vis === 'public' ? '🌐 <b>Public</b> — on the server list; anyone can walk in' : '🔒 <b>Private</b> — friends with the code walk in; strangers on the server list ask the host first (the code is never shown there)';
       UI.patch(this.el.code, `<span>ROOM CODE</span><b>${U.esc(st.code || '')}</b><button class="btn small ghost" data-act="copy" title="Copy a link that opens the Join box with this code filled in">🔗 Copy invite link</button><p class="muted small"><b>${U.esc(roomName)}</b> · up to ${s.maxPlayers || 8} drivers. Friends click <b>Join</b> and type the code, or find the room on the 🌐 Server list.</p><p class="lb-vis">${vis}</p>`);
+      const drivers = st.order.map((id) => st.players[id]).filter(Boolean);
+      UI.patch(this.el.count, `${drivers.filter((p) => !p.isBot).length} of ${s.maxPlayers || 8}${drivers.some((p) => p.isBot) ? ` · ${drivers.filter((p) => p.isBot).length} bots` : ''}`);
       UI.patch(
         this.el.pl,
         st.order
@@ -69,7 +75,6 @@
                <label class="fld"><span>Max drivers</span><select data-input="maxPlayers">${[2, 3, 4, 5, 6, 7, 8].map((n) => `<option ${n === (s.maxPlayers || 8) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
              </div></section>
              <section class="lb-group"><h4>Session</h4><div class="lb-grid">
-               <label class="fld" title="Classic: every kind of track. Endurance: ~6 minute races on circuits with a pit box — fuel and tyres run down, so you stop and work the pit crew."><span>Mode</span><select data-input="mode"><option value="classic" ${s.mode !== 'endurance' ? 'selected' : ''}>Classic</option><option value="endurance" ${s.mode === 'endurance' ? 'selected' : ''}>Endurance</option></select></label>
                <label class="fld"><span>Races</span><input class="num-in" type="number" min="1" max="100" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 100, then press Enter"></label>
                <label class="fld" title="Money: the richest driver at the end wins. Championship: 25-18-15-12-10-8-6-4 points a race (+1 for the fastest lap), most points wins — the money still buys parts."><span>Winner</span><select data-input="champ"><option value="money" ${s.champ !== 'points' ? 'selected' : ''}>Richest driver</option><option value="points" ${s.champ === 'points' ? 'selected' : ''}>Championship points</option></select></label>
              </div></section>
@@ -79,8 +84,8 @@
                <label class="fld" title="Changeable: sometimes a shower starts mid-race and the road gets slippery. Tracks that are already wet or snowy stay that way."><span>Weather</span><select data-input="weather">${Object.keys(WX).map((k) => `<option value="${k}" ${k === (s.weather || 'auto') ? 'selected' : ''}>${WX[k]}</option>`).join('')}</select></label>
                <label class="fld" title="Cars trailing the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${Object.keys(CU).map((k) => `<option value="${k}" ${k === cu ? 'selected' : ''}>${CU[k]}</option>`).join('')}</select></label>
              </div></section>
-             <p class="muted small lb-note">~${s.races * (s.mode === 'endurance' ? 9 : 6) >= 90 ? ((s.races * (s.mode === 'endurance' ? 9 : 6)) / 60).toFixed(1) + ' h' : Math.round(s.races * (s.mode === 'endurance' ? 9 : 6)) + ' min'} session · drivers can join at any time (late joiners start with 80% of the poorest driver's worth)</p>`
-          : `<div class="lb-summary">${[s.mode === 'endurance' ? 'Endurance' : 'Classic', `${s.races} race${s.races === 1 ? '' : 's'}`, s.champ === 'points' ? 'Championship points' : 'Richest wins', `${s.bots} ${G.BotKit.level(s.botLevel).name.toLowerCase()} bot${s.bots === 1 ? '' : 's'}`, `${WX[s.weather || 'auto']} weather`, `Catch-up ${CU[cu].split(' ')[0].toLowerCase()}`].map((x) => `<span class="chip-s">${U.esc(x)}</span>`).join('')}</div><p class="muted small lb-note">Waiting for the host to start.</p>`
+             <p class="muted small lb-note">~${s.races * 6 >= 90 ? ((s.races * 6) / 60).toFixed(1) + ' h' : Math.round(s.races * 6) + ' min'} session · drivers can join at any time (late joiners start with 80% of the poorest driver's worth)</p>`
+          : `<div class="lb-summary">${[`${s.races} race${s.races === 1 ? '' : 's'}`, s.champ === 'points' ? 'Championship points' : 'Richest wins', `${s.bots} ${G.BotKit.level(s.botLevel).name.toLowerCase()} bot${s.bots === 1 ? '' : 's'}`, `${WX[s.weather || 'auto']} weather`, `Catch-up ${CU[cu].split(' ')[0].toLowerCase()}`].map((x) => `<span class="chip-s">${U.esc(x)}</span>`).join('')}</div><p class="muted small lb-note">Waiting for the host to start.</p>`
       );
       UI.patch(this.el.btns, `<button class="btn ghost" data-act="leave">Leave</button><button class="btn" data-act="garage">🎨 Car, tune & paint</button>${isHost ? '<button class="btn primary big" data-act="start">Start session →</button>' : ''}`);
       const log = chatHtml(st);
@@ -94,7 +99,6 @@
       if (k === 'catchup') G.Client.act({ t: 'settings', catchup: el.value });
       if (k === 'botLevel') G.Client.act({ t: 'settings', botLevel: el.value });
       if (k === 'weather') G.Client.act({ t: 'settings', weather: el.value });
-      if (k === 'mode') G.Client.act({ t: 'settings', mode: el.value });
       if (k === 'champ') G.Client.act({ t: 'settings', champ: el.value });
       if (k === 'vis') G.Client.act({ t: 'settings', vis: el.value });
       if (k === 'maxPlayers') G.Client.act({ t: 'settings', maxPlayers: +el.value });

@@ -128,9 +128,8 @@
       if (this.tab === 'home') {
         h = `
           <div class="m-grid">
-            <button class="btn big primary span2" data-act="quick">🏁 Quick race <small>you vs 5 ${U.esc(G.BotKit.level(G.Settings.s.botLevel).name.toLowerCase())} bots · ${G.Settings.s.quickMode === 'endurance' ? 'endurance: ~6 min, fuel + tyres, pit stops' : 'random track'} · back yourself · win garage money</small></button>
+            <button class="btn big primary span2" data-act="quick">🏁 Quick race <small>you vs 5 ${U.esc(G.BotKit.level(G.Settings.s.botLevel).name.toLowerCase())} bots · random track · back yourself · win garage money</small></button>
             <div class="m-qopts span2">
-              <label class="fld inline" title="Endurance: a long race on a circuit with a pit box. Fuel and tyres run down; stop in the box and work the pit crew."><span>Race</span><select data-input="quickMode">${[['classic', 'Classic'], ['endurance', 'Endurance']].map(([v, l]) => `<option value="${v}" ${v === G.Settings.s.quickMode ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
               <label class="fld inline"><span>Bot skill</span><select data-input="botLevel">${G.BotKit.LEVEL_ORDER.map((v) => `<option value="${v}" ${v === G.Settings.s.botLevel ? 'selected' : ''}>${G.BotKit.LEVELS[v].name}</option>`).join('')}</select></label>
               <label class="fld inline" title="Cars behind the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${[['off', 'Off'], ['mild', 'Mild'], ['wild', 'Wild']].map(([v, l]) => `<option value="${v}" ${v === G.Settings.s.catchup ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
               <label class="fld inline" title="Changeable: sometimes a shower starts mid-race. Rain: wet from the start."><span>Weather</span><select data-input="raceWeather">${[['auto', 'Changeable'], ['dry', 'Dry'], ['rain', 'Rain']].map(([v, l]) => `<option value="${v}" ${v === G.Settings.s.raceWeather ? 'selected' : ''}>${l}</option>`).join('')}</select></label>
@@ -213,10 +212,7 @@
         U.store.set('ss.name', v);
         if (G.App.setName) G.App.setName(v);
       } else if (k === 'bots') this.bots = +el.value;
-      else if (k === 'quickMode') {
-        G.Settings.set('quickMode', el.value);
-        UI.refresh(true);
-      } else if (k === 'botLevel') {
+      else if (k === 'botLevel') {
         G.Settings.set('botLevel', el.value);
         UI.refresh(true);
       } else if (k === 'catchup') G.Settings.set('catchup', el.value);
