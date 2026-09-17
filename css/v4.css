@@ -32,6 +32,12 @@
 /* v4.5 showroom (Paint tab): the build panel steps aside so the car is the
    thing you look at, and the whole area drags it round. */
 body.showroom .g-left { visibility: hidden; }
+/* whatever the window width, the paint options are one slim column on the
+   right (narrow layouts made it half the screen, starting in the middle) */
+body.showroom .garage { grid-template-columns: minmax(0, 1fr) 400px; grid-template-rows: auto minmax(0, 1fr); }
+body.showroom .g-head { grid-column: 1 / -1; }
+body.showroom .g-left { grid-column: 1; grid-row: 2; }
+body.showroom .g-right { grid-column: 2; grid-row: 2; }
 /* the "drag to turn" line lives in the centre column, which narrow layouts
    drop entirely: float it over the free space instead */
 body.showroom .g-center { display: block; position: fixed; inset: 0; pointer-events: none; }
