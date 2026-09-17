@@ -138,3 +138,38 @@
 .chip-s { font-size: 12px; font-weight: 800; padding: 4px 9px; border-radius: 8px; background: rgba(255,255,255,.07); color: var(--ink); }
 .lb-grid .lb-two { grid-column: span 2; }
 .lb-grid.four { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); }
+
+/* ------------------------------------------------- v5 lobby that fits the screen
+   Three panels side by side, each no taller than the window and each scrolling
+   on its own: a full grid of drivers can't push the settings or the Start
+   button off the bottom any more. Below 1100px they stack and the page scrolls. */
+.lobby { grid-template-columns: minmax(300px, 420px) minmax(300px, 400px) minmax(240px, 330px); gap: 14px; align-content: center; padding: calc(3vh / var(--uiz)) 16px; overflow: auto; }
+.lb-main, .lb-side, .lb-chat { display: flex; flex-direction: column; min-height: 0; max-height: calc(92vh / var(--uiz)); padding: 16px 18px; }
+.lb-main h3, .lb-chat h3 { margin: 0 0 8px; display: flex; align-items: baseline; gap: 8px; }
+.lb-count { font-weight: 800; }
+.lb-players { flex: 1 1 auto; min-height: 64px; max-height: none; margin-bottom: 0; padding-right: 3px; }
+.lb-side .lb-set { flex: 1 1 auto; min-height: 0; overflow: auto; padding-right: 3px; margin-bottom: 12px; align-content: start; }
+.lb-side .lb-btns { flex: none; flex-wrap: wrap; }
+.lb-code { margin-bottom: 12px; }
+.lb-code > b { font-size: clamp(30px, 4.6vw, 50px); letter-spacing: 6px; }
+.pl { padding: 6px 9px; }
+@media (max-width: 1180px) {
+  .lobby { grid-template-columns: minmax(300px, 460px) minmax(280px, 420px); }
+  .lb-chat { grid-column: 1 / -1; max-height: calc(34vh / var(--uiz)); }
+}
+@media (max-width: 860px) {
+  .lobby { grid-template-columns: minmax(0, 1fr); align-content: start; }
+  .lb-main, .lb-side, .lb-chat { max-height: none; }
+  .lb-players { max-height: calc(34vh / var(--uiz)); overflow: auto; }
+}
+
+/* server list: more room to breathe inside the panel */
+.rm-card { padding: 22px 26px 20px; }
+.rm-head { padding-right: 6px; }
+.rm-tools { margin: 16px 0 12px; }
+.rm-list { gap: 8px; padding: 2px 6px 2px 2px; margin-bottom: 16px; }
+.rm-row { padding: 12px 16px 12px 18px; gap: 18px; }
+.rm-line2 { padding-right: 4px; }
+.rm-foot { padding-top: 4px; }
+.lb-side .lb-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.lb-side .lb-btns .btn.primary { grid-column: 1 / -1; }
