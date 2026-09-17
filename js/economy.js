@@ -270,11 +270,14 @@
     // Anti-AFK: a DNF is only paid (appearance fee + stipend) if the car covered
     // at least half the race. Otherwise parking on the grid every race would
     // out-earn finishing last, with zero wear.
-    const need = G.getTrack(R.trackId).raceDistance * 0.5;
+    const trk = G.getTrack(R.trackId);
+    const need = (sim && sim.laps && trk.closed ? trk.length * sim.laps : trk.raceDistance) * 0.5;
+    // v5: an endurance race is ~2.5× as long and a session has fewer of them
+    const km = R.endu ? 2.2 : 1;
     for (const row of R.rows) {
       const p = this.player(row.id);
       const ran = !row.dnf || (row.dist || 0) >= need;
-      const prize = ran ? E.prize(row.pos, row.dnf, no) : 0;
+      const prize = ran ? Math.round((E.prize(row.pos, row.dnf, no) * km) / 10) * 10 : 0;
       const fast = R.fastest && R.fastest.id === row.id ? E.FASTEST_LAP : 0;
       const gain = row.dnf ? 0 : U.clamp((row.grid - row.pos) * E.GAIN_BONUS, 0, E.GAIN_CAP);
       const sti = ran && stipend.has(row.id) ? E.STIPEND : 0;
@@ -375,21 +378,22 @@
       // v4.4: each bot shops by its own style (bot.js BotKit), and a bot that's
       // doing well may buy its style's premium chassis
       const S = (G.BotKit && G.BotKit.STYLES[b.botStyle]) || null;
-      if (S && S.premium && roll < 30) {
+      const want = S && S.premium && S.premium.length ? S.premium[(U.hashStr(b.id) >>> 0) % S.premium.length] : null;
+      if (want && roll < 30) {
         Parts.fixGarage(g);
-        const c = Parts.CARS[S.premium];
-        if (!g.cars.includes(S.premium) && b.money - c.price - Parts.CAR_SWAP >= 2500) {
+        const c = Parts.CARS[want];
+        if (!g.cars.includes(want) && b.money - c.price - Parts.CAR_SWAP >= 2500) {
           b.money -= c.price + Parts.CAR_SWAP;
           b.stats.spent += c.price + Parts.CAR_SWAP;
-          g.cars.push(S.premium);
-          b.carId = g.carId = S.premium;
+          g.cars.push(want);
+          b.carId = g.carId = want;
           this.sys(`${b.name} bought a ${c.name}!`);
           continue;
         }
       }
       if (roll < 60) {
         for (const [slot, opt] of (S ? S.buys.concat(BOT_PREFS) : BOT_PREFS)) {
-          if (g.owned[slot].includes(opt)) continue;
+          if (g.owned[slot].includes(opt) || !Parts.partAllowed(b.carId, slot)) continue;
           const o = Parts.opt(slot, opt);
           if (b.money - o.price >= 1500) {
             b.money -= o.price;

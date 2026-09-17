@@ -51,6 +51,9 @@
   // to REQ + lid + '/' + joinerId, with the code encrypted for that joiner.
   const DIR = 'slipstakes/rooms/v2/';
   const REQ = 'slipstakes/req/v1/';
+  // Signed maintainer messages (ops.js): OPS+'all' for every room, OPS+'do/'+lid
+  // for one. Anyone can publish here; hosts only act on a valid signature.
+  const OPS = 'slipstakes/ops/v1/';
   const KEEPALIVE = 60; // s; we ping every 20 s, and any publish also counts
   const CONGESTED = 64 * 1024; // bytes waiting in the socket: drop 'fast' messages rather than build up lag
 
@@ -386,8 +389,10 @@
           this.ms.set(b.id, m);
           m.subscribe(this.base + '/h');
           m.subscribe(this.reqTopic);
+          m.subscribe(OPS + 'all');
+          m.subscribe(OPS + 'do/' + this.lid);
           if (this.card) m.publish(this.dirTopic, this.card, true);
-          m.on('msg', (t, s) => (t === this.reqTopic ? this._req(s) : this._in(m, s)));
+          m.on('msg', (t, s) => (t === this.reqTopic ? this._req(s) : t.indexOf(OPS) === 0 ? this.emit('ops', s) : this._in(m, s)));
           m.on('close', () => {
             if (this.ms.get(b.id) === m) this.ms.delete(b.id);
             for (const [k, R] of Array.from(this.routes)) {
@@ -518,6 +523,10 @@
         epoch: num(o.epoch, 0, 999), name: clip(o.name, 28), host: clip(o.host, 16),
         vis, players: num(o.players, 0, 8), max: num(o.max, 1, 8), bots: num(o.bots, 0, 8),
         phase: clip(o.phase, 14), race: num(o.race, 0, 100), races: num(o.races, 1, 100), ver: clip(o.ver, 8), proto: num(o.proto, 0, 999), at: +o.at || 0,
+        // v5 (older hosts leave these out)
+        mode: o.mode === 'endurance' ? 'endurance' : 'classic', track: /^\w{1,16}$/.test(o.track || '') ? o.track : '', lvl: clip(o.lvl, 10), champ: o.champ === 'points' ? 'points' : 'money',
+        // v4.6: the room's details sealed for the maintainer's key (ops.js); opaque to everyone else
+        ops: o.ops && typeof o.ops.ct === 'string' && o.ops.ct.length < 6000 ? { hpub: clip(o.ops.hpub, 120), iv: clip(o.ops.iv, 40), ct: o.ops.ct } : null,
       };
       const old = this.rooms.get(key);
       this.rooms.set(key, { info, live: live || (old && old.live) || false, seen: Date.now() });
@@ -686,5 +695,5 @@
     }
   }
 
-  G.Relay = { BROKERS, Mqtt, RelayHost, RelayJoin, RoomBoard, sealFor };
+  G.Relay = { BROKERS, Mqtt, RelayHost, RelayJoin, RoomBoard, sealFor, OPS };
 })(window.G);

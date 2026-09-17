@@ -17,7 +17,7 @@
     // audio
     sound: true, // v4.4: on by default (browsers still wait for your first click or key)
     vMaster: 80, vEngine: 80, vOthers: 70, vSfx: 85, vUi: 60, vMusic: 45,
-    raceMusic: false,
+    raceMusic: true, // v5: proper race songs now (race / night / rally / endurance)
     // camera / HUD
     cam: 'follow', // follow | near | far | fixed
     fovKick: true,
@@ -31,11 +31,13 @@
     // controls
     steerSpeed: 'normal', // slow | normal | fast (keyboard steering ramp)
     touch: 'auto', // auto (after the first screen touch) | on | off
-    botLevel: 'normal', // easy | normal | hard (single-player bots)
+    botLevel: 'normal', // rookie | easy | normal | hard | pro | legend (single-player bots; bot.js LEVELS)
     catchup: 'mild', // off | mild | wild (single-player quick races; the host picks for multiplayer)
-    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC' },
+    quickMode: 'classic', // v5 classic | endurance (single-player quick races)
+    raceWeather: 'auto', // v5 auto (sometimes a shower mid-race) | dry | rain (single-player quick races)
+    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH' },
   };
-  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera' };
+  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn' };
   // Catch-up strength per setting: the most extra power a car far behind gets.
   const CATCHUP = { off: 0, mild: 0.1, wild: 0.25 };
 

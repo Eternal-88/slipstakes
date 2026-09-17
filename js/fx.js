@@ -19,6 +19,7 @@
     // v4 hazard surfaces
     oil: { life: 0.8, size0: 0.6, size1: 1.8, col: [0.06, 0.06, 0.07], a: 0.55, rise: 0.6, drag: 2.4, grav: 3 },
     mud: { life: 1.2, size0: 0.8, size1: 2.8, col: [0.36, 0.25, 0.14], a: 0.7, rise: 0.8, drag: 1.6, grav: 4 },
+    splash: { life: 0.9, size0: 0.9, size1: 3.4, col: [0.82, 0.9, 1.0], a: 0.6, rise: 3.2, drag: 1.5, grav: 7 },
     snow: { life: 0.9, size0: 0.6, size1: 2.4, col: [0.94, 0.97, 1.0], a: 0.5, rise: 1.0, drag: 2.0, grav: 1 },
     // additive
     spark: { life: 0.5, size0: 0.5, size1: 0.1, col: [1.0, 0.75, 0.3], a: 1.0, rise: 3, drag: 0.6, grav: 12, add: 1 },
@@ -303,32 +304,44 @@
       scene.add(this.mesh);
       this.cx = 0;
       this.cz = 0;
+      this.cy = 0; // v5: ground height under the camera (mountain tracks)
+      this.count = n;
       for (let i = 0; i < n; i++) this._reset(i, true);
     }
     _reset(i, anyY) {
       const R = 42;
       const x = this.cx + (Math.random() * 2 - 1) * R, z = this.cz + (Math.random() * 2 - 1) * R;
-      const y = anyY ? Math.random() * 30 : 26 + Math.random() * 6;
+      const y = this.cy + (anyY ? Math.random() * 30 : 26 + Math.random() * 6);
       const p = this.pos, o = i * 6;
       p[o] = x; p[o + 1] = y; p[o + 2] = z;
       p[o + 3] = x + 0.12; p[o + 4] = y + 1.1; p[o + 5] = z + 0.05;
       this.v[i] = 26 + Math.random() * 8;
     }
-    update(dt, cx, cz) {
+    update(dt, cx, cz, cy) {
       if (!this.mesh.visible) return;
       this.cx = cx;
       this.cz = cz;
-      const p = this.pos;
-      for (let i = 0; i < this.n; i++) {
+      if (cy != null && Math.abs(cy - this.cy) > 12) {
+        // the camera climbed or dropped a long way: start the sheet over here
+        this.cy = cy;
+        for (let i = 0; i < this.n; i++) this._reset(i, true);
+      }
+      if (cy != null) this.cy = cy;
+      const p = this.pos, floor = this.cy - 1;
+      const m = this.count;
+      for (let i = 0; i < m; i++) {
         const o = i * 6, dy = this.v[i] * dt;
         p[o + 1] -= dy;
         p[o + 4] -= dy;
-        if (p[o + 1] < 0 || Math.abs(p[o] - cx) > 48 || Math.abs(p[o + 2] - cz) > 48) this._reset(i, false);
+        if (p[o + 1] < floor || Math.abs(p[o] - cx) > 48 || Math.abs(p[o + 2] - cz) > 48) this._reset(i, false);
       }
       this.geo.attributes.position.needsUpdate = true;
     }
-    setOn(on) {
+    // k: how hard it's raining (v5: showers build up)
+    setOn(on, k) {
       this.mesh.visible = !!on;
+      this.count = Math.max(1, Math.round(this.n * U.clamp(k == null ? 1 : k, 0, 1)));
+      this.geo.setDrawRange(0, this.count * 2);
     }
   }
 

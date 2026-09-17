@@ -22,35 +22,103 @@
     sand: [0xe2c58f, 0xd9bb85],
   };
   // Hazard patch colours (base, inner sheen / ruts / frost)
-  const PATCH_COL = { oil: [0x121418, 0x2a2f38], mud: [0x5a3c22, 0x6d4a2b], ice: [0xcfe6f2, 0xf2fbff] };
+  const PATCH_COL = { oil: [0x121418, 0x2a2f38], mud: [0x5a3c22, 0x6d4a2b], ice: [0xcfe6f2, 0xf2fbff], water: [0x3f6f95, 0x8fc3e6] };
 
   // Ground height everywhere (v4): the terrain mesh AND every prop use this,
   // so trees and buildings sit on the hills instead of floating or sinking.
   // Near the road the ground is at the road's elevation; further out, hills
   // rise (theme.hills scales how steeply); toward a sea it drops to the bed.
   let _gH = null;
+  // Terrain grid for a track (v5: shared with groundFn, which needs the cell
+  // size to keep the ground under the road — see below).
+  function terrainGrid(track) {
+    const b = track.bounds, m = 260;
+    const x0 = b.x0 - m, x1 = b.x1 + m, z0 = b.z0 - m, z1 = b.z1 + m;
+    // ~16000 cells whatever the track's size (a 3 km sprint used to get 50 m
+    // cells, too coarse to follow the road's crests and dips)
+    const cell = Math.max(12, Math.sqrt(((x1 - x0) * (z1 - z0)) / 16000));
+    const nx = Math.max(24, Math.round((x1 - x0) / cell)), nz = Math.max(24, Math.round((z1 - z0) / cell));
+    return { x0, x1, z0, z1, nx, nz, dx: (x1 - x0) / nx, dz: (z1 - z0) / nz };
+  }
+
   function groundFn(track, seaAt) {
     const N = track.N, th = track.theme;
-    const flat = track.wallD[0] + 3, clear = track.wallD[0] + 14;
     const hm = th.hills || 1;
-    return (x, z) => {
-      let best = 1e9, bk = 0;
-      for (let k = 0; k < N; k += 2) {
-        const ddx = x - track.X[k], ddz = z - track.Z[k];
-        const d = ddx * ddx + ddz * ddz;
-        if (d < best) {
-          best = d;
-          bk = k;
+    // v5: the terrain is a mesh of big flat triangles. Where the ground rises
+    // next to the road (hills, the leg above a switchback) a triangle's slope
+    // used to pass straight through the road. So near every piece of road the
+    // ground is held just under that road's lowest edge, out to the wall plus
+    // one triangle's reach (any triangle over the road then has all three
+    // corners below it), and may only climb 1:1 beyond that. Props use this
+    // same function, so they sit on the ground you see. Where a road ends up
+    // above the ground beside it, the walls get a stone skirt (see Walls).
+    const T = terrainGrid(track);
+    const reach = Math.hypot(T.dx, T.dz) + 1.5;
+    const low = new Float32Array(N);
+    let maxW = 0;
+    for (let k = 0; k < N; k++) {
+      low[k] = track.Y[k] + Math.min(0, track.bankH(k, track.W[k]), track.bankH(k, -track.W[k])) - 0.12;
+      maxW = Math.max(maxW, track.wallD[k]);
+    }
+    const BS = 40, cols = new Map();
+    const key = (i, j) => i * 100003 + j;
+    for (let k = 0; k < N; k++) {
+      const kk = key(Math.floor(track.X[k] / BS), Math.floor(track.Z[k] / BS));
+      let a = cols.get(kk);
+      if (!a) cols.set(kk, (a = []));
+      a.push(k);
+    }
+    const SLOPE = 1.0, R = maxW + reach + 30; // beyond ~30 m the 1:1 slope never binds
+    const nb = Math.ceil(R / BS), R2 = R * R, cover2 = (nb * BS) ** 2;
+    const fn = (x, z) => {
+      // one pass over the nearby buckets: the nearest sample (for the base
+      // height) and the cap; far from any road, fall back to a full search
+      let best = 1e9, bk = -1, c = Infinity;
+      const bi = Math.floor(x / BS), bj = Math.floor(z / BS);
+      for (let i = bi - nb; i <= bi + nb; i++) {
+        for (let j = bj - nb; j <= bj + nb; j++) {
+          const a = cols.get(key(i, j));
+          if (!a) continue;
+          for (let n = 0; n < a.length; n++) {
+            const k = a[n];
+            const ddx = x - track.X[k], ddz = z - track.Z[k];
+            const d2 = ddx * ddx + ddz * ddz;
+            if (d2 < best) {
+              best = d2;
+              bk = k;
+            }
+            if (d2 > R2) continue;
+            const d = Math.sqrt(d2), lim = track.wallD[k] + reach;
+            const v = d <= lim ? low[k] : low[k] + (d - lim) * SLOPE;
+            if (v < c) c = v;
+          }
+        }
+      }
+      if (bk < 0 || best > cover2) {
+        for (let k = 0; k < N; k += 2) {
+          const ddx = x - track.X[k], ddz = z - track.Z[k];
+          const d2 = ddx * ddx + ddz * ddz;
+          if (d2 < best) {
+            best = d2;
+            bk = k;
+          }
         }
       }
       const d = Math.sqrt(best);
       const base = track.Y[bk];
-      if (d < flat) return base;
-      const amp = 0.6 + 0.4 * Math.sin(x * 0.013 + z * 0.021) * Math.sin(z * 0.017 - x * 0.009);
-      let h = base + Math.min(Math.max(0, d - clear) * 0.12 * hm, 26 * hm) * amp;
+      // (v5: run-off width varies along the road — pit aprons, gravel traps)
+      const flat = track.wallD[bk] + 3, clear = track.wallD[bk] + 14;
+      let h = base;
+      if (d >= flat) {
+        const amp = 0.6 + 0.4 * Math.sin(x * 0.013 + z * 0.021) * Math.sin(z * 0.017 - x * 0.009);
+        h = base + Math.min(Math.max(0, d - clear) * 0.12 * hm, 26 * hm) * amp;
+      }
       if (seaAt) h = U.lerp(h, -3.2, seaAt(x, z));
-      return h;
+      return Math.min(h, c);
     };
+    fn.reach = reach;
+    fn.grid = T;
+    return fn;
   }
 
   // ---------------------------------------------------------------- grain
@@ -169,26 +237,26 @@
     // ---------------- Terrain (faceted, hills rising away from the track) ----
     const gH = (_gH = groundFn(track, seaAt));
     {
-      const m = 260;
-      const x0 = b.x0 - m, x1 = b.x1 + m, z0 = b.z0 - m, z1 = b.z1 + m;
-      // ~9000 cells whatever the track's size (a 3 km sprint used to get 50 m
-      // cells, too coarse to follow the road's crests and dips)
-      const cell = Math.max(14, Math.sqrt(((x1 - x0) * (z1 - z0)) / 9000));
-      const nx = Math.max(24, Math.round((x1 - x0) / cell)), nz = Math.max(24, Math.round((z1 - z0) / cell));
-      const dx = (x1 - x0) / nx, dz = (z1 - z0) / nz;
+      const { x0, z0, nx, nz, dx, dz } = gH.grid;
       const H = [];
       const rng = U.rng(U.hashStr(track.id + 'terrain'));
       const clear = track.wallD[0] + 14;
+      // (v5: corners near the road stay on the grid, so no triangle there is
+      // longer than groundFn's reach; faceted jitter only further out)
+      const calm = gH.reach * 2 + 20;
       for (let j = 0; j <= nz; j++) {
         for (let i = 0; i <= nx; i++) {
-          const x = x0 + i * dx + (i > 0 && i < nx ? (rng() - 0.5) * dx * 0.5 : 0);
-          const z = z0 + j * dz + (j > 0 && j < nz ? (rng() - 0.5) * dz * 0.5 : 0);
+          const gx = x0 + i * dx, gz = z0 + j * dz;
+          let best = 1e9;
+          for (let k = 0; k < N; k += 4) best = Math.min(best, (gx - track.X[k]) ** 2 + (gz - track.Z[k]) ** 2);
+          const far = Math.sqrt(best) - calm > 0;
+          const rj = rng(), rk = rng();
+          const x = gx + (far && i > 0 && i < nx ? (rj - 0.5) * dx * 0.5 : 0);
+          const z = gz + (far && j > 0 && j < nz ? (rk - 0.5) * dz * 0.5 : 0);
           let h = gH(x, z);
           // a little facet noise away from the road
-          let best = 1e9;
-          for (let k = 0; k < N; k += 4) best = Math.min(best, (x - track.X[k]) ** 2 + (z - track.Z[k]) ** 2);
           const jit = (rng() - 0.5) * 1.2;
-          if (Math.sqrt(best) > clear) h += jit;
+          if (Math.sqrt(best) > clear && far) h += jit;
           H.push([x, h - 0.05, z]);
         }
       }
@@ -287,12 +355,14 @@
           const o = ((s * 13) % 7) - 3;
           pushQuad(pos, col, P(i, o + 1.6, 0.01), P(i, o - 1.6, 0.01), P(j, o - 1.6, 0.01), P(j, o + 1.6, 0.01), pc);
         }
-        // Runoff strips (gravel traps / sand / concrete) on non-grass themes
-        if (th.runoff !== 'grass') {
-          const rc = C((SURF_COL[th.runoff] || SURF_COL.sand)[s % 2]);
-          const ro = track.runoff;
-          pushQuad(pos, col, P(i, w0 + ro, -0.02), P(i, w0, -0.02), P(j, w1, -0.02), P(j, w1 + ro, -0.02), rc);
-          pushQuad(pos, col, P(i, -w0, -0.02), P(i, -w0 - ro, -0.02), P(j, -w1 - ro, -0.02), P(j, -w1, -0.02), rc);
+        // Runoff strips (gravel traps / sand / concrete) where it isn't grass
+        // (v5: per-section width + surface: pit aprons, gravel-trap shortcuts)
+        const rsid = G.SURF[track.RS[i]].id;
+        if (rsid !== 'grass' || track.GR) {
+          const rc = rsid === 'grass' ? C(s % 2 ? th.ground2 : th.ground) : C((SURF_COL[rsid] || SURF_COL.sand)[s % 2]);
+          const ra = track.RO[i], rb = track.RO[j];
+          pushQuad(pos, col, P(i, w0 + ra, -0.02), P(i, w0, -0.02), P(j, w1, -0.02), P(j, w1 + rb, -0.02), rc);
+          pushQuad(pos, col, P(i, -w0, -0.02), P(i, -w0 - ra, -0.02), P(j, -w1 - rb, -0.02), P(j, -w1, -0.02), rc);
         }
         // Edge lines on sealed surfaces where there's no kerb
         if (sid === 'tarmac' || sid === 'wet') {
@@ -386,6 +456,7 @@
       const q = {};
       const H = 0.9, T = 0.5;
       const wc = th.wall.map(C);
+      const stone = C(th.mtn || 0x8a8f96).lerp(C(0x9a948c), 0.5), stone2 = stone.clone().multiplyScalar(0.9);
       for (const side of [1, -1]) {
         for (let s = 0; s < segCount; s++) {
           const i = s, j = track.idx(s + 1);
@@ -408,6 +479,13 @@
           quadV(pos, col, in0, in1, top1, top0, c, -side, track.NX[i], track.NZ[i]);
           pushQuad(pos, col, top0, top1, out1, out0, c.clone().multiplyScalar(0.9));
           quadV(pos, col, gnd0, gnd1, out1, out0, c.clone().multiplyScalar(0.8), side, track.NX[i], track.NZ[i]);
+          // v5: retaining wall under the road edge down to the ground beside it
+          // (switchbacks, embankments: the ground is kept under the road)
+          const ga = gH(gnd0[0] + ox * 2, gnd0[2] + oz * 2), gb2 = gH(gnd1[0] + oxb * 2, gnd1[2] + ozb * 2);
+          if (ya - ga > 0.35 || yb - gb2 > 0.35) {
+            const lo0 = [gnd0[0], Math.min(ya, ga) - 0.4, gnd0[2]], lo1 = [gnd1[0], Math.min(yb, gb2) - 0.4, gnd1[2]];
+            quadV(pos, col, lo0, lo1, gnd1, gnd0, (s >> 1) % 2 ? stone : stone2, side, track.NX[i], track.NZ[i]);
+          }
         }
       }
       if (!closed) {
@@ -929,7 +1007,12 @@
       }
       return out;
     };
-    if (th.props === 'city' || th.props === 'rain') instanced('lamp', ring('lamp', 16, 1.2, 0.6), group, true);
+    if (th.props === 'city' || th.props === 'rain' || th.lamps) {
+      const lamps = ring('lamp', th.lamps ? 14 : 16, 1.2, 0.6, (i, side, x, z) => ({ x, z, r: track.H[i] + (side > 0 ? -Math.PI / 2 : Math.PI / 2), i, side }));
+      instanced('lamp', lamps, group, true);
+      if (th.night || (th.todTo || 0) >= 0.7) nightLights(track, group, lamps);
+    }
+    if (th.neon) neonSigns(track, group, rng, clearOf);
 
     // Theme set pieces
     if (th.props === 'city') {
@@ -1101,6 +1184,7 @@
   // glowing speed pads with chevrons (their own unlit mesh, pulsing), and the
   // solid obstacles (instanced props at their collider positions).
   function buildHazards(track, group, P) {
+    buildDynamic(track, group);
     if (!track.patches.length && !track.pads.length && !track.obs.length) return;
     const sp = track.sp;
     if (track.patches.length) {
@@ -1162,6 +1246,321 @@
       instanced('barrels', byK.barrels, group, true);
       instanced('tyres', byK.tyres, group, true);
       instanced('rock', byK.rock, group, true);
+    }
+  }
+
+  // ---------------------------------------------------------------- v5 night
+  // Fake lighting: nothing here is a real light (a light per lamp would cost
+  // every pixel on the Chromebooks). Lamp heads are glowing points, the light
+  // on the road is an additive pool under each lamp, neon is unlit colour.
+  // World fades them in with the dark (userData.nightMats, world.js _atmos).
+  let _glowTex = null;
+  function glowTex() {
+    if (_glowTex) return _glowTex;
+    const cv = document.createElement('canvas');
+    cv.width = cv.height = 64;
+    const g = cv.getContext('2d');
+    const grd = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    grd.addColorStop(0, 'rgba(255,255,255,1)');
+    grd.addColorStop(0.25, 'rgba(255,255,255,0.6)');
+    grd.addColorStop(0.6, 'rgba(255,255,255,0.18)');
+    grd.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = grd;
+    g.fillRect(0, 0, 64, 64);
+    _glowTex = new THREE.CanvasTexture(cv);
+    return _glowTex;
+  }
+  function nightMat(group, obj, mat, base) {
+    (group.userData.nightMats || (group.userData.nightMats = [])).push({ obj, mat, base });
+    mat.opacity = 0;
+    obj.visible = false;
+  }
+
+  function nightLights(track, group, lamps) {
+    const heads = [], pos = [], uv = [];
+    const tint = track.theme.neon ? 0xffd9a8 : 0xffe7b0;
+    for (const l of lamps) {
+      // lamp head: 1.7 m out along the arm, toward the road, 6.7 m up
+      const lat = l.side * (track.wallD[l.i] + 1.2 - 1.7);
+      const hp = track.pointAt(track.D[l.i], lat);
+      heads.push(hp.x, track.heightAt(l.i, U.clamp(lat, -track.wallD[l.i], track.wallD[l.i])) + 6.6, hp.z);
+      // pool of light on the ground: 18 × 18 m, centred a little in from the lamp
+      const c = l.side * Math.max(0, track.wallD[l.i] - 4.5), d = track.D[l.i], R = 9;
+      for (let a = 0; a < 2; a++) {
+        for (let b = 0; b < 2; b++) {
+          const q = (u, v) => {
+            const la = c + (u - 0.5) * 2 * R, dd = d + (v - 0.5) * 2 * R;
+            const pt = track.pointAt(dd, la);
+            const cl = U.clamp(la, -track.wallD[pt.i], track.wallD[pt.i]);
+            return [pt.x, track.elevAlong(dd) + track.bankH(pt.i, cl) + 0.07, pt.z, u, v];
+          };
+          const A = q(a / 2, b / 2), B = q((a + 1) / 2, b / 2), Cq = q((a + 1) / 2, (b + 1) / 2), D = q(a / 2, (b + 1) / 2);
+          for (const v of [A, B, Cq, A, Cq, D]) {
+            pos.push(v[0], v[1], v[2]);
+            uv.push(v[3], v[4]);
+          }
+        }
+      }
+    }
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    pg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    pg.computeBoundingSphere();
+    const pm = new THREE.MeshBasicMaterial({ map: glowTex(), color: tint, transparent: true, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 });
+    const pools = new THREE.Mesh(pg, pm);
+    pools.name = 'lightPools';
+    pools.renderOrder = 1;
+    group.add(pools);
+    nightMat(group, pools, pm, 0.55);
+    const hg = new THREE.BufferGeometry();
+    hg.setAttribute('position', new THREE.Float32BufferAttribute(heads, 3));
+    const hm = new THREE.PointsMaterial({ map: glowTex(), color: 0xfff2cc, size: 4.2, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+    const hp = new THREE.Points(hg, hm);
+    hp.name = 'lampHeads';
+    group.add(hp);
+    nightMat(group, hp, hm, 1);
+  }
+
+  const NEON = [0xff2d92, 0x19e3ff, 0xb44dff, 0xffb020, 0x3dff8a];
+  function neonSigns(track, group, rng, clearOf) {
+    const back = new G.CarModel.GB(), tube = new G.CarModel.GB();
+    const gap = 30; // samples (60 m), alternating sides
+    let n = 0, placed = 0;
+    for (let i = 7; i < track.N; i += gap) {
+      const side = n++ % 2 ? 1 : -1;
+      const lat = side * (track.wallD[i] + 3.2);
+      const x = track.X[i] + track.NX[i] * lat, z = track.Z[i] + track.NZ[i] * lat;
+      if (!clearOf(x, z, 1.5)) continue;
+      placed++;
+      const y = _gH ? _gH(x, z) : 0;
+      const col = C(NEON[Math.floor(rng() * NEON.length)]), col2 = C(NEON[Math.floor(rng() * NEON.length)]);
+      const w = 5 + rng() * 4, h = 2 + rng() * 1.4, top = 5.5 + rng() * 3;
+      // the sign faces the road: local +z = toward the road, local +x along it
+      const nx = -track.NX[i] * side, nz = -track.NZ[i] * side, r = Math.atan2(nx, nz);
+      const ux = nz, uz = -nx;
+      const at = (u, v, f) => [x + ux * u + nx * f, y + v, z + uz * u + nz * f];
+      for (const u of [-w * 0.35, w * 0.35]) {
+        const pp = at(u, top / 2, -0.25);
+        back.box(pp[0], pp[1], pp[2], 0.3, top, 0.3, C(0x23252b), r);
+      }
+      const mid = at(0, top - h / 2, 0);
+      back.box(mid[0], mid[1], mid[2], w, h, 0.3, C(0x14151a), r);
+      // neon: an outline and two bars of "lettering"
+      const bars = [
+        [0, -h / 2 + 0.27, w - 0.4, 0.14, col],
+        [0, h / 2 - 0.27, w - 0.4, 0.14, col],
+        [-w / 2 + 0.27, 0, 0.14, h - 0.4, col],
+        [w / 2 - 0.27, 0, 0.14, h - 0.4, col],
+        [-w * 0.1, 0.32, w * 0.62, 0.34, col2],
+        [-w * 0.2, -0.4, w * 0.42, 0.3, col2],
+      ];
+      for (const [u, v, bw, bh, c] of bars) {
+        const pp = at(u, top - h / 2 + v, 0.2);
+        tube.box(pp[0], pp[1], pp[2], bw, bh, 0.08, c, r);
+      }
+    }
+    if (!placed) return;
+    const bm = new THREE.Mesh(back.geometry(), G.CarModel.material());
+    bm.castShadow = true;
+    group.add(bm);
+    const tm = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true });
+    const tmesh = new THREE.Mesh(tube.geometry(), tm);
+    tmesh.name = 'neon';
+    group.add(tmesh);
+    nightMat(group, tmesh, tm, 1);
+    // a slight buzz, and now and then the whole strip stutters
+    group.userData.animFns.push((t) => {
+      if (!tmesh.visible) return;
+      const cut = Math.sin(t * 31) > 0.985 || Math.sin(t * 2.3 + 1) > 0.995;
+      tm.color.setScalar(cut ? 0.45 : 0.93 + 0.07 * Math.sin(t * 60));
+    });
+  }
+  function boxGeo(w, h, d, col) {
+    const gb = new G.CarModel.GB();
+    gb.box(0, 0, 0, w, h, d, C(col));
+    return gb.geometry();
+  }
+
+  // ------------------------------------------------------- v5 moving hazards
+  // Rockfall zones, wrecking balls, crosswind socks and the pit box. Where a
+  // moving hazard is comes from track.dynPos(race time) — the same function
+  // the physics uses — so what you see is exactly what you hit.
+  function buildDynamic(track, group) {
+    const env = () => group.userData.env || { t: 0 };
+    const tmp = {}, q = {};
+    for (const o of track.dyn) {
+      if (o.k === 'swing') {
+        // gantry across the road, chain + ball on a pivot
+        const i = o.i, wd = track.wallD[i] + 1.4, H = 14.5, L = H - o.r - 0.25;
+        const gb = new G.CarModel.GB();
+        const y0 = track.Y[i];
+        for (const sx of [wd, -wd]) {
+          gb.box(sx, H / 2, 0, 0.7, H, 0.7, C(0xffc400));
+          for (let k = 0; k < 6; k++) gb.box(sx, 1 + k * 2.4, 0, 0.74, 0.5, 0.74, C(0x1b1d22));
+        }
+        gb.box(0, H + 0.4, 0, wd * 2 + 0.8, 0.8, 0.9, C(0xffc400));
+        gb.box(o.lat, H - 0.1, 0, 1.4, 0.5, 1.2, C(0x2a2d33));
+        const gantry = new THREE.Mesh(gb.geometry(), G.CarModel.material());
+        gantry.position.set(track.X[i], y0, track.Z[i]);
+        gantry.rotation.y = track.H[i];
+        gantry.castShadow = true;
+        group.add(gantry);
+        const pivot = new THREE.Object3D();
+        pivot.position.set(o.lat, H - 0.2, 0);
+        gantry.add(pivot);
+        const cb = new G.CarModel.GB();
+        cb.box(0, -L / 2, 0, 0.14, L, 0.14, C(0x3a3f47));
+        cb.box(0, -L + o.r + 0.15, 0, 0.5, 0.4, 0.5, C(0x5a5f68)); // shackle
+        const sg = new THREE.IcosahedronGeometry(o.r, 1), sp = sg.attributes.position;
+        for (let k = 0; k < sp.count; k += 3) {
+          const v = (j) => [sp.getX(j), sp.getY(j) - L, sp.getZ(j)];
+          const band = Math.abs((sp.getY(k) + sp.getY(k + 1) + sp.getY(k + 2)) / 3) < o.r * 0.22;
+          cb.tri(v(k), v(k + 1), v(k + 2), C(band ? 0xffc400 : (k / 3) % 2 ? 0x30343c : 0x2a2d34), 0, -L, 0);
+        }
+        sg.dispose();
+        const ball = new THREE.Mesh(cb.geometry(), G.CarModel.material());
+        ball.castShadow = true;
+        pivot.add(ball);
+        const w = (2 * Math.PI) / o.period;
+        let lastS = 0;
+        const bx = track.X[i] + track.NX[i] * o.lat, bz = track.Z[i] + track.NZ[i] * o.lat;
+        group.userData.animFns.push(() => {
+          const ph = Math.sin(w * env().t + o.off);
+          const off = o.amp * ph;
+          pivot.rotation.z = Math.asin(U.clamp(off / L, -0.99, 0.99));
+          // a swish each time it sweeps through the middle, if you're near
+          const cam = group.userData.cam;
+          if (cam && G.Audio && env().t > 0 && Math.sign(ph) !== Math.sign(lastS)) G.Audio.whoosh(U.clamp(1.1 - Math.hypot(cam.fx - bx, cam.fz - bz) / 45, 0, 1));
+          lastS = ph;
+        });
+      } else if (o.k === 'rockfall') {
+        // warning signs at the zone ends, rubble on the verges, one live rock
+        const rb = new G.CarModel.GB();
+        const rng = U.rng(o.seed);
+        for (let k = 0; k < 14; k++) {
+          const d = o.at + (rng() - 0.5) * o.len, side = rng() < 0.5 ? 1 : -1;
+          const pq = track.pointAt(d, 0);
+          const lat = side * (track.wallD[pq.i] + 0.8 + rng() * 2.5);
+          const pt = track.pointAt(d, lat);
+          ico(rb, pt.x, (_gH ? _gH(pt.x, pt.z) : track.Y[pt.i]) + 0.2, pt.z, 0.4 + rng() * 0.7, C(rng() < 0.5 ? 0x8f857c : 0x7a716a));
+        }
+        for (const e of [-1, 1]) {
+          const d = o.at + e * (o.len / 2 + 12), pq = track.pointAt(d, 0);
+          const lat = -e * (track.wallD[pq.i] + 1.5), pt = track.pointAt(d, lat);
+          const gy = _gH ? _gH(pt.x, pt.z) : track.Y[pt.i];
+          rb.box(pt.x, gy + 1.3, pt.z, 0.14, 2.6, 0.14, C(0x3a3f47));
+          rb.box(pt.x, gy + 2.9, pt.z, 1.5, 1.5, 0.12, C(0xffc400), track.H[pt.i]);
+          rb.box(pt.x, gy + 2.9, pt.z, 0.5, 0.5, 0.14, C(0x1b1d22), track.H[pt.i]);
+        }
+        const rub = new THREE.Mesh(rb.geometry(), G.CarModel.material());
+        rub.castShadow = true;
+        group.add(rub);
+        const rock = new THREE.Mesh(geo('rock'), G.CarModel.material());
+        rock.userData.sharedGeo = true;
+        rock.scale.setScalar(o.r / 1.3);
+        rock.castShadow = true;
+        rock.visible = false;
+        group.add(rock);
+        const sh = new THREE.Mesh(new THREE.CircleGeometry(o.r * 1.4, 16), new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 }));
+        sh.rotation.x = -Math.PI / 2;
+        sh.visible = false;
+        group.add(sh);
+        let lastN = -1, gy = 0, landed = false;
+        group.userData.animFns.push(() => {
+          const t = env().t, p = track.dynPos(o, t, tmp);
+          if (!p) {
+            rock.visible = sh.visible = false;
+            return;
+          }
+          const c = t + o.off, n = Math.floor(c / o.every), ph = c - n * o.every;
+          if (n !== lastN) {
+            lastN = n;
+            landed = false;
+            track.query(p.x, p.z, o.i, q);
+            gy = track.elevAlong(q.along) + track.bankH(q.i, U.clamp(q.lat, -q.hw, q.hw));
+            rock.rotation.set(n * 1.3, n * 2.1, 0);
+          }
+          const end = Math.min(o.every, 1.5 + o.stay);
+          const sink = U.clamp((ph - (end - 0.5)) / 0.5, 0, 1);
+          rock.visible = true;
+          rock.position.set(p.x, gy + 32 * p.fall * p.fall + o.r * 0.3 - sink * o.r * 1.6, p.z);
+          if (p.fall > 0) rock.rotation.x += 0.12;
+          sh.visible = true;
+          sh.position.set(p.x, gy + 0.09, p.z);
+          sh.scale.setScalar(1.2 - 0.6 * p.fall);
+          sh.material.opacity = 0.55 * (1 - p.fall) * (1 - sink);
+          if (!landed && p.fall === 0) {
+            landed = true;
+            const cam = group.userData.cam;
+            if (cam && G.Audio && env().t > 0) G.Audio.rockImpact(U.clamp(1.1 - Math.hypot(cam.fx - p.x, cam.fz - p.z) / 90, 0, 1));
+            const fx = group.userData.fx;
+            if (fx) for (let k = 0; k < 10; k++) fx.emit(k < 6 ? 'dust' : 'debris', p.x, gy + 0.6, p.z, (Math.random() - 0.5) * 9, 1 + Math.random() * 3, (Math.random() - 0.5) * 9, 1.2, [0.55, 0.5, 0.45]);
+          }
+        });
+      }
+    }
+    // crosswind: a sock at each end of the zone, streaming the way it blows
+    if (track.winds.length) {
+      const socks = [];
+      for (const W of track.winds) {
+        for (const e of [-1, 1]) {
+          const d = W.at + e * W.hl * 0.8, pq = track.pointAt(d, 0);
+          const lat = -W.dir * (track.wallD[pq.i] + 2), pt = track.pointAt(d, lat);
+          socks.push({ x: pt.x, z: pt.z, r: Math.atan2(-track.NX[pt.i] * W.dir, -track.NZ[pt.i] * W.dir) });
+        }
+      }
+      instanced('sock', socks, group, false);
+    }
+    // pit box: white box lines + a yellow PIT stripe on the concrete apron
+    if (track.pit) {
+      const pt = track.pit, pos = [], col = [];
+      const white = C(0xf2f2f2), yel = C(0xffc400), grey = C(0x6f757d);
+      const Qp = (d, l) => {
+        const a = track.pointAt(d, l);
+        return [a.x, track.Y[a.i] + 0.03, a.z];
+      };
+      const strip = (d0, d1, l0, l1, c) => {
+        for (let d = d0; d < d1 - 0.01; d += 2) {
+          const e = Math.min(d1, d + 2);
+          pushQuad(pos, col, Qp(d, l1), Qp(d, l0), Qp(e, l0), Qp(e, l1), c);
+        }
+      };
+      const l = pt.lat, hw = pt.hw, d0 = pt.at - pt.hl, d1 = pt.at + pt.hl;
+      strip(d0, d1, l - hw, l + hw, grey);
+      strip(d0, d1, l - hw, l - hw + 0.3, white);
+      strip(d0, d1, l + hw - 0.3, l + hw, white);
+      strip(d0, d0 + 0.4, l - hw, l + hw, white);
+      strip(d1 - 0.4, d1, l - hw, l + hw, white);
+      for (let d = d0 + 4; d < d1 - 4; d += 8) strip(d, d + 3, l - 0.25, l + 0.25, yel);
+      // the entry and exit lanes across the grass/concrete, dashed
+      const side = pt.side;
+      for (let k = 0; k < 12; k++) {
+        const f = k / 12, g = (k + 0.5) / 12;
+        const la = side * (track.W[pt.ic] + 0.5) + (l - side * (track.W[pt.ic] + 0.5)) * f;
+        const lb = side * (track.W[pt.ic] + 0.5) + (l - side * (track.W[pt.ic] + 0.5)) * g;
+        strip(d0 - 40 + 40 * f, d0 - 40 + 40 * g, Math.min(la, lb) - 0.12, Math.max(la, lb) + 0.12, white);
+      }
+      const m = meshFrom(pos, col, new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
+      m.name = 'pitbox';
+      group.add(m);
+      // pit garages beyond the wall: a row of open bays facing the box
+      const gb = new G.CarModel.GB();
+      const r = Math.atan2(-track.NX[pt.ic] * side, -track.NZ[pt.ic] * side); // facing the road
+      const back = side * (track.wallD[pt.ic] + 6);
+      const teal = C(track.theme.wall[0]), wallC = C(0xe7e9ee), dark = C(0x24272e);
+      for (let k = 0; k < 6; k++) {
+        const d = d0 + (k + 0.5) * ((d1 - d0) / 6);
+        const a = track.pointAt(d, back);
+        const gy = track.Y[a.i];
+        const bw = (d1 - d0) / 6 - 0.4;
+        gb.box(a.x, gy + 2.2, a.z, bw, 4.4, 9, wallC, r);
+        gb.box(a.x, gy + 4.6, a.z, bw + 0.4, 0.4, 9.6, teal, r);
+        const f = track.pointAt(d, back - side * 4.52);
+        gb.box(f.x, gy + 1.7, f.z, bw - 1.2, 3.2, 0.1, dark, r); // open door
+      }
+      const pm = new THREE.Mesh(gb.geometry(), G.CarModel.material());
+      pm.castShadow = true;
+      group.add(pm);
     }
   }
 

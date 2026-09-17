@@ -61,9 +61,49 @@
       mass: 1180, powerKW: 140, redline: 8400, rearBias: 1.0, wheelbase: 2.55, weightFront: 0.41,
       cgH: 0.44, track: 1.68, cdA: 0.8, vTop: 60, inertiaK: 0.88, body: 'mid', len: 4.45, wid: 1.96, looseBonus: 0.9, wearK: 1.35,
     },
+    // ------------------------------------------------------------------ v5
+    // Built to the balance brief: strong identities, real weaknesses, and a
+    // skill ceiling above what the numbers suggest.
+    //
+    // Pip: the slowest car on paper. Front-drive, 66 kW, tops out early and
+    // gets shoved about in contact. But it weighs 760 kg, is narrow enough to
+    // take lines nobody else can, rotates on a lift (trail-brake it in) and
+    // sips fuel: in endurance it can run a stop fewer than everyone else.
+    pip: {
+      id: 'pip', name: 'Pip K1', tag: 'FWD kei car', drive: 'FWD',
+      blurb: 'A tiny front-drive kei car. Slow on paper — but light, narrow and nimble. Carry speed, lift to rotate it into corners, and it sips fuel (fewer pit stops in endurance).',
+      mass: 760, powerKW: 62, redline: 9200, rearBias: 0, wheelbase: 2.25, weightFront: 0.63,
+      cgH: 0.52, track: 1.36, cdA: 0.66, vTop: 45.5, inertiaK: 0.86, body: 'kei', len: 3.4, wid: 1.48, price: 0, fuelK: 0.6, wetBonus: 0.95,
+    },
+    // Volt: electric AWD. Instant torque from zero and one gear, so launches
+    // and corner exits are brutal and it's calm in the rain — but it's heavy,
+    // hits its limiter early, and the motor overheats and derates on long
+    // flat-out runs (cooling helps). Braking and lifting recharge the battery
+    // in endurance: smooth drivers need fewer stops. No turbo, exhaust or
+    // nitrous; gearing parts change its single reduction ratio.
+    volt: {
+      id: 'volt', name: 'Volt E', tag: 'electric AWD', drive: 'AWD', price: 4400, ev: 1,
+      blurb: 'Electric all-wheel drive: ferocious launches and exits, planted in the rain. Heavy, one gear, and the motor derates when it gets hot on long straights. Braking recharges the battery in endurance.',
+      mass: 1690, powerKW: 215, redline: 12000, rearBias: 0.55, wheelbase: 2.9, weightFront: 0.5,
+      cgH: 0.46, track: 1.68, cdA: 0.68, vTop: 55, inertiaK: 1.05, body: 'ev', len: 4.7, wid: 1.94, wetBonus: 1.1, looseBonus: 0.96,
+      evHeat: 0.085, regen: 0.35, fuelK: 0.45, tankM: 0.62, chargeK: 1.5, noParts: ['induction', 'exhaust', 'nitrous'],
+    },
+    // Stormer: a Group B monster. Light, short, rear-biased AWD with a big
+    // turbo built in — nothing, nothing, then everything. On gravel, dirt and
+    // snow it's untouchable; on tarmac the boost arrives mid-corner and the
+    // tail wants to lead. Thirsty, and hard on tyres.
+    storm: {
+      id: 'storm', name: 'Stormer B', tag: 'Group B rally', drive: 'AWD', price: 5000,
+      blurb: 'Group B rally legend: light, short, turbocharged all-wheel drive. King of dirt, gravel and snow. On tarmac the boost hits hard and late and the tail steps out — tame the lag and it flies.',
+      mass: 1080, powerKW: 100, redline: 8200, rearBias: 0.68, wheelbase: 2.3, weightFront: 0.46,
+      cgH: 0.5, track: 1.62, cdA: 0.9, vTop: 53, inertiaK: 0.82, body: 'rally', len: 4.1, wid: 1.84, looseBonus: 1.1, dryBonus: 0.94, wearK: 1.15, tyreK: 1.3,
+      turbo: { boostGain: 0.62, boostLag: 1.05, boostOn: 0.62, heatRate: 0.085, fuelMult: 2.0 },
+    },
   };
-  const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule', 'dune', 'apex'];
-  const BASE_CARS = ['vandal', 'brick', 'sting', 'mule']; // free for everyone
+  const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule', 'pip', 'dune', 'apex', 'volt', 'storm'];
+  const BASE_CARS = ['vandal', 'brick', 'sting', 'mule', 'pip']; // free for everyone
+  // v5: parts a car can't take (the Volt has no engine to turbo or pipe)
+  const partAllowed = (carId, slot) => !((CARS[carId] || {}).noParts || []).includes(slot);
 
   // Every option lists its upside (desc) and its downside (cons) — shown verbatim in the shop.
   const SLOTS = [
@@ -106,6 +146,9 @@
         // every build started with soft + wide. +13% -> +7%, +6% -> +3.5%.
         { id: 'medium', name: 'Medium', price: 1000, desc: '+3.5% grip.', cons: 'Wears ~1.8× faster.', mu: 1.035, wear: 1.8, peak: 0.155, set: 400, stripe: 0xffd21f },
         { id: 'soft', name: 'Soft', price: 2400, desc: '+7% grip. Sticky.', cons: 'Wears ~3× faster — grip falls off within a race or two.', mu: 1.07, wear: 3.0, peak: 0.145, set: 600, stripe: 0xff3b30 },
+        // v5: a gamble on the weather. Brilliant when it rains (and in fords,
+        // on ice and in mud), a liability on a dry track.
+        { id: 'rain', name: 'Rain Tyres', price: 1200, desc: '+20% grip on wet roads, water and ice, +4% in mud and on dirt. They never aquaplane.', cons: '−7% grip on dry tarmac, and they wear 4× as fast whenever the road under them is dry.', mu: 1.0, wear: 1.0, peak: 0.16, set: 450, stripe: 0x29d3ff, wetM: 1.2, dryM: 0.93, looseM: 1.04, dryWear: 4, noAqua: 1 },
       ],
     },
     {
@@ -179,6 +222,8 @@
         { id: 'stock', name: 'Stock Radiator', price: 0, desc: 'Fine for a naturally aspirated car.', cons: 'Boosted engines overheat on long straights.', coolM: 1.0, kg: 0, cdA: 0 },
         { id: 'radiator', name: 'Alloy Radiator', price: 700, desc: '+45% cooling: boost lasts much longer before limp mode.', cons: '+7 kg in the nose.', coolM: 1.45, kg: 7, cdA: 0 },
         { id: 'race', name: 'Race Cooling Pack', price: 1800, desc: '+100% cooling with an oil cooler. Turbo cars can run flat out.', cons: '+12 kg, and the big front opening adds drag.', coolM: 2.0, kg: 12, cdA: 0.03 },
+        // v5: power for boosted engines, at the cost of response
+        { id: 'ic', name: 'Front-Mount Intercooler', price: 1400, desc: 'Boosted engines: +7% boost power and 30% less boost heat. +25% cooling.', cons: 'Longer pipework: boost arrives 0.15 s later. +9 kg in the nose. Does little for a naturally aspirated car.', coolM: 1.25, kg: 9, cdA: 0.01, boostPow: 1.07, heatK: 0.7, lagAdd: 0.15 },
       ],
     },
     // The diff decides how drive torque splits between the driven wheels
@@ -203,13 +248,41 @@
         { id: 'n2', name: 'Race Shot', price: 4400, desc: '+60% power for 5 s, and it refills faster while drafting.', cons: '+18 kg. $240 a bottle. Heavy heat and engine wear — it can cook a boosted engine.', gain: 0.6, dur: 5, refill: 0.1, heat: 0.09, wear: 0.0012, cost: 240, kg: 18 },
       ],
     },
+    // ---- v5 slots -------------------------------------------------------
+    // Engine electronics: pick ONE. Launch control wins starts; anti-lag
+    // keeps a turbo lit through the corners (and cooks it if you're careless).
+    {
+      id: 'aids', name: 'Engine Electronics', icon: '⌬',
+      options: [
+        { id: 'none', name: 'Standard ECU', price: 0, desc: 'No tricks.', cons: 'Starts and turbo lag are all yours to manage.' },
+        { id: 'launch', name: 'Launch Control', price: 900, desc: 'Pre-spools the turbo on the grid, then for the first 3 s: perfect traction, +15% torque, half-time shifts. Rockets off the line.', cons: 'Nothing at all after the start. A little extra engine wear per launch.', launch: 1 },
+        { id: 'antilag', name: 'Anti-Lag', price: 2200, desc: 'Turbo cars: boost stays up when you lift and spools 45% faster. Bangs and flames on the overrun.', cons: 'Heat builds even off the throttle, fuel +25%, engine wear +40%. Useless without a turbo.', antilag: 1 },
+      ],
+    },
+    {
+      id: 'wheels', name: 'Wheels', icon: '◉',
+      options: [
+        { id: 'alloy', name: 'Cast Alloys', price: 0, desc: 'Tough and cheap.', cons: 'Heavy unsprung weight.' },
+        { id: 'mag', name: 'Magnesium Wheels', price: 1900, desc: '−14 kg of unsprung weight: +8% steering response, rides bumps and kerbs better, a touch quicker everywhere.', cons: 'Brittle: wall and obstacle hits do 40% more body damage.', kg: 14, steerM: 1.08, bumpM: 0.88, wallDmg: 1.4 },
+      ],
+    },
+    // Endurance only (does nothing in a normal race): bigger tank OR faster
+    // tyre changes — you can't have both.
+    {
+      id: 'pitkit', name: 'Pit Kit', icon: '⛽',
+      options: [
+        { id: 'none', name: 'Standard', price: 0, desc: 'Nothing special.', cons: 'Endurance races: normal tank, normal wheel nuts.' },
+        { id: 'cell', name: 'Fuel Cell', price: 1500, desc: 'Endurance: a 35% bigger tank — longer stints, maybe a stop fewer.', cons: '+18 kg, and a bigger tank takes longer to fill. No use outside endurance.', kg: 18, tankM: 1.35 },
+        { id: 'qr', name: 'Quick-Release Wheels', price: 1300, desc: 'Endurance: centre-lock wheels — tyre changes 45% faster, easier on the wheel gun.', cons: 'Same tank as standard. No use outside endurance.', qr: 0.55 },
+      ],
+    },
   ];
   const SLOT_MAP = {};
   SLOTS.forEach((s) => {
     SLOT_MAP[s.id] = s;
     s.options.forEach((o) => (o.slot = s.id));
   });
-  const STOCK = { induction: 'na', weight: 'stock', aero: 'none', compound: 'hard', width: 'std', gearing: 'stock', suspension: 'stock', brakes: 'stock', exhaust: 'stock', ecu: 'stock', cooling: 'stock', diff: 'stock', nitrous: 'none' };
+  const STOCK = { induction: 'na', weight: 'stock', aero: 'none', compound: 'hard', width: 'std', gearing: 'stock', suspension: 'stock', brakes: 'stock', exhaust: 'stock', ecu: 'stock', cooling: 'stock', diff: 'stock', nitrous: 'none', aids: 'none', wheels: 'alloy', pitkit: 'none' };
   const opt = (slot, id) => SLOT_MAP[slot].options.find((o) => o.id === id) || SLOT_MAP[slot].options[0];
 
   // ------------------------------------------------------------------------
@@ -267,17 +340,22 @@
   const LOOK = {
     paints: [0xff3b30, 0xd7263d, 0xff8a00, 0xffc400, 0xf2e94e, 0x9be15d, 0x22c55e, 0x0f9d58, 0x19c3e6, 0x2f6bff, 0x1d3fbb, 0x6c3ce0, 0xa855f7, 0xff2d92, 0xff7eb6, 0xf5f5f5, 0xc9ced6, 0x8a929c, 0x4a4f58, 0x1b1d22, 0x7a4a2a, 0xc49a6c, 0x2f5d50, 0x9e1b32],
     accents: [0xf5f5f5, 0x1b1d22, 0xffc400, 0xff3b30, 0x2f6bff, 0x22c55e, 0x19c3e6, 0xff2d92, 0xff8a00, 0xa855f7, 0x8a929c, 0xd4a017],
-    liveries: [['none', 'Plain'], ['stripes', 'Twin stripes'], ['single', 'Centre stripe'], ['side', 'Side stripe'], ['twotone', 'Two-tone'], ['roof', 'Contrast roof'], ['race', 'Race (stripes + roundels)'], ['checker', 'Checker roof'], ['fade', 'Fade (accent → paint)'], ['flames', 'Flames']],
+    liveries: [['none', 'Plain'], ['stripes', 'Twin stripes'], ['single', 'Centre stripe'], ['side', 'Side stripe'], ['twotone', 'Two-tone'], ['roof', 'Contrast roof'], ['race', 'Race (stripes + roundels)'], ['checker', 'Checker roof'], ['fade', 'Fade (accent → paint)'], ['flames', 'Flames'], ['tiger', 'Tiger slashes'], ['chevron', 'Hood chevrons'], ['bolt', 'Lightning bolt']],
     rims: [['five', '5-spoke'], ['mesh', 'Mesh'], ['dish', 'Dish'], ['rally', 'Rally steel'], ['turbine', 'Turbine']],
     rimCols: [0xc9d0d8, 0x2a2d33, 0xd4a017, 0xf5f5f5, 0x5a6270, 0xa0602e, 0xe8322b, 0x19c3e6],
     tints: [['clear', 'Clear'], ['dark', 'Dark'], ['black', 'Limo black']],
     glows: [['none', 'None'], ['cyan', 'Cyan'], ['pink', 'Pink'], ['green', 'Green'], ['yellow', 'Yellow'], ['purple', 'Purple']],
     finishes: [['gloss', 'Gloss'], ['metal', 'Metallic'], ['chrome', 'Chrome flake'], ['matte', 'Matte']],
     lights: [['warm', 'Halogen'], ['xenon', 'Xenon blue'], ['amber', 'Rally amber']],
+    // v5
+    kits: [['none', 'Stock'], ['street', 'Street (splitter + skirts)'], ['wide', 'Widebody'], ['bash', 'Rally bash bar'], ['drift', 'Drift (bash bar + canards)']],
+    spoilers: [['none', 'None'], ['duck', 'Ducktail'], ['whale', 'Whale tail'], ['roof', 'Roof spoiler']],
+    tips: [['stock', 'Stock'], ['quad', 'Quad tips'], ['burnt', 'Burnt titanium'], ['side', 'Side exit']],
+    glowFx: [['steady', 'Steady'], ['pulse', 'Pulse'], ['rainbow', 'Rainbow']],
   };
   const GLOW_COL = { cyan: 0x29d3ff, pink: 0xff3d9a, green: 0x2fe07a, yellow: 0xffcc00, purple: 0xa855f7 };
   function defaultLook(num) {
-    return { paint: null, accent: 0xf5f5f5, livery: 'none', rims: 'five', rimCol: 0xc9d0d8, num: num || 0, tint: 'dark', glow: 'none', finish: 'gloss', lights: 'warm' };
+    return { paint: null, accent: 0xf5f5f5, livery: 'none', rims: 'five', rimCol: 0xc9d0d8, num: num || 0, tint: 'dark', glow: 'none', finish: 'gloss', lights: 'warm', kit: 'none', spoiler: 'none', tips: 'stock', glowFx: 'steady' };
   }
   // Validate a look patch from the wire (host side).
   function cleanLook(look, patch) {
@@ -294,6 +372,10 @@
       else if (k === 'glow' && ok(LOOK.glows, v)) o.glow = v;
       else if (k === 'finish' && ok(LOOK.finishes, v)) o.finish = v;
       else if (k === 'lights' && ok(LOOK.lights, v)) o.lights = v;
+      else if (k === 'kit' && ok(LOOK.kits, v)) o.kit = v;
+      else if (k === 'spoiler' && ok(LOOK.spoilers, v)) o.spoiler = v;
+      else if (k === 'tips' && ok(LOOK.tips, v)) o.tips = v;
+      else if (k === 'glowFx' && ok(LOOK.glowFx, v)) o.glowFx = v;
       else if (k === 'num' && Number.isInteger(v) && v >= 0 && v <= 99) o.num = v;
     }
     return o;
@@ -310,10 +392,12 @@
   // opposite.
   const torqueShape = (r) => 1 - 1.0 * (r - 0.62) * (r - 0.62);
   const POWER_SHAPE_PEAK = 0.8556; // r*torqueShape(r) at r = 1 (its maximum on [0,1])
+  const EV_KNEE = 0.35; // v5 electric: full torque from 0 to 35% revs, constant power above
   // Torque at normalised rpm r for a specific build: the base curve reshaped
   // by the exhaust (tqLow below ~half revs, tqHigh toward the redline).
   // Stock parts give exactly torqueShape(r).
   function torqueAt(s, r) {
+    if (s.ev) return r <= EV_KNEE ? 1 : EV_KNEE / r; // v5: electric motor
     const lo = s.tqLow == null ? 1 : s.tqLow, hi = s.tqHigh == null ? 1 : s.tqHigh;
     let f = 1;
     if (r <= 0.45) f = lo;
@@ -335,14 +419,26 @@
   function computeSpec(carId, installed, wear, tune) {
     const c = CARS[carId] || CARS.vandal;
     const p = Object.assign({}, STOCK, installed || {});
+    // (v5: a part this car can't take counts as stock)
+    for (const slot of c.noParts || []) p[slot] = STOCK[slot];
     const w = Object.assign({ tyre: 0, engine: 0, body: 0 }, wear || {});
-    const ind = opt('induction', p.induction), wt = opt('weight', p.weight), ae = opt('aero', p.aero);
-    const cp = opt('compound', p.compound), wd = opt('width', p.width), gr = opt('gearing', p.gearing), su = opt('suspension', p.suspension);
+    let ind = opt('induction', p.induction);
+    // v5 Stormer: its turbo is part of the car; a fitted induction part replaces it
+    if (c.turbo && ind.id === 'na') ind = Object.assign({}, ind, c.turbo, { kind: 'turbo' });
+    const wt = opt('weight', p.weight), ae = opt('aero', p.aero);
+    const cp = opt('compound', p.compound), wd = opt('width', p.width), su = opt('suspension', p.suspension);
+    let gr = opt('gearing', p.gearing);
+    // v5 Volt: one reduction gear, no shifts; gearing parts only change the ratio
+    if (c.ev) gr = Object.assign({}, gr, { gears: [1], shift: 0, kick: 1 });
     const br = opt('brakes', p.brakes), ex = opt('exhaust', p.exhaust), ec = opt('ecu', p.ecu), co = opt('cooling', p.cooling), df = opt('diff', p.diff);
     const no = opt('nitrous', p.nitrous);
+    const ai = opt('aids', p.aids), wh = opt('wheels', p.wheels), pk = opt('pitkit', p.pitkit);
+    const boosted = ind.kind !== 'none';
+    if (co.lagAdd && boosted) ind = Object.assign({}, ind, { boostLag: ind.boostLag + co.lagAdd });
+    if (ai.antilag && ind.kind === 'turbo') ind = Object.assign({}, ind, { boostLag: ind.boostLag * 0.55, fuelMult: ind.fuelMult * 1.25 });
     const T = effTune(p, tune);
 
-    const mass = c.mass - wt.kg + (ae.kg || 0) + br.kg + ex.kg + co.kg + no.kg;
+    const mass = c.mass - wt.kg + (ae.kg || 0) + br.kg + ex.kg + co.kg + no.kg - (wh.kg || 0) + (pk.kg || 0);
     const cgF = c.wheelbase * (1 - c.weightFront); // distance CG -> front axle
     const cgR = c.wheelbase - cgF;
     // Yaw inertia via the "dynamic index" k: Iz = m * a * b * k (k≈1 for road
@@ -357,7 +453,8 @@
     const gears = gr.gears.slice();
     const finalDrive = baseFD * gr.fd * (1 + T.fd / 100);
     const engineHealth = 1 - 0.38 * Math.pow(U.clamp(w.engine, 0, 1), 1.3);
-    const peakTorque = ((c.powerKW * 1000) / (POWER_SHAPE_PEAK * redlineW)) * ec.pMul;
+    // (EV: flat torque to 35% revs, then constant power — see torqueAt)
+    const peakTorque = ((c.powerKW * 1000) / ((c.ev ? EV_KNEE : POWER_SHAPE_PEAK) * redlineW)) * ec.pMul;
 
     const tyreHealth = 1 - 0.32 * Math.pow(U.clamp(w.tyre, 0, 1), 1.6);
     const mu = 1.12 * cp.mu * tyreHealth;
@@ -388,9 +485,9 @@
     const loose = wd.loose * su.looseM * (c.looseBonus || 1);
     const surfMul = G.SURF.map((s) => {
       let m = s.grip;
-      if (s.wet || s.icy) m *= wd.wetM * (c.wetBonus || 1);
-      else if (s.loose) m *= loose;
-      else m *= wd.dry;
+      if (s.wet || s.icy) m *= wd.wetM * (c.wetBonus || 1) * (cp.wetM || 1);
+      else if (s.loose) m *= loose * (cp.looseM || 1);
+      else m *= wd.dry * (c.dryBonus || 1) * (cp.dryM || 1);
       return m;
     });
 
@@ -402,13 +499,17 @@
       len: c.len, wid: c.wid,
       rearBias: c.rearBias, drive: c.drive,
       redline: c.redline, redlineW, idle: 0.14, peakTorque, gears, finalDrive, revRatio: 3.4,
-      tqLow: ex.tqLow, tqHigh: ex.tqHigh, pops: ex.pops,
+      tqLow: ex.tqLow, tqHigh: ex.tqHigh, pops: ex.pops, ev: c.ev ? 1 : 0,
       shiftTime: gr.shift, shiftKick: gr.kick, upR: 0.97, downR: 0.55,
-      boostKind: ind.kind, boostGain: ind.boostGain * boostM, boostLag: ind.boostLag, boostOn: ind.boostOn,
-      heatRate: ind.heatRate * ec.heatM * boostM * boostM, coolRate: 0.035 * co.coolM, fuelRate: 0.85 * ind.fuelMult * ec.fuelM,
+      boostKind: ind.kind, boostGain: ind.boostGain * boostM * (boosted ? co.boostPow || 1 : 1), boostLag: ind.boostLag, boostOn: ind.boostOn,
+      heatRate: ind.heatRate * ec.heatM * boostM * boostM * (co.heatK || 1),
+      // v5 electronics / wheels / pit kit
+      launch: ai.launch ? 1 : 0, antilag: ai.antilag && ind.kind === 'turbo' ? 1 : 0, wallDmg: wh.wallDmg || 1, qr: pk.qr || 1, coolRate: 0.035 * co.coolM, fuelRate: 0.85 * ind.fuelMult * ec.fuelM * (c.fuelK || 1),
+      // v5: EV motor heat under load, regen, battery size + charging speed
+      evHeat: (c.evHeat || 0) * ec.heatM, regen: c.regen || 0, tankM: (c.tankM || 1) * (pk.tankM || 1), chargeK: (c.chargeK || 1) * (pk.tankM ? 1.2 : 1),
       engineHealth,
       clA: aeroCl * (1 - 0.035 * rideCm), cdA: c.cdA + aeroCd + wd.cdA + co.cdA + w.body * 0.12, aeroFront: 0.42,
-      mu, rearGrip: 1.0, peakSlip: cp.peak, slideRatio: 0.8, surfMul, aqua: wd.aqua ? 1 : 0,
+      mu, rearGrip: 1.0, peakSlip: cp.peak, slideRatio: 0.8, surfMul, aqua: wd.aqua && !cp.noAqua ? 1 : 0, dryWear: cp.dryWear || 0,
       // per-axle setup multipliers (physics.js §7)
       latF: pF.lat * (camLat(cF) / camLat(-1)), latR: pR.lat * (camLat(cR) / camLat(-1)),
       lonF: camLon(cF) / camLon(-1), lonR: camLon(cR) / camLon(-1),
@@ -416,9 +517,9 @@
       latTauF: su.latTau * pF.tau, latTauR: su.latTau * pR.tau,
       rollF, lsd, diffYaw, tcs: T.tcs ? 1 : 0,
       loadSens: 0.16, fzNom: (1200 * G_ACC) / 4,
-      tyreWearRate: cp.wear * ((pF.wear + pR.wear) / 2) * (1 + 0.05 * ((Math.abs(cF) + Math.abs(cR)) / 2 - 1)), tyreHealth,
+      tyreWearRate: (c.tyreK || 1) * cp.wear * ((pF.wear + pR.wear) / 2) * (1 + 0.05 * ((Math.abs(cF) + Math.abs(cR)) / 2 - 1)), tyreHealth,
       loadTau: su.loadTau * (1 - 0.015 * arbSum), latTau: su.latTau, rollGain: su.roll * (1 - 0.035 * arbSum),
-      bumpSens: su.bump * (1 - 0.07 * rideCm) * (br.bumpM || 1), rideH: su.rideH + rideCm * 0.01, roughGrip: su.roughGrip * (1 - 0.07 * rideCm) * (br.bumpM || 1),
+      bumpSens: su.bump * (1 - 0.07 * rideCm) * (br.bumpM || 1) * (wh.bumpM || 1), rideH: su.rideH + rideCm * 0.01, roughGrip: su.roughGrip * (1 - 0.07 * rideCm) * (br.bumpM || 1),
       // brakes: force multiplier, heat capacity, cold bite (physics.js §7b)
       bForce: br.bForce, bCap: br.bCap, bCold: br.bCold, caliper: br.caliper,
       // Lock shrinks with speed: lock = 0.56 / (1 + v/14). At 90 km/h full keyboard
@@ -426,10 +527,10 @@
       // turns hard instead of scrubbing the fronts wide. (Falloff 24 -> 14 cut a
       // binary-input driver's off-track time 42 s -> 25 s per 150 s on Harbour;
       // analogue bot lap times unchanged.)
-      steerLock: 0.56, steerFalloff: 14, steerRate: 3.4 * su.steer,
+      steerLock: 0.56, steerFalloff: 14, steerRate: 3.4 * su.steer * (wh.steerM || 1),
       brakeForce: mass * G_ACC * 1.3 * br.bForce, brakeFront: T.bias / 100,
       csAssist: 0.6, yawDamp: 0.9, spinAssist: 2.2, spinAngle: 0.62,
-      engineWearRate: 0.00016 * (1 + ind.boostGain * 1.4) * (gr.id === 'seq' ? 1.25 : 1) * ec.wearM * (1 + (boostM - 1) * 1.5) * (c.wearK || 1),
+      engineWearRate: 0.00016 * (1 + ind.boostGain * 1.4) * (gr.id === 'seq' ? 1.25 : 1) * ec.wearM * (1 + (boostM - 1) * 1.5) * (c.wearK || 1) * (ai.antilag && ind.kind === 'turbo' ? 1.4 : 1),
       heatDamage: 0.006,
       bodyPull: (w.body || 0) * 0.02,
       // nitrous (physics.js §6)
@@ -603,7 +704,8 @@
     stab = U.clamp(stab, 0, 10);
     const rough = ((s.surfMul[G.SI.wet] + s.surfMul[G.SI.dirt] + s.surfMul[G.SI.gravel]) / 3) * s.mu * (1 - s.bumpSens * 0.18);
     const cost = runningCost(s);
-    const heatSecs = s.heatRate > 0 ? 1 / Math.max(0.001, s.heatRate - s.coolRate * 0.75) : Infinity;
+    const hr = s.heatRate + (s.evHeat || 0); // (v5: an EV's motor heats up too)
+    const heatSecs = hr > 0 ? 1 / Math.max(0.001, hr - s.coolRate * 0.75) : Infinity;
     // "hot" = the brake energy measured late in a 3-lap race (telemetry: road
     // brakes 1.1 on Kerbside City with a keyboard driver, 1.4 on Harbour Loop)
     const bCold = brakeDist(s, 0), bHot = brakeDist(s, 1.3);
@@ -682,6 +784,15 @@
     if (s.nosGain) out.push([s.nosGain >= 0.5 && s.heatRate > 0 ? 'bad' : 'warn', 'Nitrous: +' + Math.round(s.nosGain * 100) + '% power for ' + s.nosDur + ' s a race (hold the Nitrous key). Draft other cars to refill it. $' + s.nosCost + ' a bottle.']);
     if (s.carId === 'apex') out.push(['warn', 'Apex MR: lift mid-corner and the rear comes round. Engine wear +35%.']);
     if (s.carId === 'dune') out.push(['warn', 'Dune Runner: tall and heavy — it rolls and runs wide on tarmac, but dirt and mud barely slow it.']);
+    // v5 cars and parts
+    if (s.carId === 'pip') out.push(['warn', 'Pip K1: front-drive — too much throttle mid-corner washes the nose wide. Lift or brake into a corner to swing the tail round. Light: bigger cars push it around.']);
+    if (s.carId === 'volt') out.push(['warn', 'Volt E: one gear and instant torque. Flat out for long, the motor gets hot and power drops — ease off a moment to cool it.']);
+    if (s.carId === 'storm') out.push(['warn', 'Stormer B: the turbo arrives late and all at once. On tarmac, get it straight before the boost hits or the tail comes round.']);
+    if (p.compound === 'rain') out.push(['warn', 'Rain tyres: great when it rains, slow on a dry road, and they wear 4× as fast whenever it is dry.']);
+    if (p.aids === 'antilag' && s.boostKind !== 'turbo') out.push(['bad', 'Anti-lag does nothing without a turbo.']);
+    if (s.antilag) out.push(['warn', 'Anti-lag: the turbo stays hot off the throttle — watch the heat gauge.']);
+    if (p.cooling === 'ic' && s.boostKind === 'none') out.push(['warn', 'An intercooler needs a turbo or supercharger to do much.']);
+    if (p.wheels === 'mag') out.push(['warn', 'Magnesium wheels: hard hits on walls and obstacles do 40% more damage.']);
     const t = s.tune || {};
     if (t.bias != null && t.bias <= 56) out.push(['bad', 'Rear brake bias: the rear tyres are at their limit under hard braking — the car will try to swap ends.']);
     if (t.bias >= 70) out.push(['warn', 'Forward brake bias: the fronts do all the work — the car pushes wide when you brake into a corner.']);
@@ -737,7 +848,7 @@
   const CAR_SWAP = 800;
 
   G.Parts = {
-    rearExcess, CARS, CAR_ORDER, BASE_CARS, SLOTS, SLOT_MAP, STOCK, opt, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,
+    rearExcess, CARS, CAR_ORDER, BASE_CARS, partAllowed, SLOTS, SLOT_MAP, STOCK, opt, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,
     topSpeed, zeroTo100, repairQuote, tyreSetPrice, engineRebuildPrice, BASIC_REPAIR, BODY_REPAIR, newGarage, fixGarage, partsValue,
     TUNES, TUNE_MAP, defaultTune, effTune, tuneAvailable, LOOK, GLOW_COL, defaultLook, cleanLook, brakeDist, CAR_SWAP,
     WHEEL_R, RHO, G_ACC,

@@ -33,12 +33,21 @@
     near: [21, 0.19, 49, 0.34],
     far: [43, 0.3, 61, 0.46],
     fixed: [33, 0.28, 58, 0.42],
+    tv: [43, 0.3, 61, 0.46], // v5: trackside TV cameras (see _tvCam)
   };
-  const CAM_ORDER = ['follow', 'near', 'far', 'fixed'];
-  const CAM_NAMES = { follow: 'Chase', near: 'Close chase', far: 'High chase', fixed: 'Fixed north' };
+  const CAM_ORDER = ['follow', 'near', 'far', 'fixed', 'tv'];
+  const CAM_NAMES = { follow: 'Chase', near: 'Close chase', far: 'High chase', fixed: 'Fixed north', tv: 'TV cameras' };
   // Particle colours emitted every frame, made once (v4.5: a new array per
   // particle was needless garbage for the collector)
-  const RGB = { sand: [0.85, 0.72, 0.5], dirt: [0.52, 0.36, 0.22], mud: [0.3, 0.2, 0.1], nos: [0.25, 0.5, 1], nosSpark: [0.3, 0.8, 1], pad: [0.2, 0.7, 1], smoke: [0.22, 0.22, 0.24], tail: [1, 0.1, 0.05] };
+  const RGB = { head: [1, 0.93, 0.75], sand: [0.85, 0.72, 0.5], dirt: [0.52, 0.36, 0.22], mud: [0.3, 0.2, 0.1], nos: [0.25, 0.5, 1], nosSpark: [0.3, 0.8, 1], pad: [0.2, 0.7, 1], smoke: [0.22, 0.22, 0.24], tail: [1, 0.1, 0.05] };
+
+  // v5 time of day. A theme's own light is "day"; races on themes with todTo
+  // slide through dusk toward night as the leader goes round, night themes
+  // sit at night. Rain greys the sky and fog and dims the sun.
+  const TOD = {
+    dusk: { sky: 0xe98a62, fog: 0xe2a184, hemiSky: 0xffc6a8, hemiI: 1.25, sunCol: 0xff9a52, sunI: 1.55 },
+    night: { sky: 0x0b1030, fog: 0x161c38, hemiSky: 0x6674b0, hemiI: 1.0, sunCol: 0xa9bcff, sunI: 0.45 },
+  };
 
   const rgbOf = (hex) => {
     const c = new THREE.Color(hex);
@@ -77,6 +86,10 @@
       this.scene.add(this.hemi, this.sun, this.sun.target);
       this.sky = this._makeSky();
       this.scene.add(this.sky);
+      // v5 race environment as the view last saw it (setEnv): race time drives
+      // the moving hazards, tod/wet the light
+      this.env = { t: 0, wet: 0, tod: 0, night: 0 };
+      this._atmKey = '';
       this.fx = new G.FX.System(this.scene);
       this.skids = new G.FX.Skids(this.scene);
       this.rain = new G.FX.Rain(this.scene, q === 'high' ? 900 : q === 'medium' ? 550 : 300);
@@ -117,7 +130,7 @@
       if (k === 'cam' && CAMS[s.cam]) this.cam.mode = s.cam;
       this.maxPR = this.tier === 'high' ? Math.min(window.devicePixelRatio || 1, 1.5) : this.tier === 'medium' ? 1 : 0.75;
       this._applyLevel();
-      if (k === 'weather' || k == null) this.rain.setOn(s.weather && this.track && this.track.theme.rain);
+      if (k === 'weather' || k == null) this._rainOn();
     }
 
     // Pixel ratio / shadows / particle budget from tier × governor × settings.
@@ -155,11 +168,27 @@
       sun.position.set(420, 520, 300);
       sun.lookAt(0, 0, 0);
       m.add(sun);
+      // v5 stars for night races (faded in by _atmos)
+      const n = 420, sp = new Float32Array(n * 3), rng = U.rng(4411);
+      for (let i = 0; i < n; i++) {
+        const a = rng() * Math.PI * 2, y = 0.12 + 0.88 * Math.pow(rng(), 0.7), r = Math.sqrt(1 - y * y);
+        sp[i * 3] = Math.cos(a) * r * 860;
+        sp[i * 3 + 1] = y * 860;
+        sp[i * 3 + 2] = Math.sin(a) * r * 860;
+      }
+      const sg = new THREE.BufferGeometry();
+      sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
+      const stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xdfe8ff, size: 2.2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false }));
+      stars.visible = false;
+      stars.frustumCulled = false;
+      m.add(stars);
+      m.userData.sun = sun;
+      m.userData.stars = stars;
       return m;
     }
     _paintSky(th) {
       const g = this.sky.geometry, p = g.attributes.position, c = g.attributes.color;
-      const top = new THREE.Color(th.sky).multiplyScalar(0.78), hor = new THREE.Color(th.fog), gnd = new THREE.Color(th.ground).multiplyScalar(0.9);
+      const top = new THREE.Color(th.sky).multiplyScalar(0.78), hor = new THREE.Color(th.fog), gnd = new THREE.Color(th.ground).multiplyScalar(0.9 * (th._gk || 1));
       const tmp = new THREE.Color();
       for (let i = 0; i < p.count; i++) {
         const y = p.getY(i) / 900;
@@ -195,16 +224,28 @@
       });
       this._trackShadows();
       this.scene.add(this.trackGroup);
+      this.trackGroup.userData.env = this.env; // v5: moving hazards follow race time
+      this.trackGroup.userData.fx = this.fx;
+      this.trackGroup.userData.cam = this.cam; // v5: hazard sounds by distance
       const th = track.theme;
       this.scene.background = new THREE.Color(th.fog);
       this.scene.fog = new THREE.Fog(th.fog, th.fogNear || 170, th.fogFar || 560);
-      this.hemi.color.set(th.hemiSky || 0xe6f4ff);
-      this.hemi.groundColor.set(th.ground).multiplyScalar(0.8);
-      this.hemi.intensity = th.hemiI || 1.6;
-      this.sun.color.set(th.sunCol || 0xfff1d8);
-      this.sun.intensity = th.sunI || 2.3;
-      this._paintSky(th);
-      this.rain.setOn(ST().weather && th.rain);
+      // v5: a car headlight that really lights the road, only on tracks that
+      // get dark (adding a light recompiles every material: do it at load)
+      const dark = !!(th.night || (th.todTo || 0) >= 0.7);
+      if (dark && !this.headL) {
+        this.headL = new THREE.SpotLight(0xfff0d0, 0, 70, 0.5, 0.55, 1.1);
+        this.scene.add(this.headL, this.headL.target);
+      } else if (!dark && this.headL) {
+        this.scene.remove(this.headL, this.headL.target);
+        this.headL.dispose();
+        this.headL = null;
+      }
+      this.env.t = 0;
+      this.env.wet = 0;
+      this.rainWarned = false;
+      this._atmKey = '';
+      this._atmos(th.night || 0, 0);
       this.lightsState = -1;
       this.fx.clear();
       this.skids.clear();
@@ -224,6 +265,13 @@
           G.CarModel.dispose(m);
         }
         const nm = G.CarModel.build(c.carId, c.color, c.parts, c.look, c.tune);
+        this._beam();
+        const beam = new THREE.Mesh(this._beamGeo, this._beamMat);
+        beam.position.set(0, 0.1, nm.len / 2 - 0.2);
+        beam.renderOrder = 2;
+        beam.userData.sharedGeo = true;
+        nm.root.add(beam);
+        nm.beam = beam;
         nm.key = key;
         nm.id = c.id;
         nm.hint = -1;
@@ -309,7 +357,7 @@
       // Brake + reverse lights (vertex-colour range, no extra draw calls).
       const braking = (rs.brk > 0.3 && speed > 0.6) || rs.hb > 0;
       G.CarModel.setLights(m, braking ? 1 : 0, rs.gear === -1 ? 1 : 0);
-      m.root.visible = !(rs.ghost > 0 && Math.floor(this.time * 12) % 2);
+      m.root.visible = !(rs.ghost > 0 && !rs.pit && Math.floor(this.time * 12) % 2); // (v5: not while parked in the pit box)
       this._emit(m, rs, dt, speed, sinH, cosH, y, braking);
     }
 
@@ -342,6 +390,9 @@
         } else if (sf.fx === 'spray') {
           if (speed > 6 && Math.random() < (speed / 30 + slip) * dt * 34) fx.emit('spray', wx, y + 0.2, wz, bvx * 2, 0.3 + speed * 0.02, bvz * 2, 0.6 + speed / 40);
           this.skids.add(key, wx, y + 0.06, wz, 0.24, slip > 0.35 ? 0.25 : 0, [0.1, 0.12, 0.14]);
+        } else if (sf.fx === 'splash') {
+          // v5 water: sheets of spray off every wheel, more the faster you go
+          if (speed > 3 && Math.random() < (0.5 + speed / 18) * dt * 30) fx.emit('splash', wx, y + 0.25, wz, bvx * 2.4 + (Math.random() - 0.5) * 3, 1.2 + speed * 0.05, bvz * 2.4 + (Math.random() - 0.5) * 3, 0.8 + speed / 30);
         } else if (sf.fx === 'oil') {
           if (speed > 6 && Math.random() < (0.4 + slip) * dt * 20) fx.emit('oil', wx, y + 0.15, wz, bvx * 1.5, 0.4, bvz * 1.5, 0.7);
           this.skids.add(key, wx, y + 0.06, wz, 0.28, speed > 4 ? 0.5 : 0, [0.03, 0.03, 0.04]);
@@ -415,10 +466,40 @@
           fx.emit('glow', tx, ty, tz, 0, 0, 0, 0.9, RGB.tail);
         }
       }
+      // v5 at night: headlight lenses and tail lights glow, and the beam shows
+      const night = this.env.night;
+      if (m.beam) m.beam.visible = night > 0.02 && !rs.ghost;
+      if (night > 0.02 && camD2 < 110 * 110) {
+        for (const sx of [0.62, -0.62]) {
+          const [hx, hy, hz] = W(sx, 0.62, m.len / 2 - 0.05);
+          fx.emit('glow', hx, hy, hz, 0, 0, 0, 1.3 * night, RGB.head);
+        }
+        if (!braking) for (const t of m.tailLocal) {
+          const [tx, ty, tz] = W(t[0], t[1], t[2]);
+          fx.emit('glow', tx, ty, tz, 0, 0, 0, 0.55 * night, RGB.tail);
+        }
+      }
+      if (this.headL && m.id === this.focusId) {
+        const L = this.headL;
+        L.intensity = 260 * night;
+        L.visible = night > 0.02;
+        const [lx, ly, lz] = W(0, 1.1, m.len / 2);
+        const [ax, ay, az] = W(0, 0, m.len / 2 + 24);
+        L.position.set(lx, ly, lz);
+        L.target.position.set(ax, ay, az);
+      }
       if (m.glowRGB && camD2 < 45 * 45 && fx.budget >= 0.6) {
+        // v5 underglow effects: pulse breathes, rainbow walks the hue
+        let size = 3.2, col = m.glowRGB;
+        if (m.glowFx === 'pulse') size *= 0.7 + 0.35 * Math.sin(this.time * 4);
+        else if (m.glowFx === 'rainbow') {
+          const c = (this._rbw = this._rbw || new THREE.Color()).setHSL((this.time * 0.25 + (m.id ? m.id.length * 0.13 : 0)) % 1, 1, 0.55);
+          col = this._rbwA || (this._rbwA = [0, 0, 0]);
+          col[0] = c.r; col[1] = c.g; col[2] = c.b;
+        }
         for (const lz of [-1.2, 0, 1.2]) {
           const [gx, gy, gz] = W(0, 0.12, lz);
-          fx.emit('glow', gx, gy, gz, 0, 0, 0, 3.2, m.glowRGB);
+          fx.emit('glow', gx, gy, gz, 0, 0, 0, size, col);
         }
       }
     }
@@ -513,6 +594,7 @@
     // closer camera so body roll and squat are easy to read.
     follow(rs, dt, o) {
       const c = this.cam;
+      if (c.mode === 'tv' && !o && this.track) return this._tvCam(rs, dt);
       const P = CAMS[c.mode] || CAMS.follow;
       const speed = Math.hypot(rs.vx, rs.vz);
       const vdir = speed > 3 ? Math.atan2(rs.vx, rs.vz) : rs.h;
@@ -541,6 +623,43 @@
       }
       this._fov(fovT, dt);
       this._place(c.fx, c.fz, c.yaw, c.dist, (o && o.pitch) || P[2], dt);
+    }
+
+    // v5 TV cameras: posts every ~110 m round the track, alternating sides,
+    // set back beyond the wall and up high. The nearest post just ahead of
+    // the car takes the shot (a hard cut between posts) and zooms so the car
+    // stays about the same size on screen.
+    _tvCam(rs, dt) {
+      const tr = this.track, c = this.cam;
+      const q = tr.query(rs.x, rs.z, this._tvHint == null ? -1 : this._tvHint, this._tvQ || (this._tvQ = {}));
+      this._tvHint = q.i;
+      const GAP = 110, n = Math.max(1, Math.floor(tr.length / GAP));
+      let k = Math.floor((q.along + 55) / GAP);
+      k = tr.closed ? ((k % n) + n) % n : U.clamp(k, 0, n);
+      const cut = k !== this._tvK;
+      this._tvK = k;
+      const pi = tr.idx(Math.round((k * GAP) / tr.sp));
+      const side = k % 2 ? 1 : -1;
+      const lat = side * (tr.wallD[pi] + 10);
+      const px = tr.X[pi] + tr.NX[pi] * lat, pz = tr.Z[pi] + tr.NZ[pi] * lat;
+      const py = Math.max(this.groundAt(px, pz), tr.Y[pi]) + 7 + ((k * 7) % 5);
+      const gy = this.groundAt(rs.x, rs.z);
+      const ax = rs.x + rs.vx * 0.25, az = rs.z + rs.vz * 0.25;
+      if (cut || c.snap) {
+        c.fx = ax; c.fz = az; c.fy = gy; c.snap = false;
+      } else {
+        c.fx = U.damp(c.fx, ax, 9, dt);
+        c.fz = U.damp(c.fz, az, 9, dt);
+        c.fy = U.damp(c.fy || 0, gy, 6, dt);
+      }
+      const d = Math.hypot(c.fx - px, c.fz - pz, c.fy - py);
+      const fovT = U.clamp((2 * Math.atan(11 / Math.max(1, d)) * 180) / Math.PI, 9, 55);
+      if (cut) c.fov = fovT;
+      this._fov(fovT, dt);
+      this.camera.position.set(px, py, pz);
+      this.camera.lookAt(c.fx, c.fy + 0.8, c.fz);
+      this.sun.position.set(c.fx + 40, c.fy + 90, c.fz + 25);
+      this.sun.target.position.set(c.fx, c.fy, c.fz);
     }
 
     _fov(target, dt) {
@@ -608,6 +727,110 @@
       this.sun.target.position.set(fx, fy, fz);
     }
 
+    // v5: the race environment from the view (raceview.js apply): race time
+    // for the moving hazards, rain, and how far the leader is round (time of
+    // day on themes that get dark during the race).
+    setEnv(t, wet, prog) {
+      const th = this.track && this.track.theme;
+      if (!th) return;
+      this.env.t = t;
+      this.env.wet = wet || 0;
+      const tod = th.night != null ? th.night : th.todTo ? th.todTo * U.clamp(prog || 0, 0, 1) : 0;
+      this._atmos(tod, th.rain ? 0 : this.env.wet);
+    }
+
+    _rainOn() {
+      const th = this.track && this.track.theme;
+      const k = th ? (th.rain ? 1 : U.clamp(this.env.wet * 1.4, 0, 1)) : 0;
+      this.rain.setOn(ST().weather && k > 0.02, k);
+    }
+
+    _atmos(tod, wet) {
+      const th = this.track.theme;
+      const key = Math.round(tod * 60) + '|' + Math.round(wet * 30);
+      if (key === this._atmKey) return;
+      this._atmKey = key;
+      const A = this._atm || (this._atm = { sky: new THREE.Color(), fog: new THREE.Color(), hs: new THREE.Color(), sc: new THREE.Color(), t: new THREE.Color(), grey: new THREE.Color() });
+      const day = { sky: th.sky, fog: th.fog, hemiSky: th.hemiSky || 0xe6f4ff, hemiI: th.hemiI || 1.6, sunCol: th.sunCol || 0xfff1d8, sunI: th.sunI || 2.3 };
+      const night = th.night ? Object.assign({}, TOD.night, { sky: th.sky, fog: th.fog }) : TOD.night;
+      const [a, b, f] = tod <= 0.5 ? [day, TOD.dusk, tod * 2] : [TOD.dusk, night, (tod - 0.5) * 2];
+      const col = (out, k) => out.set(a[k]).lerp(A.t.set(b[k]), f);
+      col(A.sky, 'sky');
+      col(A.fog, 'fog');
+      col(A.hs, 'hemiSky');
+      col(A.sc, 'sunCol');
+      let hemiI = U.lerp(a.hemiI, b.hemiI, f), sunI = U.lerp(a.sunI, b.sunI, f);
+      if (wet > 0) {
+        A.grey.set(0x9aa6b2).lerp(A.t.set(0x1d2333), U.clamp(tod * 1.4, 0, 1));
+        A.fog.lerp(A.grey, 0.5 * wet);
+        A.sky.lerp(A.grey, 0.6 * wet);
+        sunI *= 1 - 0.55 * wet;
+        hemiI *= 1 - 0.12 * wet;
+      }
+      const gk = 1 - 0.55 * U.clamp((tod - 0.4) / 0.6, 0, 1);
+      this.scene.background.copy(A.fog);
+      this.scene.fog.color.copy(A.fog);
+      this.scene.fog.near = (th.fogNear || 170) * (1 - 0.3 * wet);
+      this.scene.fog.far = (th.fogFar || 560) * (1 - 0.3 * wet);
+      this.hemi.color.copy(A.hs);
+      this.hemi.groundColor.set(th.ground).multiplyScalar(0.8 * gk);
+      this.hemi.intensity = hemiI;
+      this.sun.color.copy(A.sc);
+      this.sun.intensity = sunI;
+      this._paintSky({ sky: A.sky.getHex(), fog: A.fog.getHex(), ground: th.ground, _gk: gk });
+      // sun by day, a pale moon by night; stars once it's properly dark
+      const night01 = U.clamp((tod - 0.55) / 0.35, 0, 1);
+      const sun = this.sky.userData.sun, stars = this.sky.userData.stars;
+      sun.material.color.set(0xfff6d8).lerp(A.t.set(0xdfe6ff), night01);
+      sun.scale.setScalar(1 - 0.45 * night01);
+      sun.visible = wet < 0.6;
+      stars.material.opacity = night01 * (1 - wet) * 0.9;
+      stars.visible = stars.material.opacity > 0.02;
+      this.env.tod = tod;
+      this.env.night = night01;
+      // lamps, light pools and neon built by trackmesh.js
+      const nm = this.trackGroup && this.trackGroup.userData.nightMats;
+      if (nm) for (const it of nm) {
+        it.mat.opacity = it.base * night01;
+        it.obj.visible = night01 > 0.02;
+      }
+      if (this._beamMat) this._beamMat.opacity = 0.3 * night01;
+      this._rainOn();
+    }
+
+    // v5 headlights at dusk/night: a soft beam on the road ahead of every car
+    // (one shared additive quad), lens glows near the camera, and one real
+    // spotlight on the car the camera follows.
+    _beam() {
+      if (this._beamGeo) return;
+      const cv = document.createElement('canvas');
+      cv.width = 64;
+      cv.height = 128;
+      const g = cv.getContext('2d');
+      const grd = g.createLinearGradient(0, 128, 0, 0);
+      grd.addColorStop(0, 'rgba(255,244,214,1)');
+      grd.addColorStop(0.35, 'rgba(255,240,200,0.55)');
+      grd.addColorStop(1, 'rgba(255,236,190,0)');
+      g.fillStyle = grd;
+      g.fillRect(0, 0, 64, 128);
+      const side = g.createLinearGradient(0, 0, 64, 0);
+      side.addColorStop(0, 'rgba(0,0,0,1)');
+      side.addColorStop(0.3, 'rgba(0,0,0,0)');
+      side.addColorStop(0.7, 'rgba(0,0,0,0)');
+      side.addColorStop(1, 'rgba(0,0,0,1)');
+      g.globalCompositeOperation = 'destination-out';
+      g.fillStyle = side;
+      g.fillRect(0, 0, 64, 128);
+      const tex = new THREE.CanvasTexture(cv);
+      // a trapezoid from the bumper (2.2 m wide) to 26 m ahead (11 m wide)
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute([-1.1, 0, 0, 1.1, 0, 0, 5.5, 0, 26, -5.5, 0, 26], 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+      geo.setIndex([0, 2, 1, 0, 3, 2]);
+      this._beamGeo = geo;
+      this._beamMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.3 * this.env.night, blending: THREE.AdditiveBlending, depthWrite: false, fog: true });
+    }
+
     project(x, y, z, out) {
       const v = (this._pv = this._pv || new THREE.Vector3());
       v.set(x, y, z).project(this.camera);
@@ -623,7 +846,7 @@
       this.time += dt;
       this.fx.update(dt);
       this.skids.update();
-      this.rain.update(dt, this.cam.fx, this.cam.fz);
+      this.rain.update(dt, this.cam.fx, this.cam.fz, this.cam.fy || 0);
       const anim = this.trackGroup && this.trackGroup.userData.anim;
       if (anim) anim(this.time, dt);
       this.sky.position.copy(this.camera.position);

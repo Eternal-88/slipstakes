@@ -323,6 +323,63 @@
       roof: [-0.55, 0.25, 1.14], hood: [1.15, 2.1, 0.66], trunkZ: -1.95, trunkY: 0.82, wheelZ: [1.45, -1.3], doors: [0.8, -0.5],
       deck: [-1.85, -1.05],
     },
+    // v5: kei box — tiny, narrow and tall, stubby bonnet, big glasshouse
+    kei: {
+      body: [
+        { z: -1.7, yb: 0.3, ym: 0.56, yt: 0.86, wb: 0.66, wm: 0.72, wt: 0.68 },
+        { z: -1.55, yb: 0.26, ym: 0.58, yt: 0.92, wb: 0.68, wm: 0.74, wt: 0.71 },
+        { z: 0.9, yb: 0.26, ym: 0.58, yt: 0.92, wb: 0.68, wm: 0.74, wt: 0.71 },
+        { z: 1.45, yb: 0.26, ym: 0.54, yt: 0.8, wb: 0.68, wm: 0.73, wt: 0.68 },
+        { z: 1.7, yb: 0.3, ym: 0.48, yt: 0.66, wb: 0.64, wm: 0.7, wt: 0.62 },
+      ],
+      cabin: [
+        { z: -1.66, yb: 0.92, yt: 1.46, wb: 0.7, wt: 0.62 },
+        { z: -1.5, yb: 0.92, yt: 1.58, wb: 0.71, wt: 0.63 },
+        { z: 0.45, yb: 0.92, yt: 1.58, wb: 0.71, wt: 0.63 },
+        { z: 1.15, yb: 0.9, yt: 0.96, wb: 0.7, wt: 0.66 },
+      ],
+      roof: [-1.5, 0.45, 1.58], hood: [1.15, 1.65, 0.9], trunkZ: -1.65, trunkY: 1.46, wheelZ: [1.08, -1.1], doors: [0.95, -0.4],
+      hlX: 0.44, grilleW: 0.5,
+    },
+    // v5: electric fastback — smooth and low, long glass roof, no grille or
+    // exhaust, a light bar across the nose and tail
+    ev: {
+      body: [
+        { z: -2.35, yb: 0.3, ym: 0.54, yt: 0.78, wb: 0.84, wm: 0.94, wt: 0.84 },
+        { z: -2.1, yb: 0.22, ym: 0.56, yt: 0.86, wb: 0.88, wm: 0.97, wt: 0.88 },
+        { z: 0.6, yb: 0.22, ym: 0.56, yt: 0.84, wb: 0.88, wm: 0.97, wt: 0.88 },
+        { z: 1.7, yb: 0.22, ym: 0.5, yt: 0.7, wb: 0.86, wm: 0.95, wt: 0.82 },
+        { z: 2.35, yb: 0.26, ym: 0.4, yt: 0.52, wb: 0.8, wm: 0.88, wt: 0.68 },
+      ],
+      cabin: [
+        { z: -2.05, yb: 0.84, yt: 0.9, wb: 0.84, wt: 0.74 },
+        { z: -1.1, yb: 0.86, yt: 1.3, wb: 0.86, wt: 0.66 },
+        { z: 0.3, yb: 0.86, yt: 1.34, wb: 0.86, wt: 0.66 },
+        { z: 1.3, yb: 0.8, yt: 0.84, wb: 0.84, wt: 0.8 },
+      ],
+      roof: [-1.1, 0.3, 1.34], hood: [1.3, 2.25, 0.8], trunkZ: -2.1, trunkY: 0.88, wheelZ: [1.5, -1.45], doors: [0.8, -0.9],
+      flush: true, glassRoof: true,
+    },
+    // v5: Group B rally wedge — boxy, big flared arches, stock rear wing,
+    // roof scoop, lamp pod and mud flaps whatever you fit
+    rally: {
+      body: [
+        { z: -2.05, yb: 0.32, ym: 0.58, yt: 0.86, wb: 0.84, wm: 0.9, wt: 0.82 },
+        { z: -1.85, yb: 0.26, ym: 0.6, yt: 0.92, wb: 0.88, wm: 0.92, wt: 0.86 },
+        { z: -0.9, yb: 0.26, ym: 0.6, yt: 0.92, wb: 0.86, wm: 0.9, wt: 0.84 },
+        { z: 0.7, yb: 0.26, ym: 0.6, yt: 0.9, wb: 0.86, wm: 0.9, wt: 0.84 },
+        { z: 1.6, yb: 0.26, ym: 0.56, yt: 0.8, wb: 0.86, wm: 0.92, wt: 0.82 },
+        { z: 2.05, yb: 0.3, ym: 0.48, yt: 0.64, wb: 0.8, wm: 0.86, wt: 0.72 },
+      ],
+      cabin: [
+        { z: -1.7, yb: 0.92, yt: 1.02, wb: 0.84, wt: 0.72 },
+        { z: -1.2, yb: 0.92, yt: 1.38, wb: 0.84, wt: 0.66 },
+        { z: 0.25, yb: 0.92, yt: 1.4, wb: 0.84, wt: 0.66 },
+        { z: 1.0, yb: 0.9, yt: 0.94, wb: 0.84, wt: 0.8 },
+      ],
+      roof: [-1.2, 0.25, 1.4], hood: [1.0, 1.95, 0.9], trunkZ: -1.9, trunkY: 1.02, wheelZ: [1.3, -1.2], doors: [0.85, -0.5],
+      rallyKit: true,
+    },
   };
 
   function lighten(hex, k) {
@@ -514,6 +571,39 @@
     };
     const midS = secAt(B, 0);
     sideBand(midS.yb + 0.005, midS.yb + 0.075, dark, rz + 0.25, fz - 0.3); // skirts
+    // v5 liveries: tiger slashes on the flanks, a lightning bolt, hood chevrons
+    const sidePoly = (pts, col, lift) => {
+      // pts: [[y, z], ...] a convex quad laid on both flanks
+      for (const sx of [-1, 1]) {
+        const P3 = ([y, z]) => [sx * (surfX(secAt(B, z), y) + lift), y, z];
+        gb.quadN(P3(pts[0]), P3(pts[1]), P3(pts[2]), P3(pts[3]), col, [sx, 0, 0]);
+      }
+    };
+    if (L.livery === 'tiger') {
+      const [wf, wr] = B.wheelZ;
+      const y0 = midS.ym - 0.1, y1 = midS.yt - 0.03;
+      for (let k = 0; k < 5; k++) {
+        const z = U.lerp(wr + 0.5, wf - 0.4, k / 4), w = 0.07 + (k % 2) * 0.03;
+        sidePoly([[y0, z - 0.18], [y0, z - 0.18 + w], [y1, z + 0.12 + w * 0.4], [y1, z + 0.12]], acc, 0.022);
+      }
+    } else if (L.livery === 'bolt') {
+      const [wf, wr] = B.wheelZ;
+      const ym = midS.ym + 0.05, a = wr + 0.45, b = wf - 0.45, m1 = U.lerp(a, b, 0.4), m2 = U.lerp(a, b, 0.62);
+      sidePoly([[ym - 0.03, a], [ym + 0.03, a], [ym + 0.12, m1], [ym + 0.04, m1]], acc, 0.022);
+      sidePoly([[ym + 0.04, m1 - 0.06], [ym + 0.12, m1], [ym - 0.02, m2], [ym - 0.1, m2 - 0.06]], acc, 0.023);
+      sidePoly([[ym - 0.1, m2 - 0.06], [ym - 0.02, m2], [ym + 0.02, b], [ym - 0.01, b]], acc, 0.022);
+    }
+    if (L.livery === 'chevron') {
+      const [hz0, hz1] = zones[0];
+      for (let k = 0; k < 3; k++) {
+        const zc = U.lerp(hz0 + 0.15, hz1 - 0.2, k / 2.2), d = 0.14;
+        const y = (z) => topY(z) + 0.02;
+        for (const sx of [-1, 1]) {
+          const P3 = (x, z) => [x, y(z), z];
+          gb.quadN(P3(0, zc + d), P3(sx * 0.02, zc + d + 0.12), P3(sx * 0.55, zc - 0.12 + 0.12), P3(sx * 0.55, zc - 0.12), acc, [0, 1, 0]);
+        }
+      }
+    }
     if (L.livery === 'side' || L.livery === 'race') {
       // runs between the wheel arches, like the real thing
       const [wf, wr] = B.wheelZ;
@@ -611,9 +701,14 @@
     }
 
     // ---- nose + tail
-    const grilleW = car.body === 'muscle' ? 1.2 : 0.9;
-    gb.box(0, fy - 0.14, fz - 0.025, grilleW, 0.15, 0.06, dark);
-    for (let k = 0; k < 3; k++) gb.box(0, fy - 0.19 + k * 0.05, fz + 0.008, grilleW - 0.06, 0.012, 0.02, car.body === 'muscle' ? chrome : carbon);
+    const grilleW = B.grilleW || (car.body === 'muscle' ? 1.2 : 0.9);
+    if (B.flush) {
+      // (v5 EV: no grille — a closed nose with a light bar)
+      gb.box(0, fy - 0.02, fz + 0.01, fS.wm * 2 - 0.3, 0.025, 0.03, light);
+    } else {
+      gb.box(0, fy - 0.14, fz - 0.025, grilleW, 0.15, 0.06, dark);
+      for (let k = 0; k < 3; k++) gb.box(0, fy - 0.19 + k * 0.05, fz + 0.008, grilleW - 0.06, 0.012, 0.02, car.body === 'muscle' ? chrome : carbon);
+    }
     gb.box(0, fS.yb + 0.07, fz - 0.03, fS.wb * 2 - 0.1, 0.12, 0.08, dark); // lower bumper
     // plate: white back plate, then the lighter face 1 cm proud (was 1 mm)
     gb.box(0, fS.yb + 0.16, fz + 0.015, 0.44, 0.1, 0.02, white);
@@ -621,7 +716,7 @@
     // headlights: bezel + lens + DRL strip. The bezel's face used to sit
     // exactly ON the nose (same plane = z-fighting); now every layer stands
     // proud of the one behind it, and the DRL no longer overlaps the lens.
-    const hlX = car.body === 'hatch' || car.body === 'muscle' ? 0.6 : 0.56;
+    const hlX = B.hlX || (car.body === 'hatch' || car.body === 'muscle' ? 0.6 : 0.56);
     for (const sx of [-1, 1]) {
       gb.box(sx * hlX, fy, fz - 0.02, 0.4, 0.16, 0.06, dark);
       gb.box(sx * hlX, fy + 0.02, fz, 0.34, 0.08, 0.05, light);
@@ -635,9 +730,19 @@
     const exKind = P.exhaust;
     const exR = (P.induction === 't2' ? 0.075 : P.induction === 'na' ? 0.045 : 0.06) + (exKind === 'straight' ? 0.03 : exKind === 'sport' ? 0.012 : 0);
     const exY = rS.yb + 0.08;
-    const exXs = car.body === 'muscle' || P.induction !== 'na' || exKind !== 'stock' ? [0.45, -0.45] : [0.45];
+    const exXs = car.body === 'muscle' || P.induction !== 'na' || exKind !== 'stock' ? [0.45, -0.45] : [car.body === 'kei' ? 0.35 : 0.45];
     if (exKind === 'straight' && car.body !== 'muscle') exXs.splice(0, exXs.length, 0.12, -0.12); // centre-exit
-    for (const x of exXs) gb.cylZ(x, exY, rz - 0.06, exR, 0.2, 8, chrome, black);
+    if (car.ev) exXs.length = 0; // (v5: nothing to exhaust)
+    // v5 exhaust tips (looks): quad, burnt titanium, or out of the sides
+    const tipCol = L.tips === 'burnt' ? C(0x6a62c8) : chrome;
+    if (L.tips === 'quad' && exXs.length) exXs.splice(0, exXs.length, ...exXs.flatMap((x) => [x + 0.09, x - 0.09]));
+    if (L.tips !== 'side') for (const x of exXs) gb.cylZ(x, exY, rz - 0.06, exR, 0.2, 8, tipCol, black);
+    else if (!car.ev) for (const sx of [-1, 1]) {
+      const zc = (B.wheelZ[0] + B.wheelZ[1]) / 2 - 0.2, sS = secAt(B, zc);
+      gb.box(sx * (surfX(sS, sS.yb + 0.05) + 0.06), sS.yb + 0.02, zc, 0.12, 0.12, 0.7, black);
+      gb.box(sx * (surfX(sS, sS.yb + 0.05) + 0.13), sS.yb + 0.02, zc + 0.36, 0.1, 0.1, 0.04, C(0x6a62c8));
+    }
+    if (B.flush) gb.box(0, ry + 0.06, rz - 0.01, rS.wm * 2 - 0.25, 0.03, 0.03, C(0x8a1010)); // light bar
     const tailStart = gb.n;
     for (const sx of [-1, 1]) {
       gb.box(sx * 0.56, ry, rz + 0.02, 0.42, 0.12, 0.06, C(0x8a1010));
@@ -746,6 +851,65 @@
       gb.box(0, fy + 0.02, fz + 0.06, 0.9, 0.14, 0.06, black);
       for (const lx of [-0.3, -0.1, 0.1, 0.3]) gb.box(lx, fy + 0.02, fz + 0.1, 0.14, 0.1, 0.03, light);
     }
+    // v5 body kits (looks only)
+    if (L.kit === 'street' || L.kit === 'wide') {
+      gb.box(0, fS.yb - 0.04, fz - 0.06, fS.wb * 2 + 0.06, 0.03, 0.26, black); // splitter
+      gb.box(0, rS.yb + 0.02, rz + 0.1, rS.wb * 2 - 0.1, 0.06, 0.24, carbon); // diffuser
+      sideBand(midS.yb - 0.03, midS.yb + 0.08, L.kit === 'wide' ? body : carbon, rz + 0.3, fz - 0.35, 0.05); // skirts
+    }
+    if (L.kit === 'wide') {
+      for (const wz of B.wheelZ) for (const sx of [-1, 1]) {
+        gb.box(sx * (wheelX + 0.07), wheelY + 0.27 * wk, wz, 0.2, 0.14, 1.0 * wk, body);
+        gb.box(sx * (wheelX + 0.11), wheelY + 0.12 * wk, wz, 0.12, 0.2, 0.9 * wk, body);
+      }
+    }
+    if (L.kit === 'bash' || L.kit === 'drift') {
+      const bx = fS.wb - 0.1, by = fS.yb + 0.12, bz = fz + 0.14;
+      gb.beam([-bx, by, bz], [bx, by, bz], 0.06, 0.06, dark);
+      gb.beam([-bx, by + 0.22, bz - 0.02], [bx, by + 0.22, bz - 0.02], 0.05, 0.05, dark);
+      for (const sx of [-1, 1]) gb.beam([sx * bx, by - 0.02, bz], [sx * bx, by + 0.24, bz - 0.02], 0.05, 0.05, dark);
+      for (const sx of [-1, 1]) gb.beam([sx * (bx - 0.05), by, bz], [sx * (bx - 0.05), by, fz - 0.1], 0.04, 0.04, dark);
+    }
+    if (L.kit === 'drift') {
+      for (const sx of [-1, 1]) gb.box(sx * (fS.wm - 0.02), fy - 0.12, fz - 0.2, 0.26, 0.025, 0.18, carbon, sx * 0.35); // canards
+      if (B.roof) gb.box(0, B.roof[2] + 0.08, B.roof[1] - 0.25, 0.4, 0.08, 0.28, carbon); // roof vent
+    }
+    if (L.spoiler !== 'none' && P.aero === 'none' && !B.rallyKit && !B.bed) {
+      if (L.spoiler === 'duck') {
+        gb.box(0, ty + 0.05, tz - 0.08, rS.wt * 2 - 0.1, 0.06, 0.2, body, 0);
+        gb.beam([-(rS.wt - 0.06), ty + 0.08, tz - 0.16], [rS.wt - 0.06, ty + 0.08, tz - 0.16], 0.05, 0.1, body);
+      } else if (L.spoiler === 'whale') {
+        gb.box(0, ty + 0.1, tz - 0.05, 1.5, 0.05, 0.5, body);
+        gb.box(0, ty + 0.16, tz - 0.3, 1.5, 0.12, 0.04, black);
+        for (const sx of [-0.75, 0.75]) gb.box(sx, ty + 0.12, tz - 0.05, 0.04, 0.1, 0.5, black);
+      } else if (L.spoiler === 'roof' && B.roof) {
+        const [rz0, , ryy] = B.roof;
+        gb.box(0, ryy + 0.04, rz0 - 0.1, cab[1].wt * 2 + 0.05, 0.04, 0.34, L.livery === 'none' ? body : acc);
+      }
+    }
+    if (B.rallyKit) {
+      // v5 Group B: roof scoop, a tall rear wing (unless an aero part replaces
+      // it), mud flaps, a four-lamp pod and box flares over every wheel
+      const [rz0, rz1, ryy] = B.roof;
+      gb.box(0, ryy + 0.09, rz1 - 0.35, 0.36, 0.12, 0.5, L.livery === 'none' ? body : acc);
+      gb.box(0, ryy + 0.09, rz1 - 0.1, 0.3, 0.08, 0.02, black);
+      if (P.aero === 'none') {
+        const wy = ty + 0.34;
+        for (const sx of [-0.55, 0.55]) gb.beam([sx, ty, tz - 0.05], [sx, wy, tz - 0.12], 0.05, 0.12, black);
+        gb.box(0, wy + 0.02, tz - 0.14, 1.7, 0.05, 0.42, L.livery === 'none' ? body : acc);
+        for (const sx of [-0.85, 0.85]) gb.box(sx, wy + 0.1, tz - 0.14, 0.04, 0.2, 0.46, black);
+      }
+      for (const wz of B.wheelZ) for (const sx of [-1, 1]) gb.box(sx * (wheelX + 0.04), wheelY + 0.3 * wk, wz, 0.16, 0.12, 0.95 * wk, body);
+      if (P.suspension !== 'rally') {
+        for (const sx of [-1, 1]) gb.box(sx * wheelX, WR - 0.05, B.wheelZ[1] - 0.45 * wk, 0.3, 0.34, 0.03, black);
+        gb.box(0, fy + 0.02, fz + 0.06, 0.9, 0.14, 0.06, black);
+        for (const lx of [-0.3, -0.1, 0.1, 0.3]) gb.box(lx, fy + 0.02, fz + 0.1, 0.14, 0.1, 0.03, light);
+      }
+    }
+    if (B.glassRoof) {
+      const [gz0, gz1, gy] = B.roof;
+      gb.box(0, gy + 0.056, (gz0 + gz1) / 2, cab[1].wt * 2 - 0.2, 0.012, gz1 - gz0 - 0.1, glass);
+    }
     if (P.weight !== 'stock') gb.box(0.3, fS.yb + 0.05, fz + 0.02, 0.06, 0.12, 0.06, C(0xff3030)); // tow strap
 
     const mat = G.CarModel.material();
@@ -801,7 +965,7 @@
       wheelLocal: xs.map((x, i) => [x, zs[i]]),
       tailLocal: [[0.56, ry + rideH, rz - 0.05], [-0.56, ry + rideH, rz - 0.05]],
       tail: { s: tailStart, e: tailEnd, rs: revStart, re: revEnd, on: 0, rev: 0 },
-      glow: G.Parts.GLOW_COL[L.glow] || 0,
+      glow: G.Parts.GLOW_COL[L.glow] || 0, glowFx: L.glowFx || 'steady',
       len: car.len, rollGain: su.roll * (1 - 0.035 * (T.arbF + T.arbR - 10)),
       // visual suspension springs
       roll: 0, rollV: 0, pitch: 0, pitchV: 0, heave: 0, spinA: 0,

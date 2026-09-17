@@ -262,9 +262,9 @@
     // Quick race: a REAL race (laps, finish, results, play-money prize) —
     // not endless practice.
     async quickRace(trackId) {
-      const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag');
+      const ids = this._quickIds();
       const pick = trackId || ids[Math.floor(Math.random() * ids.length)];
-      this._qField = G.BotKit.field(8, G.Settings.s.botLevel); // a fresh, varied field every quick race
+      this._qField = G.BotKit.field(8, G.Settings.s.botLevel, null, pick); // a fresh, varied field every quick race (cars to suit the track)
       await this._offerQuickBet(pick);
       this.startDrive({ trackId: pick, bots: 5, quick: true });
     },
@@ -274,8 +274,13 @@
       const cur = this.sim.track.id;
       this._applyDriveWear();
       if (!nextTrack) return this.quickRace(cur);
-      const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag' && id !== cur);
+      const ids = this._quickIds().filter((id) => id !== cur);
       this.quickRace(ids[Math.floor(Math.random() * ids.length)]);
+    },
+    // v5: endurance quick races only go to circuits with a pit box
+    _quickIds() {
+      if (G.Settings.s.quickMode === 'endurance') return G.TrackDefs.ENDURANCE.slice();
+      return G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag');
     },
 
     // Quick-race bots: same car / parts per grid slot every race, so the
@@ -305,7 +310,7 @@
       if (!me || G.Game.role) return;
       const E = G.Econ, track = G.getTrack(trackId);
       const lvl = G.Settings.s.botLevel;
-      const skill = lvl === 'easy' ? 0.83 : lvl === 'hard' ? 0.975 : 0.91;
+      const range = G.BotKit.level(lvl).skill, skill = (range[0] + range[1]) / 2;
       const field = [{ id: 'me', carId: me.carId, garage: me.garage, stats: { form: [] }, isBot: false }];
       for (let k = 0; k < 5; k++) field.push({ id: 'b' + k, carId: this._botCar(k), garage: { installed: this._botParts(k), wear: {}, tune: {} }, stats: { form: [] }, isBot: true, botSkill: skill });
       const o = E.computeOdds(field, track, U.hashStr(trackId + lvl + me.carId)).me;
@@ -337,7 +342,7 @@
       const res = sim.results();
       const meRow = res.find((r) => r.id === 'me');
       const PRIZES = [1500, 1100, 850, 650, 500, 400, 300, 250];
-      const prize = meRow.finished ? PRIZES[meRow.pos - 1] || 200 : 0;
+      const prize = meRow.finished ? Math.round(((PRIZES[meRow.pos - 1] || 200) * (sim.endu ? 2.2 : 1)) / 10) * 10 : 0;
       const fuel = Math.round(sim.byId.me.st.fuel);
       const me = this.host.player('me');
       // settle a "back yourself" bet
@@ -374,17 +379,19 @@
       const ents = [{ id: 'me', name: me.name, carId, color: me.color, parts, wear, tune, look, bot: opts.auto ? { skill: 0.95 } : null }];
       // bot difficulty (Settings / practice screen): skill = how close to the
       // grip limit they dare to corner. Hard bots also bring better parts.
+      // (v5: six levels, bot.js LEVELS: skill range, racing line, braking, mistakes, rivals)
       const lvl = G.Settings.s.botLevel;
-      const [lo, hi] = lvl === 'easy' ? [0.8, 0.86] : lvl === 'hard' ? [0.95, 1.0] : [0.87, 0.95];
       for (let k = 0; k < (opts.bots || 0); k++) {
         const f = this._botField()[k % 8];
-        ents.push({ id: 'bot' + k, name: f.name, carId: f.carId, color: G.CarModel.PALETTE[(k + 1) % 8], parts: f.parts, wear: {}, look: f.look, bot: { skill: lo + (hi - lo) * Math.random() } });
+        ents.push({ id: 'bot' + k, name: f.name, carId: f.carId, color: G.CarModel.PALETTE[(k + 1) % 8], parts: f.parts, wear: {}, look: f.look, bot: { skill: G.BotKit.skillFor(lvl), level: lvl } });
       }
       const quick = !!opts.quick;
       if (quick && ents.length > 3) ents.splice(3, 0, ents.shift()); // you start mid-pack
       // catch-up only in real (quick) races, at the player's chosen strength
       const catchup = quick ? G.Settings.CATCHUP[G.Settings.s.catchup] || 0 : 0;
-      this.sim = new G.RaceSim(track, ents, { countdown: quick ? 3.5 : 2.5, practice: !quick, catchup });
+      const endu = quick && G.Settings.s.quickMode === 'endurance' && track.pit ? G.RaceEnv.endu(track) : null;
+      const weather = quick ? G.RaceEnv.roll(track, G.Settings.s.raceWeather, null, endu && endu.laps) : null;
+      this.sim = new G.RaceSim(track, ents, { countdown: quick ? 3.5 : 2.5, practice: !quick, catchup, weather, endu });
       this.attract = null;
       this.world.setCars(ents);
       this.world.cam.snap = true;
@@ -404,7 +411,7 @@
       if (!this.drive) return '';
       if (this.drive.test) return `<b>TEST DRIVE</b> candidate build · no wear · ${Math.max(0, Math.ceil(this.drive.limit - this.drive.t))} s left`;
       const pb = this.drive.direct ? null : this.getPB(this.sim.track.id, this.sim.byId.me.carId);
-      const lvl = { easy: 'Easy', normal: 'Normal', hard: 'Hard' }[G.Settings.s.botLevel] || 'Normal';
+      const lvl = G.BotKit.level(G.Settings.s.botLevel).name;
       return `<b>${this.drive.quick ? 'QUICK RACE' : 'FREE PRACTICE'}</b> ${U.esc(this.sim.track.name)} · ${this.paused ? 'PAUSED' : this.drive.quick ? lvl + ' bots · 1st pays $1,500' : 'wear counts'}${pb ? ` · <b>PB ${U.fmtTime(pb)}</b>` : ''}`;
     },
 
@@ -458,8 +465,9 @@
       const inp = G.Input.read();
       if (G.Input.hitAction('reset')) inp.rs = 1;
       if (G.Input.hitAction('cam')) G.UI.toast('Camera: ' + this.world.cycleCam(), 'info');
+      if (G.Input.hitAction('horn') && this.sim.byId.me) G.RaceView.honk(this.sim.byId.me.carId);
       sim.setInput('me', inp);
-      this.acc += dt;
+      this.acc += dt * ((G.Ops && G.Ops.timeScale) || 1); // (slow motion for testing: ops.js)
       let n = 0;
       while (this.acc >= P.DT && n < 12) {
         sim.step();
@@ -498,7 +506,7 @@
     },
 
     musicFor() {
-      const race = G.Settings.s.raceMusic ? 'menu' : null;
+      const race = G.Settings.s.raceMusic ? this.raceSong() : null;
       if (this.mode === 'menu') return 'menu';
       if (this.mode === 'garage') return 'garage';
       if (this.mode === 'drive') return race;
@@ -513,11 +521,33 @@
       return null;
     },
 
+    // v5: a song to suit the race — synthwave at night, breakbeat on the
+    // loose stuff, a long steady groove for endurance, otherwise the racer
+    raceSong() {
+      const tr = this.world && this.world.track;
+      const sim = this.sim || (G.Game.hostRace && G.Game.hostRace.sim);
+      const endu = (sim && sim.endu) || (G.Game.clientRace && G.Game.clientRace.endu);
+      if (endu) return 'endurance';
+      if (!tr) return 'race';
+      const th = tr.theme;
+      if (th.night || (this.world.env && this.world.env.night > 0.6)) return 'night';
+      if (this._songTrack !== tr) {
+        // (asked every frame: work out the loose share once per track)
+        let loose = 0;
+        for (let i = 0; i < tr.N; i += 8) if (G.SURF[tr.S[i]].loose || G.SURF[tr.S[i]].icy) loose++;
+        this._songTrack = tr;
+        this._songLoose = loose / (tr.N / 8) > 0.25 || th.props === 'forest' || th.trees === 'cactus';
+      }
+      return this._songLoose ? 'rally' : 'race';
+    },
+
     // ---------------------------------------------------------------- loop
     frame(now) {
       requestAnimationFrame((t) => this.frame(t));
       now = performance.now(); // same clock as the worker ticker
       this.lastRaf = now;
+      const cap = G.Ops && G.Ops.fpsCap; // (a test frame-rate cap: ops.js)
+      if (cap && now - this.last < 1000 / cap - 1.5) return;
       const dt = Math.min(0.1, Math.max(0, (now - this.last) / 1000));
       this.last = now;
       if (G.Audio) G.Audio._fed = false;

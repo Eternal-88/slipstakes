@@ -20,10 +20,12 @@
       id: o.id, name: (o.name || 'Driver').slice(0, 16), token: o.token || null, isBot: !!o.isBot, color: o.color,
       carId: o.carId || 'vandal', connected: true, money: o.money != null ? o.money : START_MONEY,
       garage: Parts.newGarage(o.carId || 'vandal'),
-      stats: { wins: 0, podiums: 0, races: 0, earned: 0, spent: 0, fuel: 0, repairs: 0, casino: 0, bets: 0, sold: 0, history: [], form: [] },
+      stats: { wins: 0, podiums: 0, races: 0, earned: 0, spent: 0, fuel: 0, repairs: 0, casino: 0, bets: 0, sold: 0, history: [], form: [], points: 0 },
       ready: false, entry: null, botSkill: o.botSkill || 0, joinedAt: Date.now(),
     };
   }
+
+  const POINTS = [25, 18, 15, 12, 10, 8, 6, 4]; // v5 championship
 
   class HostSession extends U.Emitter {
     constructor(opts) {
@@ -34,7 +36,7 @@
         phase: opts.sandbox ? 'sandbox' : 'lobby', phaseEnds: 0,
         // vis: 'private' = listed with a lock, the host approves each new
         // driver; 'public' = anyone on the server list walks in.
-        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 'mild', vis: 'private', maxPlayers: 8, name: '' },
+        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 'mild', vis: 'private', maxPlayers: 8, name: '', botLevel: 'normal', weather: 'auto', mode: 'classic', champ: 'money' },
         // rid: this room's id on the server list (kept through host
         // migrations); epoch: how many times the host has changed
         rid: opts.rid || U.uid(10), epoch: 0, heirs: [],
@@ -276,7 +278,7 @@
         const name = K.names(1, Object.values(st.players).map((p) => p.name.replace(' ⚙', '')), rnd)[0];
         const style = K.style(rnd);
         const carId = K.car(style, rnd);
-        const bp = this.addPlayer({ id, name: name + ' ⚙', isBot: true, color, carId, botSkill: +(0.86 + 0.09 * rnd()).toFixed(3) });
+        const bp = this.addPlayer({ id, name: name + ' ⚙', isBot: true, color, carId, botSkill: K.skillFor(st.settings.botLevel, rnd) });
         bp.botStyle = style;
         bp.garage.look = K.look(rnd);
         const b = K.parts(style, Math.max(0, Math.min(1600, bp.money - 1400)), rnd);
@@ -300,13 +302,41 @@
       if (m.name != null) s.name = String(m.name).replace(/\s+/g, ' ').trim().slice(0, 28);
       // bots: any time but mid-race (they join or leave between races)
       if (m.bots != null && isFinite(+m.bots) && st.phase !== 'race') s.bots = U.clamp(Math.round(+m.bots), 0, 7);
+      // v5: bot difficulty, any time (it applies from the next race)
+      if (m.botLevel && G.BotKit.LEVELS[m.botLevel] && m.botLevel !== s.botLevel) {
+        s.botLevel = m.botLevel;
+        for (const b of this.bots()) b.botSkill = G.BotKit.skillFor(m.botLevel);
+      }
+      if (m.weather && G.RaceEnv.MODES.includes(m.weather)) s.weather = m.weather; // from the next race
       // the shape of the session: lobby only
       if (st.phase === 'lobby') {
         if (m.races != null && isFinite(+m.races)) s.races = U.clamp(Math.round(+m.races), 1, 100);
         if (m.catchup != null && G.Settings.CATCHUP[m.catchup] != null) s.catchup = m.catchup;
+        // v5: who wins the session — the richest, or the championship points leader
+        if (m.champ === 'money' || m.champ === 'points') s.champ = m.champ;
+        // v5: classic (every kind of track) or endurance (long races with pit stops)
+        if ((m.mode === 'classic' || m.mode === 'endurance') && m.mode !== s.mode) {
+          s.mode = m.mode;
+          if (m.mode === 'endurance' && s.races > 4) s.races = 3; // each one is ~6 minutes
+        }
       }
       if (st.phase !== 'race') this.syncBots();
       this.touch();
+    }
+
+    // v5 endurance: this driver's pit crew has finished (ui/pit.js); the race
+    // itself checks the timing (RaceSim.pitDone)
+    on_pit(p, m) {
+      if (this.state.phase === 'race' && m) this.emit('pit', p.id, { fuel: +m.fuel || 0, tyres: m.tyres ? 1 : 0, cancel: m.cancel ? 1 : 0 });
+    }
+
+    // v5 horn (at most one every 0.6 s a driver): the race relays it to everyone
+    on_horn(p) {
+      if (this.state.phase !== 'race') return;
+      const last = (this._hornT = this._hornT || {});
+      if (Date.now() - (last[p.id] || 0) < 600) return;
+      last[p.id] = Date.now();
+      this.emit('horn', p.id);
     }
 
     on_chat(p, m) {
@@ -360,7 +390,8 @@
     // is used before any repeats (a shuffled "bag"), and the same FORMAT is
     // never raced twice in a row (so no build can dominate a stretch).
     makeSchedule(n) {
-      const all = G.TrackDefs.ROTATION.slice();
+      // (v5 endurance sessions: only circuits with a pit box)
+      const all = (this.state.settings.mode === 'endurance' ? G.TrackDefs.ENDURANCE : G.TrackDefs.ROTATION).slice();
       const fmt = (id) => G.getTrack(id).format;
       const out = [];
       let bag = [];
@@ -422,15 +453,19 @@
         no: st.raceNo + 1, trackId, startedAt: Date.now(),
         // catch-up strength travels with the race so the host's sim uses it
         catchup: G.Settings.CATCHUP[st.settings.catchup || 'mild'] || 0,
+        // v5 endurance: laps + fuel/tyre drain (RaceEnv.endu), or null
+        endu: st.settings.mode === 'endurance' && G.getTrack(trackId).pit ? G.RaceEnv.endu(G.getTrack(trackId)) : null,
         entrants: racers.map((p) => ({
           id: p.id, name: p.name, carId: p.carId, color: p.color,
           parts: Object.assign({}, p.garage.installed), wear: Object.assign({}, p.garage.wear),
           // setup + looks travel with the entrant so every peer builds the
           // same spec (prediction) and the same model
           tune: Parts.effTune(p.garage.installed, p.garage.tune), look: Object.assign({}, p.garage.look),
-          bot: p.isBot ? { skill: p.botSkill } : null,
+          bot: p.isBot ? { skill: p.botSkill, level: st.settings.botLevel || 'normal' } : null,
         })),
       };
+      // v5 weather roll (host setting): every peer sees the same shower
+      st.race.weather = G.RaceEnv.roll(G.getTrack(trackId), st.settings.weather || 'auto', null, st.race.endu && st.race.endu.laps);
       for (const p of Object.values(st.players)) p.ready = false;
       if (this.voidPendingSide) this.voidPendingSide(); // unanswered challenges don't carry into the race
       this.setPhase('race', 0);
@@ -454,9 +489,12 @@
           if (!r.dnf && r.pos === 1) p.stats.wins++;
           if (!r.dnf && r.pos <= 3) p.stats.podiums++;
         }
-        rows.push({ id: r.id, name: e ? e.name : '?', color: e ? e.color : 0, pos: r.pos, dnf: r.dnf, ms: r.ms, bestLap: r.bestLap, grid: r.grid, fuel: Math.round(r.fuel), dist: r.dist });
+        // v5 championship points: 25-18-15-12-10-8-6-4, +1 for the fastest lap
+        const pts = r.dnf ? 0 : (POINTS[r.pos - 1] || 0) + (sim && sim.fastest && sim.fastest.id === r.id ? 1 : 0);
+        if (p) p.stats.points = (p.stats.points || 0) + pts;
+        rows.push({ id: r.id, name: e ? e.name : '?', color: e ? e.color : 0, pos: r.pos, dnf: r.dnf, ms: r.ms, bestLap: r.bestLap, grid: r.grid, fuel: Math.round(r.fuel), dist: r.dist, pts, stops: r.stops || 0 });
       }
-      st.results = { no: st.race.no, trackId: st.race.trackId, rows, fastest: sim && sim.fastest ? sim.fastest : null };
+      st.results = { no: st.race.no, trackId: st.race.trackId, endu: !!st.race.endu, rows, fastest: sim && sim.fastest ? sim.fastest : null };
       this.onRaceResults && this.onRaceResults(st.results, sim);
       st.raceNo++;
       st.race = null;
@@ -481,11 +519,13 @@
 
     toFinal() {
       const st = this.state;
+      const byPoints = st.settings.champ === 'points';
       st.final = {
         at: Date.now(),
+        champ: byPoints ? 'points' : 'money',
         rows: Object.values(st.players)
           .map((p) => ({ id: p.id, name: p.name, color: p.color, isBot: p.isBot, worth: this.netWorth(p), money: p.money, stats: p.stats }))
-          .sort((a, b) => b.worth - a.worth),
+          .sort((a, b) => (byPoints ? (b.stats.points || 0) - (a.stats.points || 0) || b.stats.wins - a.stats.wins || b.worth - a.worth : b.worth - a.worth)),
       };
       this.setPhase('final', 0);
     }
@@ -513,6 +553,7 @@
       const slot = Parts.SLOT_MAP[m.slot];
       const o = slot && slot.options.find((x) => x.id === m.opt);
       if (!o) return;
+      if (!Parts.partAllowed(p.carId, m.slot)) return this.toast(p.id, `The ${Parts.CARS[p.carId].name} can't take ${slot.name.toLowerCase()} parts.`, 'bad');
       const g = p.garage;
       if (g.owned[m.slot].includes(o.id)) return this.on_install(p, m);
       if (p.money < o.price) return this.toast(p.id, `Can't afford ${o.name} (${U.fmtMoney(o.price)}).`, 'bad');
@@ -677,6 +718,7 @@
         }
         const look = q.garage.look;
         q.money = START_MONEY;
+        if (!Parts.BASE_CARS.includes(q.carId)) q.carId = 'vandal'; // fresh cars: a premium one is bought again
         q.garage = Parts.newGarage(q.carId);
         q.garage.look = look;
         q.stats = newPlayer({}).stats;

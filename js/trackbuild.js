@@ -27,6 +27,9 @@
     { id: 'mud', name: 'Mud', grip: 0.55, rr: 0.15, rough: 0.5, wet: 0, loose: 1, fx: 'mud' },
     // Ice: glassy. Narrow tyres help (uses the WET multiplier), wide ones hurt.
     { id: 'ice', name: 'Ice', grip: 0.44, rr: 0.01, rough: 0.0, wet: 0, icy: 1, loose: 0, fx: 'ice' },
+    // v5 water splash (fords, flooded dips): heavy drag and little grip.
+    // (Surface codes pack into 4 bits per wheel over the network: 15 is the last.)
+    { id: 'water', name: 'Water', grip: 0.62, rr: 0.13, rough: 0.15, wet: 1, loose: 0, fx: 'splash' },
   ];
   const SI = {};
   SURF.forEach((s, i) => {
@@ -37,13 +40,15 @@
   const SPACING = 2; // metres between resampled centreline samples
 
   // Replace polygon corners that carry a radius with circular arcs.
+  // (v5: ro = run-off width and rs = run-off surface from this vertex on, for
+  // pit aprons and gravel shortcuts; default the track's runoff / theme's)
   function expandCorners(def, closed) {
-    let cur = { w: 7, s: 'tarmac', kerb: 0, bank: 0, y: 0 };
+    let cur = { w: 7, s: 'tarmac', kerb: 0, bank: 0, y: 0, ro: def.runoff, rs: null };
     const V = def.pts.map((p) => {
       const a = p[2] || {};
       const { r, ...rest } = a;
       cur = Object.assign({}, cur, rest);
-      return { x: p[0], z: p[1], r: r || 0, w: cur.w, s: cur.s, kerb: cur.kerb, bank: cur.bank, y: cur.y };
+      return { x: p[0], z: p[1], r: r || 0, w: cur.w, s: cur.s, kerb: cur.kerb, bank: cur.bank, y: cur.y, ro: cur.ro, rs: cur.rs };
     });
     const n = V.length;
     const out = [];
@@ -85,7 +90,7 @@
       const K = Math.max(2, Math.ceil(theta / (12 * Math.PI / 180)));
       for (let k = 0; k <= K; k++) {
         const a = a0 + (da * k) / K;
-        out.push({ x: Cx + Math.cos(a) * r, z: Cz + Math.sin(a) * r, w: v.w, s: v.s, kerb: v.kerb, bank: v.bank, y: v.y });
+        out.push({ x: Cx + Math.cos(a) * r, z: Cz + Math.sin(a) * r, w: v.w, s: v.s, kerb: v.kerb, bank: v.bank, y: v.y, ro: v.ro, rs: v.rs });
       }
     }
     return out;
@@ -141,7 +146,7 @@
           const t = k / m;
           const q = crPoint(p0, p1, p2, p3, t);
           const a = P[i], b = P[(i + 1) % n];
-          dense.push({ x: q.x, z: q.z, w: U.lerp(a.w, b.w, t), bank: U.lerp(a.bank, b.bank, t), y: U.lerp(a.y, b.y, t), s: a.s, kerb: a.kerb });
+          dense.push({ x: q.x, z: q.z, w: U.lerp(a.w, b.w, t), bank: U.lerp(a.bank, b.bank, t), y: U.lerp(a.y, b.y, t), s: a.s, kerb: a.kerb, ro: U.lerp(a.ro, b.ro, t), rs: a.rs });
         }
       }
       if (!this.closed) dense.push(Object.assign({}, P[n - 1]));
@@ -157,6 +162,7 @@
       this.length = this.closed ? total : (N - 1) * sp;
       const X = new Float32Array(N), Z = new Float32Array(N), W = new Float32Array(N), BKm = new Float32Array(N), Yr = new Float32Array(N);
       const S = new Uint8Array(N), KA = new Uint8Array(N);
+      const RO = new Float32Array(N), RS = new Uint8Array(N); // v5 per-sample run-off width + surface
       let j = 0;
       for (let i = 0; i < N; i++) {
         const d = i * sp;
@@ -172,6 +178,8 @@
         Yr[i] = U.lerp(a.y || 0, b.y || 0, t);
         S[i] = SI[a.s];
         KA[i] = a.kerb ? 1 : 0;
+        RO[i] = U.lerp(a.ro, b.ro, t);
+        RS[i] = a.rs && SI[a.rs] != null ? SI[a.rs] : this.runoffSurf;
       }
       // 3. Tangents, left normals, heading, curvature.
       const TX = new Float32Array(N), TZ = new Float32Array(N), NX = new Float32Array(N), NZ = new Float32Array(N);
@@ -243,9 +251,25 @@
           GR[i] = (Y[ib] - Y[ia]) / span;
         }
       }
-      Object.assign(this, { X, Z, W, S, TX, TZ, NX, NZ, H, K, D, BK, KL, KR, Y, GR });
+      Object.assign(this, { X, Z, W, S, TX, TZ, NX, NZ, H, K, D, BK, KL, KR, Y, GR, RO, RS });
+      // v5 pit box (endurance): def.pit {at, side, len}. A concrete apron on
+      // that side of the road with the box painted on it; stop in the box to
+      // pit. The apron fades in over 40 m either side so the wall steps out.
+      this.pit = null;
+      if (def.pit) {
+        const pd = def.pit, side = pd.side || -1, hl = (pd.len || 60) / 2;
+        const ic = idx(Math.round(pd.at / sp));
+        const wide = W[ic] + 13;
+        for (let k = -Math.ceil((hl + 40) / sp); k <= Math.ceil((hl + 40) / sp); k++) {
+          const j = idx(ic + k), d = Math.abs(k * sp);
+          const f = d <= hl + 10 ? 1 : 1 - (d - hl - 10) / 30;
+          RO[j] = Math.max(RO[j], U.lerp(RO[j], wide - W[j], U.clamp(f, 0, 1)));
+          if (f > 0.3) RS[j] = SI.concrete;
+        }
+        this.pit = { ic, at: D[ic], side, lat: side * (W[ic] + 7.5), hl, hw: 3.4 };
+      }
       this.wallD = new Float32Array(N);
-      for (let i = 0; i < N; i++) this.wallD[i] = W[i] + this.runoff;
+      for (let i = 0; i < N; i++) this.wallD[i] = W[i] + RO[i];
       this._hazards();
 
       // 6. Start / finish.
@@ -297,6 +321,10 @@
     //   'boost'                  speed pad: a forward kick (physics.js §5b)
     //   'barrels' | 'tyres' | 'rock'  solid obstacle of radius r (physics collideWalls)
     // Everything is indexed per centreline sample so a lookup is O(1).
+    //   v5: 'water'                           splash patch (like oil/mud/ice)
+    //       'wind' {len, str m/s², period, dir}  gusting crosswind zone (physics §8)
+    //       'rockfall' {len, spread, every, stay, r, off}  rocks drop into the zone (dynPos)
+    //       'swing' {amp, period, r, off}        a wrecking ball swinging across the road
     _hazards() {
       const N = this.N, sp = this.sp;
       this.patches = [];
@@ -305,6 +333,10 @@
       this.PT = null;
       this.PD = null;
       this.OBL = null;
+      this.winds = [];
+      this.WZ = null;
+      this.dyn = [];
+      this.DYL = null;
       const list = this.def.hazards || [];
       if (!list.length) return;
       this.PT = new Int16Array(N).fill(-1);
@@ -328,7 +360,7 @@
         }
         const ic = this.idx(Math.round(at / sp));
         at = this.D[ic];
-        if (h.k === 'oil' || h.k === 'mud' || h.k === 'ice') {
+        if (h.k === 'oil' || h.k === 'mud' || h.k === 'ice' || h.k === 'water') {
           const P = { k: h.k, ic, at, lat, hl: (h.len || 10) / 2, hw: h.hw || 2.5, surf: SI[h.k] };
           mark(this.PT, ic, P.hl, this.patches.length);
           this.patches.push(P);
@@ -336,9 +368,30 @@
           const P = { ic, at, lat, hl: (h.len || 6) / 2, hw: h.hw || 1.8, dv: h.dv || 7, vmax: h.vmax || 68 };
           mark(this.PD, ic, P.hl, this.pads.length);
           this.pads.push(P);
+        } else if (h.k === 'wind') {
+          const W = { ic, at, hl: (h.len || 40) / 2, str: h.str || 5, period: h.period || 5, ph: h.ph != null ? h.ph : (at % 7) * 0.9, dir: h.dir || 1 };
+          if (!this.WZ) this.WZ = new Int16Array(N).fill(-1);
+          mark(this.WZ, ic, W.hl, this.winds.length);
+          this.winds.push(W);
+        } else if (h.k === 'rockfall' || h.k === 'swing') {
+          const sw = h.k === 'swing';
+          this.dyn.push({ k: h.k, i: ic, at, lat, r: h.r || (sw ? 1.3 : 1.1), len: h.len || 30, spread: h.spread != null ? h.spread : 5, every: h.every || 14, stay: h.stay || 7, off: h.off || 0, amp: h.amp || 5, period: h.period || 6, seed: Math.round(at * 10) });
         } else {
           const o = { k: h.k, i: ic, at, lat, r: h.r || 0.9, x: this.X[ic] + this.NX[ic] * lat, z: this.Z[ic] + this.NZ[ic] * lat };
           this.obs.push(o);
+        }
+      }
+      if (this.dyn.length) {
+        // moving hazards near each sample (a rockfall covers its whole zone)
+        this.DYL = new Array(N).fill(null);
+        for (const o of this.dyn) {
+          const n = Math.ceil(((o.k === 'rockfall' ? o.len / 2 : 0) + 26) / sp);
+          for (let k = -n; k <= n; k++) {
+            const j = o.i + k;
+            if (!this.closed && (j < 0 || j >= N)) continue;
+            const jj = this.idx(j);
+            (this.DYL[jj] || (this.DYL[jj] = [])).push(o);
+          }
         }
       }
       if (this.obs.length) {
@@ -353,6 +406,92 @@
           }
         }
       }
+    }
+
+    // v5 racing line for the bots: a lateral offset (metres) per sample, found
+    // by relaxing the centreline toward its neighbours' midpoint inside the
+    // road (a minimum-curvature path: outside, apex, outside), plus that path's
+    // own curvature RLK for their corner speeds. Built on first use, then kept.
+    // (It stays 3 m off the edge: bots steer a little inside any line, and at
+    // 1.6 m they spent a fifth of the lap with a wheel on the kerb or grass.)
+    racingLine() {
+      if (this.RL) return this.RL;
+      const N = this.N, X = this.X, Z = this.Z, NX = this.NX, NZ = this.NZ;
+      const lat = new Float32Array(N), lim = new Float32Array(N);
+      for (let i = 0; i < N; i++) lim[i] = Math.max(0, this.W[i] - 3);
+      const relax = (k, iters) => {
+        for (let it = 0; it < iters; it++) {
+          for (let i = 0; i < N; i++) {
+            if (!this.closed && (i < k || i >= N - k)) continue;
+            const a = this.idx(i - k), b = this.idx(i + k);
+            const mx = (X[a] + NX[a] * lat[a] + X[b] + NX[b] * lat[b]) / 2;
+            const mz = (Z[a] + NZ[a] * lat[a] + Z[b] + NZ[b] * lat[b]) / 2;
+            const t = (mx - X[i]) * NX[i] + (mz - Z[i]) * NZ[i];
+            lat[i] = U.clamp(lat[i] + (t - lat[i]) * 0.5, -lim[i], lim[i]);
+          }
+        }
+      };
+      relax(10, 60); // broad shape first (20 m reach)
+      relax(4, 120); // then the detail (8 m)
+      const px = new Float32Array(N), pz = new Float32Array(N), hd = new Float32Array(N), raw = new Float32Array(N), RLK = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        px[i] = X[i] + NX[i] * lat[i];
+        pz[i] = Z[i] + NZ[i] * lat[i];
+      }
+      for (let i = 0; i < N; i++) {
+        const a = this.idx(i - 1), b = this.idx(i + 1);
+        hd[i] = Math.atan2(px[b] - px[a], pz[b] - pz[a]);
+      }
+      for (let i = 0; i < N; i++) {
+        const a = this.idx(i - 2), b = this.idx(i + 2);
+        const span = Math.max(1, Math.hypot(px[b] - px[a], pz[b] - pz[a]));
+        raw[i] = Math.abs(U.wrapAngle(hd[b] - hd[a])) / span;
+      }
+      for (let i = 0; i < N; i++) {
+        let s = 0;
+        for (let k = -3; k <= 3; k++) s += raw[this.idx(i + k)];
+        RLK[i] = s / 7;
+      }
+      this.RLK = RLK;
+      return (this.RL = lat);
+    }
+
+    // v5: where a moving hazard is at race time t. Host and clients both call
+    // this, so they agree without sending anything. Fills `out` {x, z, r, vx,
+    // vz, fall} or returns null when it isn't on the road. `fall` > 0: a rock
+    // still dropping (a shadow on the road, not solid yet).
+    //   swing: a wrecking ball, lat = lat + amp·sin(2πt/period + off)
+    //   rockfall: every `every` s a rock drops somewhere in the zone (1.5 s of
+    //   shadow first), sits for `stay` s, then it's gone
+    dynPos(o, t, out) {
+      if (o.k === 'swing') {
+        const w = (2 * Math.PI) / o.period, a = w * t + o.off;
+        const lat = o.lat + o.amp * Math.sin(a), vl = o.amp * w * Math.cos(a);
+        out.x = this.X[o.i] + this.NX[o.i] * lat;
+        out.z = this.Z[o.i] + this.NZ[o.i] * lat;
+        out.vx = this.NX[o.i] * vl;
+        out.vz = this.NZ[o.i] * vl;
+        out.r = o.r;
+        out.fall = 0;
+        return out;
+      }
+      if (t <= 0) return null;
+      const c = t + o.off, n = Math.floor(c / o.every), ph = c - n * o.every;
+      if (ph > 1.5 + o.stay) return null;
+      const hh = (x) => {
+        x = Math.imul(x ^ 0x9e3779b9, 0x85ebca6b);
+        x ^= x >>> 13;
+        x = Math.imul(x, 0xc2b2ae35);
+        x ^= x >>> 16;
+        return (x >>> 0) / 4294967296;
+      };
+      const p = this.pointAt(o.at + (hh(o.seed * 131 + n) - 0.5) * o.len, o.lat + (hh(o.seed * 977 + n * 7) - 0.5) * 2 * o.spread);
+      out.x = p.x;
+      out.z = p.z;
+      out.vx = out.vz = 0;
+      out.r = o.r;
+      out.fall = ph < 1.5 ? 1 - ph / 1.5 : 0;
+      return out;
     }
 
     // Speed pad under (sample i, lateral lat), or null.
@@ -439,7 +578,7 @@
         return this.S[i];
       }
       if (kerb && al < hw + 0.9) return SI.kerb;
-      return this.runoffSurf;
+      return this.RS ? this.RS[i] : this.runoffSurf;
     }
 
     // Banking's share of the ground height at a lateral offset (the outside

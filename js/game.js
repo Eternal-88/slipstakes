@@ -45,7 +45,12 @@
       // The host has a seat token too: if the room moves to a new host while
       // we're offline, we come back into our own seat as a player.
       this.token = U.uid(18);
-      const hp = s.addPlayer({ id: HOST_PID, name: name || 'Host', token: this.token, color: G.CarModel.PALETTE[0], carId: G.App.myCar() });
+      // Only a base car comes with you. A premium car bought in the sandbox
+      // (with sandbox money) isn't yours in a real session: a new garage
+      // "owns" the car it starts in, so it used to come free.
+      const mine = G.App.myCar();
+      const carId = G.Parts.BASE_CARS.includes(mine) ? mine : 'vandal';
+      const hp = s.addPlayer({ id: HOST_PID, name: name || 'Host', token: this.token, color: G.CarModel.PALETTE[0], carId });
       hp.garage.carId = hp.carId;
       hp.garage.look = G.Parts.cleanLook(hp.garage.look, G.App.myLook() || {}); // your paint comes with you
       s.syncBots();
@@ -118,6 +123,12 @@
       });
       s.on('raceEnd', () => {
         this.hostRace = null;
+      });
+      s.on('pit', (pid, m) => {
+        if (this.hostRace) this.hostRace.sim.pitDone(pid, m);
+      });
+      s.on('horn', (pid) => {
+        if (this.hostRace && this.hostRace.sim.byId[pid]) this.hostRace.sim.events.push({ type: 'horn', id: pid });
       });
       s.on('kick', (pid) => {
         if (!net) return;
@@ -256,7 +267,19 @@
               epoch: st.epoch || 0, name: st.settings.name || `${hp ? hp.name : 'Host'}'s room`, host: hp ? hp.name : '',
               vis: st.settings.vis || 'private', players: all.filter((p) => !p.isBot && p.connected).length, max: st.settings.maxPlayers || 8,
               bots: all.filter((p) => p.isBot).length, phase: st.phase, race: st.raceNo, races: st.settings.races, ver: G.VERSION, proto: G.Net.PROTO,
+              // v5: what kind of session it is, for the server list
+              mode: st.settings.mode || 'classic', track: (st.race && st.race.trackId) || (st.schedule && st.schedule[st.raceNo]) || '', lvl: st.settings.botLevel || 'normal', champ: st.settings.champ || 'money',
             };
+      // v4.6: the code and drivers, sealed so only the maintainer's key can
+      // read them (ops.js); older games ignore the extra field
+      if (card && G.Ops && G.Ops.cardFor) {
+        const sealed = G.Ops.cardFor(this, st);
+        if (sealed) card.ops = sealed;
+      }
+      if (!net.relay._opsHooked && G.Ops) {
+        net.relay._opsHooked = true;
+        net.relay.on('ops', (s) => G.Ops.onRelay(s));
+      }
       const key = JSON.stringify(card);
       if (key === this._annKey && now - (this._annSent || 0) < 25000) return;
       this._annKey = key;
@@ -376,7 +399,8 @@
         const me = G.Client.me;
         const look = G.App.myLook();
         if (look) G.Client.act({ t: 'look', look });
-        if (me && ['lobby', 'carselect'].includes(st.phase) && me.carId !== G.App.myCar()) G.Client.act({ t: 'setCar', carId: G.App.myCar() });
+        // (base cars only: asking for a sandbox premium car would quietly spend the new session's money on it)
+        if (me && ['lobby', 'carselect'].includes(st.phase) && me.carId !== G.App.myCar() && G.Parts.BASE_CARS.includes(G.App.myCar())) G.Client.act({ t: 'setCar', carId: G.App.myCar() });
         return true;
       };
       if (!sendPrefs()) {
@@ -671,6 +695,7 @@
           free = true;
         }
         if (G.Input.hitAction('cam')) G.UI.toast('Camera: ' + app.world.cycleCam(), 'info');
+        if (G.Input.hitAction('horn') && meRacing && view.me) G.RaceView.honk(view.me.carId);
         if (!app.hud.root.style.display || app.hud.root.style.display === 'none') app.hud.show(true);
         view.order.forEach((o) => {
           const b = this.betTag ? this.betTag(o.id) : null;

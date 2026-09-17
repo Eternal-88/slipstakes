@@ -3,8 +3,23 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '4.5';
+  G.VERSION = '5.0';
   G.CHANGELOG = [
+    {
+      v: '5.0', name: 'After Dark', items: [
+        ['⛽', 'Endurance mode', 'Pick Endurance in the lobby (or Race: Endurance for a quick race): ~6-minute races on circuits with a pit box. Fuel and tyres run down, so stop in the box and work your crew: choose tyres and fuel, hold to fill and let go on the line, then hit the wheel gun in the green. Your HUD tells you when to box. Bots pit too.'],
+        ['🗺', 'Four new tracks', 'Serpent Pass, a true two-minute mountain sprint. Grand Tour, one long lap as evening falls. Neon Nights, downtown after dark. Endurance Park, a parkland circuit with a pit lane where the sun sets as you race.'],
+        ['🌙', 'Night and weather', 'Street lamps, neon signs and headlights light the way at night. On Changeable weather a shower can start mid-race and the road turns slippery: narrow tyres and rain tyres cope best. Set the weather in the lobby or next to Quick race.'],
+        ['⚠', 'New hazards', 'Falling rocks in a mountain gorge (watch for the shadow), swinging wrecking balls, gusty crosswinds, water splashes that grab your wheels, and a gravel trap you can cut across if you dare.'],
+        ['🚗', 'Three new cars', 'Pip K1: a free kei car, slow on paper but light, nimble and thrifty with fuel. Volt E: electric all-wheel drive with instant torque; it gets hot on long straights and recharges under braking in endurance. Stormer B: a Group B rally legend, untouchable on loose surfaces and a handful on tarmac. Every car has a track where it shines, and some need real skill to get there.'],
+        ['🤖', 'Smarter bots', 'Six difficulty levels, Rookie to Legend, for quick races and hosted rooms (the host picks). Bots take racing lines, pass on the inside, defend and sometimes make mistakes. Now and then one turns rival and goes looking for someone to bump, bot or player, and you get a warning if it\'s you.'],
+        ['🔧', 'New parts and looks', 'Rain tyres, an intercooler, launch control or anti-lag, magnesium wheels, and a pit kit (a bigger fuel cell or quick-release wheels). In Paint: body kits, spoilers, exhaust tips, three new liveries and pulsing or rainbow underglow.'],
+        ['🏆', 'Championships, horn and TV cameras', 'Hosts can decide the winner by championship points (25-18-15-12-10-8-6-4, +1 for the fastest lap) instead of money. Press H to honk. Press C for TV cameras that cut between trackside angles.'],
+        ['🔊', 'Sound and music', 'Tyre roar and tread hiss that grow with speed, crunching gravel, splashes, breaking glass in big crashes, and sounds of each place: birds, sea, city, rain and thunder, crickets at night. Pit crews rattle their wheel guns. New race music for day, night, rally and endurance builds on the final lap, and is on by default.'],
+        ['🌐', 'A cleaner server list', 'Filters, search and each room\'s status, mode and next track at a glance, and the list no longer blinks while it updates. Lobby settings are grouped and easier to read.'],
+        ['🔧', 'Fixes', 'The ground no longer cuts into the road on mountain tracks. A premium car bought with sandbox money no longer carries into a hosted room.'],
+      ],
+    },
     {
       v: '4.5', name: 'Sound & Scale', items: [
         ['🖥', 'Fits every screen', 'The whole interface is laid out for a Chromebook screen and scales to yours: no more cut-off menus in small windows, and a HUD that isn\'t tiny on a big monitor. The minimap and speedo stay sharp at any size. New Menu size setting next to HUD size (now 70–130%).'],

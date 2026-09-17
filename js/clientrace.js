@@ -62,6 +62,11 @@
         return Object.assign(blankRs(), { x: g.x, z: g.z, h: g.h });
       });
       this.stats = { snaps: 0, corrections: 0, snapsDropped: 0, lastErr: 0 };
+      // v5 race environment for our own car's prediction (same as the host's)
+      this.weather = race.weather || null;
+      this.endu = race.endu || null;
+      this.laps = this.endu ? this.endu.laps : this.track.laps;
+      this.env = { t: 0, wet: 0, endu: this.endu };
       if (this.meIdx >= 0) {
         const e = race.entrants[this.meIdx];
         this.spec = G.Parts.computeSpec(e.carId, e.parts, e.wear, e.tune); // identical to the host's: same entrant data
@@ -83,6 +88,14 @@
 
     hostNow() {
       return performance.now() + (this.offset || 0);
+    }
+
+    // race time and rain as the host sees them now
+    _env() {
+      const t = this.goHost != null ? Math.max(0, (this.hostNow() - this.goHost) / 1000) : 0;
+      this.env.t = t;
+      this.env.wet = G.RaceEnv.wet(this.weather, t);
+      return this.env;
     }
 
     onSnap(m) {
@@ -129,12 +142,13 @@
       // (b) replay unacknowledged input
       let frozenTicks = m.ph === 0 ? Math.ceil(m.cd / P.DT) : 0;
       const last = this.hist.length - 1;
+      const env = this._env();
       for (let i = 0; i <= last; i++) {
         const b = this.hist[i];
         let n = i === last ? this.blockT : TPI; // newest block: only as far as we've simulated it
         if (b.seq === m.ack) n = Math.max(0, n - m.at); // host already applied `at` ticks of it
         for (let k = 0; k < n; k++) {
-          P.step(st, this.spec, b.inp, this.track, P.DT, { frozen: frozenTicks > 0 });
+          P.step(st, this.spec, b.inp, this.track, P.DT, { frozen: frozenTicks > 0, env });
           frozenTicks--;
         }
       }
@@ -158,6 +172,7 @@
       if (!this.pred) return;
       const st = this.pred;
       this.acc += dt;
+      const env = this._env();
       let n = 0;
       while (this.acc >= P.DT && n < 12) {
         if (this.blockT >= TPI) {
@@ -179,7 +194,7 @@
           this.blockT = 0;
         }
         this.px = st.x; this.pz = st.z; this.ph = st.h;
-        P.step(st, this.spec, this.cur, this.track, P.DT, { frozen: this.predFrozen() });
+        P.step(st, this.spec, this.cur, this.track, P.DT, { frozen: this.predFrozen(), env });
         this.blockT++;
         this.acc -= P.DT;
         n++;
@@ -272,9 +287,9 @@
       }
       const lead = order[0] ? L(order[0].i).lapCount : 1;
       return {
-        phase, countdown, hold: this.hold || 0, raceTime, format: tr.format, laps: tr.laps, total: this.entrants.length,
-        leaderLap: Math.max(1, Math.min(lead, tr.laps)), me,
-        order: order.map((o) => ({ id: o.e.id, name: o.e.name, color: o.e.color, finished: o.s.finished, dnf: o.s.dnf })),
+        phase, countdown, hold: this.hold || 0, raceTime, format: tr.format, laps: this.laps, total: this.entrants.length, wet: this.env.wet, endu: this.endu,
+        leaderLap: Math.max(1, Math.min(lead, this.laps)), me,
+        order: order.map((o) => ({ id: o.e.id, name: o.e.name, color: o.e.color, finished: o.s.finished, dnf: o.s.dnf, stops: o.s.stops || 0, pit: this.rs[o.i] && this.rs[o.i].pit })),
         cars,
         net: `rtt ${Math.round((this.net && this.net.rtt) || 0)}ms · err ${this.stats.lastErr.toFixed(2)}m · drops ${this.stats.snapsDropped}`,
       };

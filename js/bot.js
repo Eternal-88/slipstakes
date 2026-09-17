@@ -14,41 +14,93 @@
     'Nico Nuts', 'Sunny Spoiler', 'Wes Wheelie', 'Bea Burnout', 'Ty Rewind', 'Echo Exhaust', 'Moe Mudflap', 'Quinn Kerb',
   ];
 
+  // v5: difficulty levels — the single-player picker, and the host's room
+  // setting. A bot's `skill` is drawn from its level's range; the rest is how
+  // it races:
+  //   line    how much of the racing line it uses (0 = wanders mid-road)
+  //   brake   how hard it dares brake into a corner (share of the grip)
+  //   mistake chance per corner of a mistake (brakes too late / lifts early)
+  //   budget  parts money in a single-player field; premium = chance of a premium car
+  //   rival   chance per race of turning rival (hunts nearby cars to bump them)
+  const LEVELS = {
+    // (brake tops out at 0.75-0.77: braking harder than that tested slower, not faster)
+    // Medians of 6-bot races (3 each, stock Vandals), Harbour / Kerbside City:
+    // Rookie 157.8 / 184.7 s, Easy 154.3 / 181.3, Normal 152.8 / 180.6, Hard
+    // 149.8 / 178.7, Pro 148.9 / 182.5 (rivals: 177.4 without), Legend 149.7 /
+    // 175.2. The v4.5 bots: 153.4 / 185.9. Top levels race closer and collide
+    // more (17-37 hits a race on the street circuit).
+    rookie: { name: 'Rookie', skill: [0.72, 0.78], line: 0.1, brake: 0.58, mistake: 0.22, budget: 0, premium: 0, rival: 0 },
+    easy: { name: 'Easy', skill: [0.78, 0.84], line: 0.3, brake: 0.64, mistake: 0.12, budget: 700, premium: 0, rival: 0 },
+    normal: { name: 'Normal', skill: [0.86, 0.92], line: 0.6, brake: 0.71, mistake: 0.06, budget: 2200, premium: 0.05, rival: 0.12 },
+    hard: { name: 'Hard', skill: [0.92, 0.96], line: 0.85, brake: 0.74, mistake: 0.03, budget: 4500, premium: 0.3, rival: 0.2 },
+    pro: { name: 'Pro', skill: [0.955, 0.985], line: 0.95, brake: 0.76, mistake: 0.012, budget: 7000, premium: 0.5, rival: 0.25 },
+    legend: { name: 'Legend', skill: [0.985, 1.02], line: 1, brake: 0.77, mistake: 0.004, budget: 10000, premium: 0.7, rival: 0.3 },
+  };
+  const LEVEL_ORDER = ['rookie', 'easy', 'normal', 'hard', 'pro', 'legend'];
+  const levelOf = (id) => LEVELS[id] || LEVELS.normal;
+
   class Bot {
     // opts.aggressive: no traction control, only catches big slides. Used by the
     // garage preview so a wild build is SHOWN being wild instead of masked.
+    // opts.level: a LEVELS key (default normal)
     constructor(skill, seed, opts) {
-      this.skill = skill; // 0.8 .. 1.0
+      this.skill = skill; // 0.74 .. 1.02
       this.aggressive = !!(opts && opts.aggressive);
+      this.L = levelOf(opts && opts.level);
       this.rng = U.rng(seed || 1);
-      this.lane = (this.rng() - 0.5) * 3;
+      this.wander = (this.rng() - 0.5) * 3;
+      // each bot's own take on the racing line (a whole field on one line
+      // drove nose to tail and banged into each other)
+      this.bias = (this.rng() - 0.5) * 1.4;
       this.laneT = 0;
       this.stuck = 0;
+      this.t = 0;
       this.q = {};
       this.out = { s: 0, t: 0, b: 0, hb: 0, rs: 0 };
+      this.rival = false;
+      this.hunt = null;
+      this.huntN = 0;
+    }
+
+    // v5 rival for this race: a few attempts to bump whoever is just ahead
+    makeRival() {
+      this.rival = true;
+      this.rams = 2 + Math.floor(this.rng() * 2);
+      this.cool = 10 + this.rng() * 25;
     }
 
     drive(st, spec, track, dt, others) {
+      const L = this.L;
       const q = track.query(st.x, st.z, st.hint, this.q);
       const speed = Math.hypot(st.vx, st.vz);
       const out = this.out;
       out.rs = 0;
+      this.t += dt;
       this._cap = 99; // speed cap set by _hazards when an obstacle isn't cleared yet
-      // Wander lane a little so bots don't form a conga line; dodge cars ahead.
+      // v5 lane: the racing line (outside - apex - outside, trackbuild.js) at
+      // the point we steer for, blended with a little wander that fades as the
+      // level rises. (Wandering mid-road was most of why bots felt slow.)
       this.laneT -= dt;
       if (this.laneT <= 0) {
-        this.lane = U.clamp(this.lane + (this.rng() - 0.5) * 2.5, -q.hw * 0.45, q.hw * 0.45);
+        this.wander = U.clamp(this.wander + (this.rng() - 0.5) * 2.5, -q.hw * 0.45, q.hw * 0.45);
         this.laneT = 2 + this.rng() * 3;
       }
+      const RL = L.line > 0 && track.format !== 'drag' ? track.racingLine() : null;
+      const lookI = track.idx(q.i + Math.round((5 + speed * 0.42) / track.sp));
+      let base = RL ? U.lerp(this.wander, RL[lookI] + this.bias, L.line) : this.wander;
       let dodge = 0;
       let tow = null; // lateral offset of a car 14-32 m ahead to tuck in behind
+      let behind = false; // a faster car closing on us from right behind
+      const fx = Math.sin(st.h), fz = Math.cos(st.h);
       if (others) {
-        const fx = Math.sin(st.h), fz = Math.cos(st.h);
+        if (this.rival && track.format !== 'drag') this._rival(st, others, speed, fx, fz, dt);
         for (const o of others) {
           if (o === st) continue;
           const dx = o.x - st.x, dz = o.z - st.z;
           const ahead = dx * fx + dz * fz;
           const side = dx * fz - dz * fx; // + = to the left
+          if (ahead < 0 && ahead > -12 && Math.abs(side) < 4 && (o.vx * fx + o.vz * fz) - speed > 0.8) behind = true;
+          if (this.hunt && this.hunt.st === o) continue; // the one we're after: no dodging, no braking for it
           if (ahead > 0 && ahead < 14 && Math.abs(side) < 2.6) dodge += side > 0 ? -1.8 : 1.8;
           else if (tow == null && ahead >= 14 && ahead < 32 && Math.abs(side) < 4) tow = side;
           // v4: don't rear-end it. A slower car right in our path caps our
@@ -67,15 +119,44 @@
           }
         }
       }
+      // corner coming up (for passing, defending and mistakes)
+      const kNext = track.K[track.idx(q.i + Math.round((20 + speed) / track.sp))];
+      // v5 racecraft (the better levels): pass on the inside of the next
+      // corner, and cover the inside when someone faster closes in behind
+      if (dodge && L.line >= 0.6 && Math.abs(kNext) > 1 / 120) dodge = Math.sign(kNext) * Math.abs(dodge);
+      if (behind && !this.hunt && L.line >= 0.8 && Math.abs(kNext) > 1 / 90) base = U.lerp(base, Math.sign(kNext) * q.hw * 0.45, 0.55);
       // Slipstream: close up behind the car ahead, then (dodge, above) pull
       // out and slingshot past once within 14 m — that's how packs form.
-      let laneT = this.lane + dodge;
+      let laneT = base + dodge;
       if (tow != null && !dodge) laneT = U.lerp(laneT, q.lat + tow, 0.65);
-      if (track.obs.length || track.patches.length || track.pads.length) laneT = this._hazards(track, q, laneT, speed);
+      if (this.hunt) {
+        // rival: aim for the target's rear corner on our side
+        const o = this.hunt.st, dx = o.x - st.x, dz = o.z - st.z;
+        const side = dx * fz - dz * fx;
+        laneT = U.lerp(laneT, q.lat + side - Math.sign(side || 1) * 0.9, 0.85);
+      }
+      // v5 mistakes: going into a corner, sometimes brake too late or lift early
+      const corner = Math.abs(kNext) > 1 / 70;
+      if (corner && !this.inCorner && !this.aggressive && this.rng() < L.mistake) this.err = { k: this.rng() < 0.5 ? 'late' : 'lift', t: this.rng() < 0.5 ? 1.4 : 2.2 };
+      this.inCorner = corner;
+      if (this.err && (this.err.t -= dt) <= 0) this.err = null;
+      if (track.obs.length || track.patches.length || track.pads.length || track.dyn.length) laneT = this._hazards(track, q, laneT, speed);
       // (A lane rate-limit was tried here to calm high-power weaves: it
       // delayed dodges and hazard swerves, and an 8-track A/B went from 13 to
       // 69 respawns. The weave is handled by the yaw damping + traction limit.)
-      const lane = U.clamp(laneT, -q.hw + 1.5, q.hw - 1.5);
+      // v5 endurance: coming in to pit this lap (race.js _botPitPlan): drift
+      // across onto the apron, brake to a stop in the box, wait there
+      let pitCap = 99, pitHold = false, pitting = false;
+      if (this.pit && track.pit) {
+        const B = track.pit, d = G.RaceEnv.pitAhead(track, q.along);
+        if (d > -B.hl && d < 240) {
+          pitting = true;
+          laneT = U.lerp(laneT, B.lat, U.smoothstep(240, 80, d));
+          pitCap = Math.sqrt(2 * 4.5 * Math.max(0, d + 1)) + 0.6;
+          if (d < 2 && Math.abs(q.lat - B.lat) < B.hw) pitHold = true;
+        }
+      }
+      const lane = pitting ? U.clamp(laneT, -q.wall + 1.8, q.wall - 1.8) : U.clamp(laneT, -q.hw + 1.5, q.hw - 1.5);
       // how much this build's power overwhelms its rear tyres (>1 = wheelspin
       // on tap) — feeds the steering damping and traction limit below
       if (this._spec !== spec) {
@@ -105,24 +186,42 @@
       // for fast sweepers on Coastal Highway.)
       const span = 40 + speed * 2.3;
       const i0 = q.i;
+      const RLK = RL ? track.RLK : null;
+      // v5: braking effort by level (a "late brake" mistake overcooks it)
+      const brakeK = L.brake * (this.err && this.err.k === 'late' ? 1.35 : 1);
+      // v5 rain (race.js sets this.env): expect the grip the physics will give
+      const wet = this.env ? this.env.wet : 0;
+      const wetMu = wet > 0 ? spec.surfMul[G.SI.wet] : 0;
       for (let d = 0; d <= span; d += 4) {
         const i = track.idx(i0 + Math.round(d / track.sp));
         if (!track.closed && i >= track.N - 1) break;
-        const k = Math.abs(track.K[i]) + 1e-4;
-        const mu = spec.mu * spec.surfMul[track.S[i]] * sens * 0.86 * this.skill * (1 - G.SURF[track.S[i]].rough * spec.roughGrip);
+        // on the racing line the path bends less than the road's centreline.
+        // Trust that halfway, and not in hairpins (tested: fully trusting it
+        // overshot corners; the half-trust version was quickest on 8 tracks)
+        const kc = Math.abs(track.K[i]);
+        const k = (RLK ? U.lerp(kc, RLK[i], L.line * 0.5 * (1 - U.clamp(kc * 25 - 0.5, 0, 1))) : kc) + 1e-4;
+        const sf = G.SURF[track.S[i]];
+        let sm = spec.surfMul[track.S[i]];
+        if (wet > 0 && !sf.wet && !sf.loose && !sf.icy) sm = U.lerp(sm, wetMu, wet * 0.6);
+        const mu = spec.mu * sm * sens * 0.86 * this.skill * (1 - sf.rough * spec.roughGrip);
         // v² = mu*g / (k - mu*0.6*clA/m) : downforce raises the limit with speed
         const den = k - (mu * 0.6 * spec.clA) / spec.mass;
         const vc = den > 1e-5 ? Math.sqrt((mu * g) / den) : 99;
-        const decel = mu * g * 0.75;
+        const decel = mu * g * brakeK;
         const va = Math.sqrt(vc * vc + 2 * decel * d);
         if (va < vT) vT = va;
       }
       if (!track.closed && q.along > track.finishDist + 5) vT = Math.min(vT, 12);
-      vT = Math.min(vT, this._cap);
+      if (this.err && this.err.k === 'lift') vT = Math.min(vT, speed * 0.86);
+      vT = Math.min(vT, this._cap, pitCap);
       const dv = vT - speed;
       this.lastDv = dv;
       out.t = U.clamp(dv * 0.6 + 0.3, 0, 1);
       out.b = dv < -1.5 ? U.clamp(-dv * 0.25, 0, 1) : 0;
+      if (this.hunt && dv > -3) {
+        out.t = Math.max(out.t, 0.95); // closing in for the hit
+        out.b = 0;
+      }
       // Traction control + slide recovery (bots aren't heroes): ease off in
       // proportion to how sideways the car is, a little for plain wheelspin.
       const vLong = st.vx * Math.sin(st.h) + st.vz * Math.cos(st.h);
@@ -149,6 +248,11 @@
       }
       if (st.heat > 0.8) out.t = Math.min(out.t, 0.55); // manage turbo heat
       out.hb = 0;
+      if (pitHold) {
+        out.t = 0;
+        out.b = 1;
+        this.stuck = 0;
+      }
       // Nitrous: fire it accelerating on a straight-ish bit, never when hot.
       out.n = spec.nosGain && st.nos > 0.04 && dv > 3 && speed > 8 && Math.abs(out.s) < 0.3 && st.heat < 0.7 && !this.aggressive ? 1 : 0;
       // Stuck / wrong way -> ask for a respawn.
@@ -160,6 +264,40 @@
         this.stuck = 0;
       }
       return out;
+    }
+
+    // v5 rival: now and then pick whoever is just ahead (human or bot, it
+    // doesn't care) and go for their rear corner, a few times a race.
+    _rival(st, others, speed, fx, fz, dt) {
+      this.cool -= dt;
+      const h = this.hunt;
+      if (h) {
+        h.t -= dt;
+        const o = h.st, dx = o.x - st.x, dz = o.z - st.z;
+        const ahead = dx * fx + dz * fz, d = Math.hypot(dx, dz);
+        if (d < 2.9 || h.t <= 0 || ahead < -4 || d > 30 || o.ghost > 0) {
+          this.hunt = null; // hit, missed or lost them: calm down for a while
+          this.rams--;
+          this.cool = 14 + this.rng() * 16;
+        }
+        return;
+      }
+      if (this.cool > 0 || this.rams <= 0 || this.t < 12 || speed < 14) return;
+      let best = null, bd = 1e9;
+      for (const o of others) {
+        if (o === st || o.ghost > 0) continue;
+        const dx = o.x - st.x, dz = o.z - st.z;
+        const ahead = dx * fx + dz * fz, side = dx * fz - dz * fx;
+        if (ahead < 5 || ahead > 22 || Math.abs(side) > 5) continue;
+        if (ahead < bd) {
+          bd = ahead;
+          best = o;
+        }
+      }
+      if (best && this.rng() < dt * 0.6) {
+        this.hunt = { st: best, t: 4 };
+        this.huntN++; // (race.js announces it)
+      }
     }
 
     // Track hazards (v4): pick a lane round solid obstacles, round oil / mud /
@@ -186,6 +324,28 @@
         away(o.lat, o.r + 2.4);
         // not across yet and it's close: ease off so the swerve works
         if (d < 32 && Math.abs(q.lat - o.lat) < o.r + 1.9) this._cap = Math.min(this._cap, 13 + d * 0.7);
+      }
+      // v5 moving hazards: where the wrecking ball will be when we get there,
+      // and any rock on the road (or its shadow: it'll be there by then)
+      if (track.dyn.length && this.env) {
+        const pos = this._dp || (this._dp = {});
+        for (const o of track.dyn) {
+          const span = o.k === 'rockfall' ? o.len / 2 + 4 : 3;
+          const d = ahead(o.at);
+          if (d < -span || d > look + span) continue;
+          if (o.k === 'swing') {
+            const eta = Math.max(0, d) / Math.max(speed, 5);
+            away(o.lat + o.amp * Math.sin((2 * Math.PI * (this.env.t + eta)) / o.period + o.off), o.r + 2.2);
+          } else {
+            const p = track.dynPos(o, this.env.t, pos);
+            if (!p) continue;
+            const pq = track.query(p.x, p.z, o.i, this._dq || (this._dq = {}));
+            const dd = ahead(pq.along);
+            if (dd < -2 || dd > look) continue;
+            away(pq.lat, o.r + 2.3);
+            if (dd < 28 && Math.abs(q.lat - pq.lat) < o.r + 1.8) this._cap = Math.min(this._cap, 14 + dd * 0.7);
+          }
+        }
       }
       if (this.skill >= 0.9) {
         for (const p of track.patches) {
@@ -217,18 +377,26 @@
   // used to be four stock Vandal/Brick/Sting/Mule in near-identical paint with
   // the same eight names.
   const STYLES = {
-    grip: { cars: ['vandal', 'sting'], premium: 'apex', buys: [['compound', 'medium'], ['suspension', 'sport'], ['width', 'wide'], ['weight', 'w1'], ['aero', 'a1'], ['compound', 'soft'], ['aero', 'a2'], ['weight', 'w2']] },
-    power: { cars: ['mule', 'vandal'], premium: 'apex', buys: [['exhaust', 'sport'], ['ecu', 'stage1'], ['induction', 'sc'], ['cooling', 'radiator'], ['nitrous', 'n1'], ['ecu', 'stage2'], ['induction', 't1'], ['weight', 'w1']] },
-    rally: { cars: ['brick'], premium: 'dune', buys: [['width', 'narrow'], ['suspension', 'rally'], ['compound', 'medium'], ['weight', 'w1'], ['diff', 'clutch'], ['ecu', 'stage1'], ['nitrous', 'n1']] },
-    light: { cars: ['sting'], premium: 'apex', buys: [['weight', 'w1'], ['brakes', 'sport'], ['compound', 'medium'], ['suspension', 'sport'], ['weight', 'w2'], ['aero', 'a2']] },
-    drag: { cars: ['mule'], premium: null, buys: [['gearing', 'short'], ['induction', 't1'], ['cooling', 'race'], ['nitrous', 'n1'], ['exhaust', 'straight'], ['weight', 'w1'], ['ecu', 'stage1']] },
-    allround: { cars: ['vandal', 'brick', 'sting', 'mule'], premium: 'dune', buys: [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator']] },
+    grip: { cars: ['vandal', 'sting'], premium: ['apex'], buys: [['compound', 'medium'], ['suspension', 'sport'], ['width', 'wide'], ['weight', 'w1'], ['aero', 'a1'], ['compound', 'soft'], ['aero', 'a2'], ['weight', 'w2']] },
+    power: { cars: ['mule', 'vandal'], premium: ['apex', 'volt'], buys: [['exhaust', 'sport'], ['ecu', 'stage1'], ['induction', 'sc'], ['cooling', 'radiator'], ['nitrous', 'n1'], ['ecu', 'stage2'], ['induction', 't1'], ['weight', 'w1']] },
+    rally: { cars: ['brick'], premium: ['dune', 'storm'], buys: [['aids', 'antilag'], ['width', 'narrow'], ['suspension', 'rally'], ['compound', 'medium'], ['weight', 'w1'], ['diff', 'clutch'], ['ecu', 'stage1'], ['nitrous', 'n1']] },
+    light: { cars: ['sting', 'pip'], premium: ['apex', 'storm'], buys: [['wheels', 'mag'], ['weight', 'w1'], ['brakes', 'sport'], ['compound', 'medium'], ['suspension', 'sport'], ['weight', 'w2'], ['aero', 'a2']] },
+    drag: { cars: ['mule'], premium: ['volt'], buys: [['aids', 'launch'], ['gearing', 'short'], ['induction', 't1'], ['cooling', 'race'], ['nitrous', 'n1'], ['exhaust', 'straight'], ['weight', 'w1'], ['ecu', 'stage1']] },
+    allround: { cars: ['vandal', 'brick', 'sting', 'mule', 'pip'], premium: ['dune', 'volt'], buys: [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator']] },
   };
   const STYLE_KEYS = Object.keys(STYLES);
   const pick = (list, rnd) => list[Math.floor(rnd() * list.length)];
   const BotKit = {
     STYLES,
     NAMES,
+    LEVELS,
+    LEVEL_ORDER,
+    level: levelOf,
+    // a skill drawn from a level's range
+    skillFor(level, rnd) {
+      const [lo, hi] = levelOf(level).skill;
+      return +(lo + (hi - lo) * (rnd || Math.random)()).toFixed(3);
+    },
     // n different names, none of them in `taken`
     names(n, taken, rnd) {
       rnd = rnd || Math.random;
@@ -261,6 +429,11 @@
         glow: rnd() < 0.12 ? pick(L.glows.slice(1), rnd)[0] : 'none',
         lights: pick(L.lights, rnd)[0],
         num: 1 + Math.floor(rnd() * 99),
+        // v5 looks
+        kit: rnd() < 0.5 ? 'none' : pick(L.kits.slice(1), rnd)[0],
+        spoiler: rnd() < 0.6 ? 'none' : pick(L.spoilers.slice(1), rnd)[0],
+        tips: pick(L.tips, rnd)[0],
+        glowFx: pick(L.glowFx, rnd)[0],
       });
     },
     // Parts off the style's shopping list that fit `budget` (some bots stop early).
@@ -278,13 +451,26 @@
       return { parts: out, spent };
     },
     // A whole field for single-player races (quick race, practice).
-    field(n, level, rnd) {
+    // (v5: given the track, a premium car is picked to suit it — the rally
+    // cars for loose surfaces, the tarmac cars otherwise — so a Legend field
+    // doesn't turn up to a street circuit in desert trucks)
+    field(n, level, rnd, trackId) {
       rnd = rnd || Math.random;
+      const Lv = levelOf(level);
+      let loose = null;
+      const tr = trackId && G.getTrack ? G.getTrack(trackId) : null;
+      if (tr) {
+        let k = 0;
+        for (let i = 0; i < tr.N; i += 8) if (G.SURF[tr.S[i]].loose || G.SURF[tr.S[i]].icy) k++;
+        loose = k / (tr.N / 8) > 0.25;
+      }
+      const suits = (id) => loose == null || (loose ? ['storm', 'dune'] : ['apex', 'volt']).includes(id);
       return this.names(n, [], rnd).map((name) => {
         const style = this.style(rnd);
         const S = STYLES[style];
-        const carId = level === 'hard' && S.premium && rnd() < 0.35 ? S.premium : this.car(style, rnd);
-        const budget = level === 'easy' ? (rnd() < 0.5 ? 0 : 1000) : level === 'hard' ? 5500 : 2200;
+        const prem = S.premium ? (S.premium.filter(suits).length ? S.premium.filter(suits) : S.premium) : [];
+        const carId = prem.length && rnd() < Lv.premium ? pick(prem, rnd) : this.car(style, rnd);
+        const budget = Lv.budget * (0.6 + 0.4 * rnd());
         return { name, style, carId, look: this.look(rnd), parts: this.parts(style, budget, rnd).parts };
       });
     },

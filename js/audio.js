@@ -41,6 +41,11 @@
     // v4: truck = low, gruff, lumpy V6; Apex = high, clean flat-six shriek
     dune: { cyl: 6, cut: 0.72, rasp: 3.4, lope: 0.24, lopeDiv: 3, sub: 0.95, h2: 0.22, res: 230, grit: 1.2 },
     apex: { cyl: 6, cut: 2.0, rasp: 3.6, lope: 0.02, lopeDiv: 4, sub: 0.18, h2: 0.95, res: 560, grit: 0.85 },
+    // v5: Pip = buzzy little triple; Stormer = the inline-five warble;
+    // Volt = no combustion, a motor whine that climbs with speed
+    pip: { cyl: 3, cut: 1.9, rasp: 5.0, lope: 0.1, lopeDiv: 3, sub: 0.1, h2: 0.9, res: 720, grit: 1.2 },
+    storm: { cyl: 5, cut: 1.25, rasp: 6.0, lope: 0.36, lopeDiv: 2.5, sub: 0.45, h2: 0.5, res: 340, grit: 1.5 },
+    volt: { cyl: 8, cut: 3.0, rasp: 0.2, lope: 0.0, lopeDiv: 4, sub: 0.04, h2: 1.4, res: 1800, grit: 0, ev: 1 },
   };
   const vol = (v) => Math.pow(U.clamp(v, 0, 100) / 100, 1.6);
 
@@ -184,9 +189,10 @@
     _startEngine(prof) {
       const c = this.ctx, E = this.bus.engine, X = this.bus.sfx;
       const e = { prof };
-      e.o1 = this._osc('sawtooth');
-      e.o2 = this._osc('square');
-      e.o3 = this._osc('sawtooth');
+      // (v5: an electric motor is tonal and clean — no sawtooth buzz)
+      e.o1 = this._osc(prof.ev ? 'triangle' : 'sawtooth');
+      e.o2 = this._osc(prof.ev ? 'sine' : 'square');
+      e.o3 = this._osc(prof.ev ? 'sine' : 'sawtooth');
       e.o3.detune.value = 9;
       e.g1 = this._gain(0.55);
       e.g2 = this._gain(prof.sub * 0.5);
@@ -303,7 +309,10 @@
       };
       v.scr1 = chain('bandpass', 950, 7);
       v.scr2 = chain('bandpass', 1650, 9);
-      v.road = chain('lowpass', 260, 0.7);
+      v.road = chain('bandpass', 160, 1.1); // v5: structure-borne rumble (~160 Hz)
+      v.tread = chain('bandpass', 1000, 0.9); // v5: tread air-pumping hiss, peaks ~0.7-1.3 kHz
+      v.water = chain('lowpass', 900, 0.8); // v5: driving through water
+      v.grain = chain('bandpass', 3000, 1.4); // v5: gravel/dirt grit under the tyres
       v.loose = chain('bandpass', 620, 0.9);
       v.grass = chain('highpass', 2200, 0.7);
       v.wet = chain('highpass', 3600, 0.7);
@@ -317,8 +326,18 @@
       v.kl = this._osc('square', 12);
       v.klg = this._gain(0);
       v.kl.connect(v.klg).connect(v.kerb.g.gain);
+      // v5: a squealing tyre stutters (stick-slip) instead of a steady tone
+      v.sl = this._osc('sawtooth', 27);
+      v.slg = this._gain(0);
+      v.sl.connect(v.slg).connect(v.scr1.g.gain);
+      // v5: gravel isn't a hiss, it's grains: a fast random gate on the grit
+      v.gl = this._osc('square', 31);
+      v.glg = this._gain(0);
+      v.gl.connect(v.glg).connect(v.grain.g.gain);
       v.src.start();
       v.kl.start();
+      v.sl.start();
+      v.gl.start();
       this.env = v;
     },
     _stopEnv() {
@@ -327,6 +346,8 @@
       try {
         v.src.stop();
         v.kl.stop();
+        v.sl.stop();
+        v.gl.stop();
       } catch (e) {}
       this.env = null;
     },
@@ -444,6 +465,7 @@
       // firing frequency: crank revs per second * cylinders/2
       const crank = (rpm * car.redline) / 60;
       let f0 = crank * (prof.cyl / 2);
+      if (prof.ev) f0 = 90 + crank * 3.2; // v5 EV: the motor's electrical order, climbing with speed
       // v4.5: a real idle hunts a little instead of sitting on one pitch
       if (rpm < 0.3) f0 *= 1 + (0.3 - rpm) * (Math.sin(this._limT * 2.3) * 0.05 + Math.sin(this._limT * 6.1) * 0.025);
       e.o1.frequency.setTargetAtTime(f0, t, 0.025);
@@ -456,7 +478,7 @@
       let g = (0.04 + thr * 0.075) * loud * master * (rs.nosOn ? 1.25 : 1) * (over ? 0.8 : 1);
       // v4.5 combustion rasp (see _startEngine): gritty under load, a softer
       // burble on the overrun; stronger for rougher engines and freer pipes
-      const grit = Math.min(1.6, (prof.grit || 1) * ms.rasp);
+      const grit = prof.ev ? 0 : Math.min(1.6, (prof.grit == null ? 1 : prof.grit) * ms.rasp); // (v5: an EV has no combustion to rasp)
       const rl = (0.14 + thr * 0.46 + (over ? 0.16 * ms.lope : 0)) * (0.4 + 0.6 * rpm) * grit;
       e.cng.gain.setTargetAtTime(rl * 0.5, t, 0.04);
       e.amg.gain.setTargetAtTime(rl * 0.5, t, 0.04);
@@ -470,8 +492,11 @@
       e.dr.frequency.setTargetAtTime(f0 * 1.02, t, 0.05);
       e.drg.gain.setTargetAtTime(ms.drone * (0.4 + 0.6 * (1 - Math.abs(thr - 0.5) * 2)) * 0.09 * master, t, 0.08);
       // straight-cut gears: whine rising with road speed
-      e.gw.frequency.setTargetAtTime(180 + speed * 26, t, 0.05);
-      e.gwg.gain.setTargetAtTime(ms.whine * Math.min(1, speed / 12) * (0.4 + 0.6 * thr) * master, t, 0.06);
+      // (v5 EV: the inverter + reduction gear sing instead — loud on power,
+      // a softer regen whine off it)
+      const evW = prof.ev ? (0.012 + 0.022 * thr) * Math.min(1, speed / 6 + 0.15) : 0;
+      e.gw.frequency.setTargetAtTime(prof.ev ? 700 + speed * 62 : 180 + speed * 26, t, 0.05);
+      e.gwg.gain.setTargetAtTime((ms.whine * Math.min(1, speed / 12) * (0.4 + 0.6 * thr) + evW) * master, t, 0.06);
       // nitrous: a sharp "pssht" as it opens
       if (rs.nosOn && !this._nos) this.noiseHit(0.35, 2500, 0.14 * master, 'highpass', 'sfx', 0, 5000);
       this._nos = !!rs.nosOn;
@@ -540,7 +565,7 @@
       const v = this.env;
       if (!v) return;
       const ms = this._ms || modSound(null);
-      let screech = 0, loose = 0, grass = 0, wet = 0, kerb = 0, road = 0;
+      let screech = 0, loose = 0, grass = 0, wet = 0, kerb = 0, road = 0, tread = 0, water = 0, gravel = 0;
       for (let i = 0; i < 4; i++) {
         const sf = G.SURF[(rs.surf && rs.surf[i]) || 0];
         const sl = (rs.slip && rs.slip[i]) || 0;
@@ -548,7 +573,10 @@
         if (sf.id === 'tarmac' || sf.id === 'concrete' || sf.id === 'kerb') {
           screech = Math.max(screech, sl);
           road += 0.25;
+          tread += sf.id === 'concrete' ? 0.34 : sf.id === 'kerb' ? 0.3 : 0.25; // concrete is the loud one
         }
+        if (sf.id === 'water') water += 0.25;
+        if (sf.id === 'gravel' || sf.id === 'dirt' || sf.id === 'sand') gravel += 0.25 * (sf.id === 'gravel' ? 1 : 0.6);
         if (sf.loose && sf.id !== 'grass') loose += 0.25 * (0.5 + sl);
         if (sf.id === 'grass') grass += 0.25 * (0.6 + sl);
         if (sf.wet || sf.icy) wet += 0.25;
@@ -560,7 +588,20 @@
       v.scr1.g.gain.setTargetAtTime(sc, t, 0.03);
       v.scr2.g.gain.setTargetAtTime(sc * 0.6, t, 0.03);
       v.scr1.f.frequency.setTargetAtTime(850 + ms.screech + screech * 400 + Math.sin(this._limT * 13) * 60, t, 0.05);
-      v.road.g.gain.setTargetAtTime(road * sp * 0.05 * master * ms.road, t, 0.08);
+      v.road.g.gain.setTargetAtTime(road * sp * 0.07 * master * ms.road, t, 0.08);
+      // v5 tread hiss: +6 dB per doubling of speed (amplitude ∝ speed); the
+      // rain makes it a sizzle one octave up
+      const wetRoad = this._wetEnv || 0;
+      v.tread.f.frequency.setTargetAtTime(1000 + wetRoad * 1400 + speed * 6, t, 0.2);
+      v.tread.g.gain.setTargetAtTime(tread * Math.min(speed / 40, 1.6) * (0.03 + wetRoad * 0.035) * master * ms.road, t, 0.08);
+      v.water.g.gain.setTargetAtTime(water * Math.min(1, speed / 15) * 0.35 * master, t, 0.05);
+      if (water > 0 && !this._inWater && speed > 6) this.splash(Math.min(1, speed / 30) * master);
+      this._inWater = water > 0;
+      v.grain.g.gain.setTargetAtTime(gravel * Math.min(1, speed / 20) * 0.05 * master, t, 0.05);
+      v.gl.frequency.setTargetAtTime(18 + Math.random() * 40 + speed * 1.5, t, 0.02);
+      v.glg.gain.setTargetAtTime(gravel * Math.min(1, speed / 20) * 0.05 * master, t, 0.05);
+      v.slg.gain.setTargetAtTime(Math.max(0, screech - 0.25) * 0.09 * master, t, 0.03);
+      v.sl.frequency.setTargetAtTime(22 + Math.random() * 14, t, 0.05);
       // race pads / carbon squeal as the car rolls to a stop under braking
       const sq = (rs.brk || 0) > 0.3 && speed > 1.5 && speed < 13 ? ms.squeal * (1 - speed / 13) * master : 0;
       v.squeal.g.gain.setTargetAtTime(sq, t, 0.05);
@@ -584,6 +625,8 @@
     // cars: [{rs, carId}], lx/lz/lyaw = listener position + facing.
     silenceOthers() {
       if (!this.ctx) return;
+      this._silenceAmb();
+      if (this.env) for (const k of ['tread', 'water', 'grain']) this.env[k].g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
       const t = this.ctx.currentTime;
       for (const v of this.others) {
         v.g.gain.setTargetAtTime(0, t, 0.1);
@@ -730,15 +773,130 @@
     // Called by RaceView.apply every frame of a race view.
     race(v, world, dt) {
       const me = v.me && !v.me.finished ? v.me : null;
+      this._wetEnv = world.env ? world.env.wet || (world.track && world.track.theme.rain ? 1 : 0) : 0;
       this.update(me ? me.rs : null, dt, me ? { carId: me.carId, parts: me.parts } : null);
       this._fed = true;
       if (!this.ok()) return;
       if (!this.env) this._startEnv();
       const c = world.cam;
       this.othersUpdate(v.cars, c.fx, c.fz, c.yaw, me ? me.rs.vx : 0, me ? me.rs.vz : 0, me ? me.id : null);
+      this.ambience(world, dt);
+    },
+
+    // v5 ambience: what the place sounds like under the engines. One noise
+    // source through a few beds (sea, city, rain, wind gusts) plus sparse
+    // one-shots (birds by day, crickets at night, thunder in heavy rain).
+    // Quiet on purpose: it fills the gaps, it never competes with the cars.
+    _startAmb() {
+      const c = this.ctx, a = {};
+      a.src = c.createBufferSource();
+      a.src.buffer = this.noise;
+      a.src.loop = true;
+      const bed = (type, f, q) => {
+        const fl = this._filt(type, f, q), g = this._gain(0);
+        a.src.connect(fl).connect(g).connect(this.bus.sfx);
+        return { f: fl, g };
+      };
+      a.sea = bed('lowpass', 420, 0.6);
+      a.city = bed('bandpass', 190, 0.5);
+      a.rain = bed('highpass', 2600, 0.5);
+      a.drops = bed('bandpass', 1300, 1.5);
+      a.gust = bed('bandpass', 320, 0.7);
+      a.src.start(0, Math.random() * 1.5);
+      a.birdT = 2;
+      a.bugT = 1;
+      a.thunderT = 20;
+      this.amb = a;
+    },
+    ambience(world, dt) {
+      const tr = world.track;
+      if (!tr || !this.ok()) return;
+      if (!this.amb) this._startAmb();
+      const a = this.amb, th = tr.theme, t = this.ctx.currentTime, env = world.env || {};
+      const m = 1; // (the sfx bus volume applies on top)
+      const night = env.night || 0, wet = th.rain ? 1 : env.wet || 0;
+      this._ambT = (this._ambT || 0) + dt;
+      const sw = 0.6 + 0.4 * Math.sin(this._ambT * 0.23) * Math.sin(this._ambT * 0.071 + 1);
+      a.sea.g.gain.setTargetAtTime(th.sea ? 0.045 * sw * m : 0, t, 0.5);
+      a.city.g.gain.setTargetAtTime(th.props === 'city' ? 0.035 * m : 0, t, 0.5);
+      a.rain.g.gain.setTargetAtTime(wet * 0.04 * m, t, 0.6);
+      a.drops.g.gain.setTargetAtTime(wet * 0.02 * (0.7 + 0.3 * Math.random()) * m, t, 0.1);
+      // crosswind zones: gusting air when the camera is in one
+      let gust = 0;
+      if (tr.WZ) {
+        const q = tr.query(world.cam.fx, world.cam.fz, this._ambHint == null ? -1 : this._ambHint, this._ambQ || (this._ambQ = {}));
+        this._ambHint = q.i;
+        const wi = tr.WZ[q.i];
+        if (wi >= 0) {
+          const W = tr.winds[wi];
+          gust = 0.5 + 0.5 * Math.sin(((env.t || 0) * 2 * Math.PI) / W.period + W.ph);
+        }
+      }
+      a.gust.g.gain.setTargetAtTime(gust * 0.09 * m, t, 0.25);
+      a.gust.f.frequency.setTargetAtTime(260 + gust * 260, t, 0.3);
+      // birds: daytime, trees about, not raining
+      a.birdT -= dt;
+      if (a.birdT <= 0) {
+        a.birdT = 2.5 + Math.random() * 5;
+        if (night < 0.35 && wet < 0.3 && th.trees && th.trees !== 'none' && th.props !== 'city') {
+          const f = 2600 + Math.random() * 2200, n = 2 + Math.floor(Math.random() * 3);
+          for (let i = 0; i < n; i++) this.tone(f * (1 + (Math.random() - 0.5) * 0.25), 0.07, 'sine', 0.012, f * (1.15 + Math.random() * 0.3), 'sfx', i * 0.11);
+        }
+      }
+      // crickets: warm nights away from the city
+      a.bugT -= dt;
+      if (a.bugT <= 0) {
+        a.bugT = 0.7 + Math.random() * 0.9;
+        if (night > 0.5 && wet < 0.4 && th.props !== 'city') for (let i = 0; i < 3; i++) this.tone(4300 + Math.random() * 300, 0.03, 'sine', 0.008, 0, 'sfx', i * 0.06);
+      }
+      // thunder in a real downpour
+      a.thunderT -= dt;
+      if (a.thunderT <= 0) {
+        a.thunderT = 25 + Math.random() * 40;
+        if (wet > 0.8) {
+          this.noiseHit(3.2, 160, 0.3, 'lowpass', 'sfx', 0, 60, 0.7);
+          this.noiseHit(0.4, 900, 0.08, 'bandpass', 'sfx', 0, 300, 1);
+        }
+      }
+    },
+    _silenceAmb() {
+      const a = this.amb;
+      if (!a || !this.ctx) return;
+      const t = this.ctx.currentTime;
+      for (const k of ['sea', 'city', 'rain', 'drops', 'gust']) a[k].g.gain.setTargetAtTime(0, t, 0.3);
     },
 
     // --------------------------------------------------------- one-shots
+    // v5 horn: a two-note chord per car (the kei beeps, the truck blares, the
+    // EV chirps), louder the nearer it is. vol 0..1.
+    horn(carId, vol) {
+      if (!this.ok() || !(vol > 0.02)) return;
+      const H = {
+        vandal: [410, 520, 'square'], brick: [500, 630, 'square'], sting: [560, 705, 'square'], mule: [300, 380, 'sawtooth'],
+        pip: [640, 800, 'square'], dune: [250, 315, 'sawtooth'], apex: [470, 590, 'square'], volt: [620, 780, 'triangle'], storm: [440, 555, 'sawtooth'],
+      }[carId] || [410, 520, 'square'];
+      const c = this.ctx, t = c.currentTime, dur = 0.42;
+      const f = c.createBiquadFilter();
+      f.type = 'lowpass';
+      f.frequency.value = 2600;
+      const g = c.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.09 * vol, t + 0.02);
+      g.gain.setValueAtTime(0.09 * vol, t + dur - 0.06);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      f.connect(g);
+      g.connect(this.bus.sfx);
+      for (const fr of [H[0], H[1]]) {
+        const o = c.createOscillator();
+        o.type = H[2];
+        o.frequency.value = fr;
+        o.detune.value = (Math.random() - 0.5) * 8;
+        o.connect(f);
+        o.start(t);
+        o.stop(t + dur + 0.02);
+      }
+    },
+
     tone(freq, dur, type, v, slide, bus, when) {
       if (!this.ok()) return;
       const c = this.ctx, t = c.currentTime + (when || 0);
@@ -799,6 +957,64 @@
       this.noiseHit(0.28, 190, 0.55 * (0.4 + k));
       this.tone(72, 0.24, 'sine', 0.35 * k, 38);
       if (k > 0.35) this.crunch(k);
+      // v5 layers: a hard hit breaks glass, then bits of car bounce away
+      if (k > 0.7) this.glass(k);
+      if (k > 0.5) for (let i = 0; i < 3; i++) this.noiseHit(0.05, 700 + Math.random() * 900, 0.08 * k * (1 - i * 0.25), 'bandpass', 'sfx', 0.18 + i * (0.12 + Math.random() * 0.1), 0, 5);
+    },
+    // v5: shattering glass — bright random pings and a shimmer of fine noise
+    glass(k) {
+      if (!this.ok()) return;
+      for (let i = 0; i < 6; i++) this.tone(2600 + Math.random() * 3800, 0.08 + Math.random() * 0.2, 'sine', 0.018 * k, 0, 'sfx', 0.03 + Math.random() * 0.25);
+      this.noiseHit(0.5, 6500, 0.08 * k, 'highpass', 'sfx', 0.02, 9000);
+    },
+    // v5: hitting water
+    splash(k) {
+      if (!this.ok() || k < 0.05) return;
+      this.noiseHit(0.55, 700, 0.3 * k, 'lowpass', 'sfx', 0, 2400, 0.8);
+      this.noiseHit(0.35, 3200, 0.1 * k, 'highpass', 'sfx', 0.05);
+    },
+    // v5 hazards: a boulder landing (rumble + crack), a wrecking ball swishing past
+    rockImpact(k) {
+      if (!this.ok() || k < 0.03) return;
+      this.noiseHit(0.9, 140, 0.5 * k, 'lowpass', 'sfx', 0, 60);
+      this.tone(48, 0.5, 'sine', 0.35 * k, 32);
+      this.noiseHit(0.12, 1800, 0.18 * k, 'bandpass', 'sfx', 0, 700, 2);
+      for (let i = 0; i < 4; i++) this.noiseHit(0.06, 900 + Math.random() * 700, 0.06 * k, 'bandpass', 'sfx', 0.2 + i * 0.13, 0, 4);
+    },
+    whoosh(k) {
+      if (!this.ok() || k < 0.03) return;
+      this.noiseHit(0.7, 300, 0.2 * k, 'bandpass', 'sfx', 0, 1100, 1.2);
+    },
+    // v5 pit crew: wheel gun, jack, fuel hose
+    pitGun() {
+      if (!this.ok()) return;
+      for (let i = 0; i < 9; i++) this.noiseHit(0.018, 2400, 0.16, 'bandpass', 'sfx', i * 0.028, 0, 3);
+      this.tone(210, 0.26, 'square', 0.04, 160, 'sfx');
+    },
+    pitJack(up) {
+      if (!this.ok()) return;
+      this.noiseHit(0.12, 300, 0.3, 'lowpass', 'sfx');
+      this.tone(up ? 90 : 120, 0.12, 'square', 0.08, up ? 140 : 70, 'sfx', 0.02);
+    },
+    fuel(on) {
+      if (!this.ok()) return;
+      if (on && !this._fuelN) {
+        const c = this.ctx, s = c.createBufferSource(), f = this._filt('bandpass', 380, 2.2), g = this._gain(0), l = this._osc('sine', 6), lg = this._gain(0.035);
+        s.buffer = this.noise;
+        s.loop = true;
+        l.connect(lg).connect(g.gain);
+        s.connect(f).connect(g).connect(this.bus.sfx);
+        g.gain.setTargetAtTime(0.07, c.currentTime, 0.05);
+        s.start();
+        l.start();
+        this._fuelN = { s, l, g };
+      } else if (!on && this._fuelN) {
+        const n = this._fuelN, t = this.ctx.currentTime;
+        n.g.gain.setTargetAtTime(0, t, 0.04);
+        setTimeout(() => { try { n.s.stop(); n.l.stop(); } catch (e) {} }, 300);
+        this._fuelN = null;
+        this.tone(1100, 0.05, 'square', 0.05, 800, 'sfx'); // nozzle click
+      }
     },
     crunch(k) {
       // metal: a cluster of detuned squares through a ringing bandpass
@@ -1019,11 +1235,19 @@
       if (!this.enabled) return;
       Music.play(name);
     },
+    // v5: 0..1 — the race turns the song up on the final lap
+    musicIntensity(k) {
+      Music.intensity = U.clamp(k || 0, 0, 1);
+    },
   };
 
   // ======================================================================
   // Music: a 16-step sequencer with look-ahead scheduling. Chords, bass, an
   // arpeggio, a seeded melody hook and drums — all oscillators + noise.
+  // v5: songs have sections (intro → drop → breakdown → build, every 16
+  // bars), a tempo-synced echo on the lead and arp, pads that pump against
+  // the kick, drum fills, and an `intensity` the race turns up on the final
+  // lap (open filters, 16th hats, the hook an octave up).
   // ======================================================================
   const SONGS = {
     // A minor, i–VI–III–VII: driving synth-pop for the menu
@@ -1032,6 +1256,15 @@
     garage: { bpm: 92, prog: [[50, 53, 57, 60], [55, 59, 62, 65], [48, 52, 55, 59], [45, 48, 52, 55]], drums: 'soft', arp: 0, keys: 1, lead: 0, bassPat: [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0] },
     // C–G–Am–F: triumphant final standings
     final: { bpm: 124, prog: [[48, 52, 55], [55, 59, 62], [57, 60, 64], [53, 57, 60]], drums: 'four', arp: 1, lead: 1, bright: 1, bassPat: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1] },
+    // v5 race songs (Settings: Music during races)
+    // E minor, i–VI–III–VII at 128: four-on-the-floor, octave-pumping bass
+    race: { bpm: 128, prog: [[52, 55, 59], [48, 52, 55], [55, 59, 62], [50, 54, 57]], drums: 'drive', arp: 1, lead: 1, bright: 1, sections: 1, pump: 1, scale: [0, 3, 5, 7, 10], bassPat: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], octBass: 1 },
+    // F# minor synthwave at 100 for night tracks: big gated snare, wide saw pads
+    night: { bpm: 100, prog: [[54, 57, 61, 64], [50, 54, 57, 61], [57, 61, 64, 68], [52, 56, 59, 63]], drums: 'wave', arp: 1, lead: 1, sections: 1, pump: 1, wide: 1, scale: [0, 3, 5, 7, 10], bassPat: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0], octBass: 1 },
+    // D dorian breakbeat at 140 for dirt, gravel and snow
+    rally: { bpm: 140, prog: [[50, 53, 57], [55, 59, 62], [50, 53, 57], [48, 52, 55]], drums: 'break', arp: 1, lead: 1, sections: 1, scale: [0, 2, 3, 7, 9], bassPat: [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1] },
+    // A minor at 116, steady and long-breathed for endurance races
+    endurance: { bpm: 116, prog: [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62], [57, 60, 64], [50, 53, 57], [53, 57, 60], [52, 56, 59]], drums: 'drive', arp: 1, lead: 1, sections: 1, pump: 1, scale: [0, 2, 3, 7, 8], bassPat: [1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0] },
   };
   const Music = {
     cur: null,
@@ -1039,20 +1272,42 @@
     step: 0,
     next: 0,
     gain: null,
+    intensity: 0, // v5: 0..1, the final lap turns it up
     play(name) {
       const A = Audio;
       if (!name || !SONGS[name]) return this.stop();
       if (this.cur === name) return;
       if (!A.ok()) return;
       this.stop();
+      const c = A.ctx;
       this.cur = name;
       this.song = SONGS[name];
-      this.gain = A.ctx.createGain();
+      this.intensity = 0;
+      this.gain = c.createGain();
       this.gain.gain.value = 0.0001;
-      this.gain.gain.exponentialRampToValueAtTime(1, A.ctx.currentTime + 1.2);
+      this.gain.gain.exponentialRampToValueAtTime(1, c.currentTime + 1.2);
       this.gain.connect(A.bus.music);
+      // pads through their own gain (pumped against the kick)
+      this.pad = c.createGain();
+      this.pad.connect(this.gain);
+      // echo: 3/16 of a beat-bar, filtered, fed back
+      const beat = 60 / this.song.bpm;
+      this.dly = c.createDelay(2);
+      this.dly.delayTime.value = beat * 0.75;
+      this.fb = c.createGain();
+      this.fb.gain.value = 0.32;
+      const df = c.createBiquadFilter();
+      df.type = 'lowpass';
+      df.frequency.value = 2600;
+      this.send = c.createGain();
+      this.send.gain.value = 0.35;
+      this.send.connect(this.dly);
+      this.dly.connect(df);
+      df.connect(this.fb);
+      this.fb.connect(this.dly);
+      df.connect(this.gain);
       this.step = 0;
-      this.next = A.ctx.currentTime + 0.1;
+      this.next = c.currentTime + 0.1;
       this.rng = U.rng(U.hashStr(name));
       this.hook = [];
       for (let i = 0; i < 32; i++) this.hook.push(this.rng() < 0.42 ? Math.floor(this.rng() * 5) : -1);
@@ -1062,13 +1317,14 @@
       if (this.timer) clearInterval(this.timer);
       this.timer = null;
       if (this.gain && Audio.ctx) {
-        const g = this.gain, t = Audio.ctx.currentTime;
+        const g = this.gain, t = Audio.ctx.currentTime, fb = this.fb;
         g.gain.cancelScheduledValues(t);
         g.gain.setValueAtTime(g.gain.value, t);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
         setTimeout(() => {
           try {
             g.disconnect();
+            if (fb) fb.disconnect();
           } catch (e) {}
         }, 900);
       }
@@ -1086,7 +1342,7 @@
         this.step++;
       }
     },
-    _note(m, t, dur, type, v, cut) {
+    _note(m, t, dur, type, v, cut, dest, echo) {
       const c = Audio.ctx;
       const o = c.createOscillator(), g = c.createGain();
       o.type = type;
@@ -1103,75 +1359,126 @@
       g.gain.exponentialRampToValueAtTime(v, t + Math.min(0.02, dur * 0.2));
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
       out.connect(g);
-      g.connect(this.gain);
+      g.connect(dest || this.gain);
+      if (echo && this.send) g.connect(this.send);
       o.start(t);
       o.stop(t + dur + 0.05);
+      return o;
     },
-    _drum(kind, t) {
+    _drum(kind, t, vel) {
       const c = Audio.ctx;
+      const k = vel == null ? 1 : vel;
       if (kind === 'kick') {
         const o = c.createOscillator(), g = c.createGain();
         o.frequency.setValueAtTime(150, t);
         o.frequency.exponentialRampToValueAtTime(42, t + 0.22);
-        g.gain.setValueAtTime(0.5, t);
+        g.gain.setValueAtTime(0.5 * k, t);
         g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
         o.connect(g).connect(this.gain);
         o.start(t);
         o.stop(t + 0.32);
+        // pads duck under the kick (the "pump")
+        if (this.song.pump && this.pad) {
+          this.pad.gain.setValueAtTime(0.35, t);
+          this.pad.gain.linearRampToValueAtTime(1, t + 0.22);
+        }
         return;
       }
       const s = c.createBufferSource();
       s.buffer = Audio.noise;
       const f = c.createBiquadFilter();
       const g = c.createGain();
-      if (kind === 'snare') {
+      if (kind === 'snare' || kind === 'gate') {
         f.type = 'bandpass';
-        f.frequency.value = 1900;
-        g.gain.setValueAtTime(0.22, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.16);
-      } else {
-        f.type = 'highpass';
-        f.frequency.value = 7000;
-        g.gain.setValueAtTime(kind === 'hatO' ? 0.07 : 0.045, t);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + (kind === 'hatO' ? 0.14 : 0.04));
+        f.frequency.value = kind === 'gate' ? 1500 : 1900;
+        const len = kind === 'gate' ? 0.32 : 0.16;
+        g.gain.setValueAtTime(0.22 * k, t);
+        if (kind === 'gate') g.gain.setValueAtTime(0.18 * k, t + len - 0.02); // gated: holds, then chops
+        g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+        s.connect(f).connect(g).connect(this.gain);
+        s.start(t, Math.random());
+        s.stop(t + len + 0.05);
+        const o = c.createOscillator(), og = c.createGain(); // body
+        o.frequency.setValueAtTime(220, t);
+        o.frequency.exponentialRampToValueAtTime(140, t + 0.08);
+        og.gain.setValueAtTime(0.12 * k, t);
+        og.gain.exponentialRampToValueAtTime(0.0001, t + 0.1);
+        o.connect(og).connect(this.gain);
+        o.start(t);
+        o.stop(t + 0.12);
+        return;
       }
+      f.type = 'highpass';
+      f.frequency.value = 7000;
+      g.gain.setValueAtTime((kind === 'hatO' ? 0.07 : 0.045) * k, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + (kind === 'hatO' ? 0.14 : 0.04));
       s.connect(f).connect(g).connect(this.gain);
       s.start(t, Math.random());
       s.stop(t + 0.2);
     },
     _step(n, t, sp) {
       const S_ = this.song;
-      const st = n % 16, bar = Math.floor(n / 16) % S_.prog.length;
+      const st = n % 16, barN = Math.floor(n / 16), bar = barN % S_.prog.length;
       const ch = S_.prog[bar];
+      const I = this.intensity || 0;
+      // sections (16-bar cycle): 0-1 intro, 2-11 drop, 12-13 breakdown, 14-15 build
+      const sec = S_.sections ? barN % 16 : 5;
+      const intro = sec < 2, breakdown = sec === 12 || sec === 13, build = sec >= 14;
+      const fillBar = barN % 4 === 3 && st >= 12;
       // drums
-      if (S_.drums === 'four') {
-        if (st % 4 === 0) this._drum('kick', t);
-        if (st === 4 || st === 12) this._drum('snare', t);
-        if (st % 2 === 1) this._drum(st === 7 || st === 15 ? 'hatO' : 'hat', t);
-      } else {
-        if (st === 0 || st === 10) this._drum('kick', t);
-        if (st === 8) this._drum('snare', t);
-        if (st % 4 === 2) this._drum('hat', t);
+      if (!breakdown) {
+        if (S_.drums === 'four') {
+          if (st % 4 === 0) this._drum('kick', t);
+          if ((st === 4 || st === 12) && !intro) this._drum('snare', t);
+          if (st % 2 === 1) this._drum(st === 7 || st === 15 ? 'hatO' : 'hat', t);
+        } else if (S_.drums === 'drive') {
+          if (st % 4 === 0) this._drum('kick', t);
+          if ((st === 4 || st === 12) && !intro) this._drum('snare', t);
+          if (!intro && (st % 2 === 1 || I > 0.5)) this._drum(st % 4 === 2 ? 'hatO' : 'hat', t, st % 2 ? 1 : 0.6);
+          if (fillBar && !build && st % 2 === 0) this._drum('snare', t, 0.5 + st / 32);
+        } else if (S_.drums === 'wave') {
+          if (st === 0 || st === 8 || st === 11) this._drum('kick', t);
+          if ((st === 4 || st === 12) && !intro) this._drum('gate', t);
+          if (st % 2 === 0) this._drum('hat', t, 0.7);
+        } else if (S_.drums === 'break') {
+          if (st === 0 || st === 10 || (st === 7 && barN % 2)) this._drum('kick', t);
+          if ((st === 4 || st === 12 || (st === 15 && barN % 2)) && !intro) this._drum('snare', t, st === 15 ? 0.5 : 1);
+          if (st % 2 === 0 || I > 0.5) this._drum(st === 14 ? 'hatO' : 'hat', t, 0.8);
+        } else {
+          if (st === 0 || st === 10) this._drum('kick', t);
+          if (st === 8) this._drum('snare', t);
+          if (st % 4 === 2) this._drum('hat', t);
+        }
+        // build: a snare roll that tightens and rises
+        if (build && sec === 15 && (st % 2 === 0 || st >= 8)) this._drum('snare', t, 0.35 + st / 20);
       }
       // bass
-      if (S_.bassPat[st]) this._note(ch[0] - 12 + (st === 14 ? 12 : 0), t, sp * 1.8, 'sawtooth', 0.09, 420);
+      if (S_.bassPat[st] && !breakdown) {
+        const oct = S_.octBass && st % 2 ? 12 : 0;
+        this._note(ch[0] - 12 + oct + (st === 14 && !S_.octBass ? 12 : 0), t, sp * (S_.octBass ? 0.9 : 1.8), 'sawtooth', S_.octBass ? 0.07 : 0.09, 420 + I * 400);
+      }
       // pad / keys on the bar
       if (st === 0) {
-        for (const m of ch) this._note(m, t, sp * 15, S_.keys ? 'triangle' : 'sawtooth', S_.keys ? 0.035 : 0.018, S_.keys ? 2200 : 1100);
+        const padV = (S_.keys ? 0.035 : 0.018) * (breakdown ? 1.4 : 1);
+        for (const m of ch) {
+          this._note(m, t, sp * 15, S_.keys ? 'triangle' : 'sawtooth', padV, S_.keys ? 2200 : 1100 + I * 900, this.pad);
+          if (S_.wide) this._note(m + 0.12, t, sp * 15, 'sawtooth', padV * 0.7, 1300, this.pad).detune.value = 14;
+        }
       }
       if (S_.keys && (st === 6 || st === 10)) for (const m of ch.slice(1)) this._note(m + 12, t, sp * 2.5, 'sine', 0.025);
-      // arpeggio
-      if (S_.arp) {
+      // arpeggio (16ths at full intensity or in a breakdown)
+      if (S_.arp && !intro && (st % 2 === 0 || I > 0.5 || breakdown || S_.drums === 'drive')) {
         const m = ch[st % ch.length] + 12 + (Math.floor(st / ch.length) % 2 ? 12 : 0);
-        this._note(m, t, sp * 0.9, 'square', 0.016, S_.bright ? 3200 : 2000);
+        this._note(m, t, sp * 0.9, 'square', 0.016, (S_.bright ? 3200 : 2000) + I * 1500, null, true);
       }
-      // melody hook (seeded, repeats every 2 bars)
-      if (S_.lead) {
+      // melody hook (seeded, repeats every 2 bars) — sits out the intro and
+      // breakdown, jumps an octave at full intensity
+      if (S_.lead && !intro && !breakdown) {
         const h = this.hook[n % 32];
         if (h >= 0 && st % 2 === 0) {
-          const scale = [0, 2, 3, 5, 7];
-          const m = ch[0] + 24 + scale[h];
-          this._note(m, t, sp * 1.9, 'triangle', 0.035);
+          const scale = S_.scale || [0, 2, 3, 5, 7];
+          const m = ch[0] + 24 + scale[h] + (I > 0.7 ? 12 : 0);
+          this._note(m, t, sp * 1.9, 'triangle', 0.035, 0, null, true);
         }
       }
     },

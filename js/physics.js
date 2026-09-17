@@ -83,11 +83,14 @@
       nos: 1, // nitrous bottle 0..1 (only with a Nitrous part)
       nosOn: 0, // nitrous firing this step (visual/sound)
       padT: 0, // cooldown after a speed pad
+      // v5 endurance (only drain when the race env has `endu`): fuel left in
+      // the tank 0..1, tyre wear since the last change 0..1+, held in the pit box
+      tank: 1, tw: 0, pit: 0,
     };
   }
 
   // Core state that must round-trip for prediction/reconciliation.
-  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT'];
+  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit'];
   function copyCore(dst, src) {
     for (let i = 0; i < CORE.length; i++) dst[CORE[i]] = src[CORE[i]];
     for (let i = 0; i < 4; i++) dst.fy[i] = src.fy[i];
@@ -113,9 +116,33 @@
   // step(car, spec, input, track, dt, opts)
   //   input: { s: steer -1..1 (+right), t: throttle 0..1, b: brake 0..1, hb: 0/1, n: nitrous 0/1 }
   //   opts.frozen: grid hold (brakes locked, engine can rev)
+  //   opts.env: v5 race environment {t: race seconds, wet: 0..1 rain on the
+  //             track, endu: {fuelK, tyreK} in an endurance race} — the same
+  //             on host and clients (race.js RaceEnv)
   // ---------------------------------------------------------------------------
+  const SI_WET = G.SI.wet;
   function step(car, s, inp, track, dt, opts) {
     const frozen = opts && opts.frozen;
+    const env = opts && opts.env;
+    const wetEnv = env ? env.wet || 0 : 0;
+    const endu = env && env.endu;
+    // v5 pit stop: the host holds the car in the box while it's serviced
+    if (car.pit) {
+      car.vx = car.vz = car.w = 0;
+      car.ax = car.ay = 0;
+      car.steer *= 0.8;
+      car.rpm += (s.idle - car.rpm) * Math.min(1, dt * 4);
+      car.boost = 0;
+      car.thr = 0; car.brk = 1; car.hb = 0;
+      for (let i = 0; i < 4; i++) car.slip[i] = 0;
+      car.heat = Math.max(0, car.heat - dt * s.coolRate * 2);
+      if (car.ghost > 0) car.ghost -= dt;
+      car.wallHit = 0;
+      return;
+    }
+    // v5 endurance: worn tyres lose grip — little until ~30% worn, then up
+    // to a quarter of it on a completely finished set
+    const twGrip = endu ? 1 - 0.25 * Math.pow(U.clamp((car.tw - 0.3) / 0.8, 0, 1), 1.4) : 1;
     let thr = U.clamp(inp.t || 0, 0, 1);
     let brk = U.clamp(inp.b || 0, 0, 1);
     const steerIn = U.clamp(inp.s || 0, -1, 1);
@@ -142,6 +169,8 @@
       driveThr = brk;
       brakeAmt = thr;
     }
+    // v5 endurance: an empty tank only splutters (enough to limp to the pits)
+    if (endu && car.tank <= 0) driveThr *= 0.2;
     if (frozen) {
       brakeAmt = 1;
     }
@@ -265,7 +294,7 @@
     const wheelW = Math.max(Math.abs(vLong), speed * 0.95) / s.wheelR;
     let r = (wheelW * ratio) / s.redlineW; // normalised rpm from road speed
     // Launch / clutch slip: at low road speed the clutch lets the engine rev.
-    const clutchR = s.idle + driveThr * 0.55;
+    const clutchR = s.ev ? 0 : s.idle + driveThr * 0.55; // (v5: an electric motor pulls from zero, no clutch)
     const rEng = Math.max(r, car.gear === 1 || car.gear === -1 ? clutchR : s.idle);
     if (car.shiftT > 0) car.shiftT -= dt;
     if (car.kickT > 0) car.kickT -= dt;
@@ -292,11 +321,13 @@
     if (bTarget > car.boost) car.boost += (bTarget - car.boost) * Math.min(1, dt / s.boostLag);
     else {
       if (car.boost > 0.5 && bTarget < 0.1) car.backfire = 0.12;
-      car.boost += (bTarget - car.boost) * Math.min(1, dt / 0.12);
+      // v5 anti-lag: the turbo stays lit off the throttle (bangs included)
+      car.boost += (bTarget - car.boost) * Math.min(1, dt / (s.antilag && !frozen ? 1.6 : 0.12));
+      if (s.antilag && car.boost > 0.3 && driveThr < 0.1 && speed > 5) car.backfire = Math.max(car.backfire, 0.06);
     }
     // Heat: rises with boost*throttle, cooled by airflow. >1 => limp mode until <0.65.
     const cool = s.coolRate * (0.55 + 0.45 * Math.min(speed / 40, 1));
-    car.heat = Math.max(0, car.heat + dt * (s.heatRate * car.boost * driveThr - cool));
+    car.heat = Math.max(0, car.heat + dt * (s.heatRate * car.boost * (s.antilag ? Math.max(driveThr, 0.55) : driveThr) + (s.evHeat || 0) * driveThr * U.clamp(rEng, 0, 1) - cool));
     if (car.heat >= 1) car.overheat = 1;
     else if (car.overheat && car.heat < 0.65) car.overheat = 0;
     const limp = car.overheat ? 0.55 : 1;
@@ -315,7 +346,12 @@
     }
     car.nosOn = nos > 0 ? 1 : 0;
     // catch-up (car.cu) adds power when trailing the leader — see race.js
-    let T = s.peakTorque * G.Parts.torqueAt(s, rClamped) * (1 + s.boostGain * car.boost) * s.engineHealth * limp * (1 + (car.cu || 0) + nos);
+    // v5 launch control: boost is pre-spooled on the grid, and the first 3 s
+    // of the race get +15% torque, quick shifts and perfect traction (below)
+    const launching = s.launch && env && env.t > 0 && env.t < 3 && car.gear >= 1;
+    if (s.launch && frozen && thr > 0.5 && s.boostKind !== 'none') car.boost = Math.max(car.boost, G.Parts.boostAvail(s, 0.8));
+    if (launching && car.shiftT > s.shiftTime * 0.5) car.shiftT = s.shiftTime * 0.5;
+    let T = s.peakTorque * G.Parts.torqueAt(s, rClamped) * (1 + s.boostGain * car.boost) * s.engineHealth * limp * (1 + (car.cu || 0) + nos) * (launching ? 1.15 : 1);
     const limiter = r >= 1.0 && car.gear > 0; // fuel cut at redline
     let Fdrive = 0;
     if (car.shiftT <= 0 && !limiter && !frozen) Fdrive = (T * ratio * 0.9 * driveThr) / s.wheelR;
@@ -328,6 +364,14 @@
     car.engineWear += dt * s.engineWearRate * load * (1 + car.boost);
     if (car.heat > 0.85) car.engineWear += dt * s.heatDamage * (car.heat - 0.85) / 0.15;
     car.fuel += dt * s.fuelRate * (0.15 + 0.85 * load) * (1 + s.boostGain * car.boost);
+    // v5 endurance tank: the same load curve. Thirsty builds (turbos, race
+    // maps) still drink more, softened so they plan an extra stop rather than
+    // live in the pits; a fuel cell (s.tankM) makes the tank bigger.
+    if (endu && !frozen) {
+      car.tank = Math.max(0, car.tank - dt * 0.85 * Math.pow(s.fuelRate / 0.85, 0.6) * (0.15 + 0.85 * load) * (1 + s.boostGain * car.boost) * endu.fuelK / (s.tankM || 1));
+      // EV regen: braking (and lifting) at speed puts charge back
+      if (s.regen && speed > 4) car.tank = Math.min(1, car.tank + dt * s.regen * (brakeAmt * 0.8 + (1 - driveThr) * 0.2) * Math.min(1, speed / 35) * endu.fuelK / (s.tankM || 1));
+    }
     if (car.backfire > 0) car.backfire -= dt;
 
     // Drive split: rear share = rearBias. Within an axle the torque goes to the
@@ -365,7 +409,7 @@
     // ---- 7. Per-wheel tyre forces -------------------------------------------
     let FU = 0, FV = 0, TQ = 0;
     const brakeTot = s.brakeForce * brakeAmt * brakeEff;
-    let spinMask = 0, lockMask = 0, slipSum = 0;
+    let spinMask = 0, lockMask = 0, slipSum = 0, dryWheels = 0;
     const wet = car.surf;
     for (let i = 0; i < 4; i++) {
       const front = i < 2;
@@ -381,8 +425,11 @@
       const Fz = fzs[i];
       const sf = G.SURF[wet[i]];
       // Grip = compound*wear * surface/width multiplier * load sensitivity * bump penalty.
-      let mu = s.mu * s.surfMul[sf.code];
-      if (sf.wet && s.aqua) mu *= 1 - 0.3 * U.clamp((speed - 18) / 25, 0, 1); // wide tyres aquaplane
+      let mu = s.mu * s.surfMul[sf.code] * twGrip;
+      // v5 rain: dry tarmac, concrete and kerbs drift toward this car's own
+      // wet-road grip as the track gets wetter (narrow tyres cope better)
+      if (wetEnv > 0 && !sf.wet && !sf.loose && !sf.icy) mu = U.lerp(mu, s.mu * s.surfMul[SI_WET] * (sf.rough > 0.5 ? 0.92 : 1), wetEnv * 0.6);
+      if ((sf.wet || wetEnv > 0.6) && s.aqua) mu *= 1 - 0.3 * U.clamp((speed - 18) / 25, 0, 1); // wide tyres aquaplane
       mu *= 1 - s.loadSens * (Fz / s.fzNom - 1);
       mu *= 1 - sf.rough * s.roughGrip;
       if (!front) mu *= s.rearGrip * TUNE.rearGrip;
@@ -401,7 +448,7 @@
       // rear-drive car off the line and out of corners, so the two AWD cars
       // won almost every track for keyboard players (quarter mile 15.0-15.8 s
       // vs 18.7-20.8 s for the RWD cars).
-      if (s.tcs && car.gear > 0 && Fx * Math.sign(wl || 1) > 0) {
+      if ((s.tcs || launching) && car.gear > 0 && Fx * Math.sign(wl || 1) > 0) {
         const latUse = Math.min(0.95, Math.abs(car.fy[i]) / (Fmax || 1));
         const cap = FmaxL * 0.93 * Math.sqrt(1 - latUse * latUse);
         if (Math.abs(Fx) > cap) Fx = Math.sign(Fx) * cap;
@@ -462,6 +509,7 @@
       const sm = U.clamp(lateralSlide + ((spinMask | lockMask) & (1 << i) ? 0.8 : 0), 0, 1);
       car.slip[i] = sm;
       slipSum += sm;
+      if (!sf.wet && !sf.icy && !sf.loose) dryWheels++;
     }
     car.spin = spinMask;
     car.lock = lockMask;
@@ -492,6 +540,17 @@
       const gs = (-mg * Q.gr) / Math.sqrt(1 + Q.gr * Q.gr);
       gwx += Q.tx * gs;
       gwz += Q.tz * gs;
+    }
+    // v5 crosswind zones (bridges, causeways): a gusting push across the road,
+    // from race time so host and clients feel the same gust
+    if (track.WZ && env && !frozen) {
+      const wi = track.WZ[Q.i];
+      if (wi >= 0) {
+        const W = track.winds[wi];
+        const gust = W.str * s.mass * (0.55 + 0.45 * Math.sin((env.t * 2 * Math.PI) / W.period + W.ph)) * W.dir;
+        gwx += Q.nx * gust;
+        gwz += Q.nz * gust;
+      }
     }
 
     // ---- 9. Integrate (semi-implicit Euler) ---------------------------------
@@ -528,22 +587,27 @@
     car.ay += (U.clamp(ayL, -14, 14) - car.ay) * kT;
 
     // Tyre wear: distance + sliding energy, scaled by compound.
-    car.tyreWear += dt * s.tyreWearRate * (0.0004 + 0.00003 * speed + 0.0025 * (slipSum / 4)) * (s.mass / 1200);
+    // (v5 rain tyres shred on a dry road: s.dryWear on the dry wheels, unless it's raining)
+    const wearK = s.dryWear && wetEnv < 0.4 ? 1 + ((s.dryWear - 1) * dryWheels) / 4 : 1;
+    car.tyreWear += dt * s.tyreWearRate * (0.0004 + 0.00003 * speed + 0.0025 * (slipSum / 4)) * (s.mass / 1200) * wearK;
+    if (endu) car.tw += dt * s.tyreWearRate * (0.0004 + 0.00003 * speed + 0.0025 * (slipSum / 4)) * (s.mass / 1200) * endu.tyreK * wearK;
     if (car.ghost > 0) car.ghost -= dt;
 
     // ---- 10. Walls ---------------------------------------------------------
     car.wallHit = 0;
-    collideWalls(car, s, track);
+    collideWalls(car, s, track, env);
   }
 
   // Walls sit at |lateral| = halfWidth + runoff. Check the four body corners;
   // push out along the track normal and apply an impulse at the contact point
   // (so a glancing hit spins you a bit, a head-on one stops you).
   const CQ = Object.assign({}, Q);
-  function collideWalls(car, s, track) {
+  const _dyn = { x: 0, z: 0, r: 0, vx: 0, vz: 0, fall: 0 };
+  function collideWalls(car, s, track, env) {
     const sinH = Math.sin(car.h), cosH = Math.cos(car.h);
     const hl = s.len / 2, hw = s.wid / 2;
     let worst = 0, wn = null, wu = 0, wv = 0, wnx = 0, wnz = 0;
+    let ovx = 0, ovz = 0; // velocity of what we hit (v5: moving hazards)
     for (let k = 0; k < 4; k++) {
       const u = k < 2 ? hl : -hl, v = k % 2 === 0 ? hw : -hw;
       const px = car.x + sinH * u + cosH * v;
@@ -603,6 +667,38 @@
         }
       }
     }
+    // v5 moving hazards (rockfall, wrecking ball): the same circle test at
+    // where they are right now, and they hit with their own speed too
+    const dl = env && track.DYL ? track.DYL[car.hint] : null;
+    if (dl) {
+      for (let k = 0; k < dl.length; k++) {
+        const o = track.dynPos(dl[k], env.t, _dyn);
+        if (!o || o.fall > 0) continue;
+        const dx = o.x - car.x, dz = o.z - car.z;
+        const u = dx * sinH + dz * cosH, v = dx * cosH - dz * sinH;
+        const pu = U.clamp(u, -hl, hl), pv = U.clamp(v, -hw, hw);
+        const ex = u - pu, ev = v - pv;
+        const d = Math.hypot(ex, ev);
+        let pen, nu, nv;
+        if (d > 1e-4) {
+          if (d >= o.r) continue;
+          pen = o.r - d;
+          nu = -ex / d;
+          nv = -ev / d;
+        } else {
+          const du = hl - Math.abs(u), dv = hw - Math.abs(v);
+          if (du < dv) { pen = du + o.r; nu = -(Math.sign(u) || 1); nv = 0; } else { pen = dv + o.r; nu = 0; nv = -(Math.sign(v) || 1); }
+        }
+        if (pen > worst) {
+          worst = pen; wn = true; wu = pu; wv = pv;
+          wnx = sinH * nu + cosH * nv;
+          wnz = cosH * nu - sinH * nv;
+          soft = dl[k].k === 'swing' ? 0.6 : 1;
+          ovx = o.vx;
+          ovz = o.vz;
+        }
+      }
+    }
     if (!wn) return;
     car.x += wnx * worst;
     car.z += wnz * worst;
@@ -611,7 +707,7 @@
     // velocity of contact point: v + w × r (2-D, w about +Y with our left-positive convention)
     // d/dt of world offset r = w * (dr/dh) ; dr/dh = (cos h*u - sin h*v, -sin h*u - cos h*v)
     const dvx = car.w * (cosH * wu - sinH * wv), dvz = car.w * (-sinH * wu - cosH * wv);
-    const pvx = car.vx + dvx, pvz = car.vz + dvz;
+    const pvx = car.vx + dvx - ovx, pvz = car.vz + dvz - ovz;
     const vn = pvx * wnx + pvz * wnz;
     if (vn >= 0) return;
     // effective mass along normal including rotation: (r × n) in our convention
@@ -628,7 +724,7 @@
     car.vx -= tx * scrub;
     car.vz -= tz * scrub;
     car.wallHit = j;
-    car.body = Math.min(1, car.body + Math.max(0, j - 2500) * 0.000012 * soft);
+    car.body = Math.min(1, car.body + Math.max(0, j - 2500) * 0.000012 * soft * (s.wallDmg || 1));
   }
 
   G.Physics = { DT, createCar, step, copyCore, CORE, tyreCurve, TUNE };

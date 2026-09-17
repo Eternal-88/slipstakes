@@ -26,10 +26,10 @@
         };
       }
       return {
-        phase: sim.phase, countdown: sim.countdown, hold: sim.hold ? sim.holdN || 1 : 0, raceTime, format: tr.format, laps: sim.practice ? '∞' : tr.laps,
+        phase: sim.phase, countdown: sim.countdown, hold: sim.hold ? sim.holdN || 1 : 0, raceTime, wet: sim.env ? sim.env.wet : 0, format: tr.format, laps: sim.practice ? '∞' : sim.laps, endu: sim.endu,
         practice: sim.practice, total: sim.cars.length,
-        leaderLap: order[0] ? Math.max(1, Math.min(order[0].lapCount, tr.laps)) : 1,
-        me, order: order.map((c) => ({ id: c.id, name: c.name, color: c.color, finished: c.finished, dnf: c.dnf })), cars,
+        leaderLap: order[0] ? Math.max(1, Math.min(order[0].lapCount, sim.laps)) : 1,
+        me, order: order.map((c) => ({ id: c.id, name: c.name, color: c.color, finished: c.finished, dnf: c.dnf, stops: c.stops, pit: c.st.pit })), cars,
       };
     },
 
@@ -37,6 +37,18 @@
     // (null => free camera for spectators).
     apply(v, world, hud, dt, opts) {
       opts = opts || {};
+      // v5 environment: race time (moving hazards), rain, and how far the
+      // leader is round (tracks where night falls during the race)
+      if (world.track) {
+        let lead = 0;
+        for (const c of v.cars) if (c.dist > lead) lead = c.dist;
+        const len = world.track.closed && typeof v.laps === 'number' ? world.track.length * v.laps : world.track.raceDistance;
+        world.setEnv(v.raceTime || 0, v.wet || 0, lead / (len || 1));
+        if (v.wet > 0.03 && !world.rainWarned && v.phase === 'race') {
+          world.rainWarned = true;
+          hud.banner('RAIN', v.wet > 0.9 ? 'Wet race: brake early, narrow tyres grip best' : 'Rain is starting: the road is getting slippery', 2.6, 'warn');
+        }
+      }
       for (const c of v.cars) world.updateCar(c.id, c.rs, dt);
       const focus = opts.focusId ? v.cars.find((c) => c.id === opts.focusId) : null;
       world.focusId = focus ? focus.id : null; // (slipstream streaks / pad shake on the camera car only)
@@ -62,8 +74,26 @@
       const lv = hud.lastView;
       let hits = 0; // other cars' contacts drawn this frame (a pile-up: the first few are plenty)
       for (const e of evts) {
-        if (e.type === 'go') {
+        if (e.type === 'horn') {
+          // v5: someone else's horn, from where their car is
+          if (e.id === meId || !audio || !lv) continue;
+          const car = lv.cars.find((c) => c.id === e.id);
+          if (!car) continue;
+          const d = Math.hypot(car.rs.x - world.cam.fx, car.rs.z - world.cam.fz);
+          audio.horn(car.carId, U.clamp(1.2 - d / 70, 0, 1));
+          continue;
+        }
+        if (e.type === 'pitIn' && e.id === meId) {
+          // v5 endurance: our car is held in the box — play the crew
+          const info = (hud.enduT && hud.enduT.info) || {};
+          if (G.PitGame) G.PitGame.start({ tank: e.tank, tw: e.tw, ck: e.ck || 1, qr: e.qr || 1, need: info.need != null ? info.need : 1, lapsLeft: info.lapsLeft || 1 });
+        } else if (e.type === 'pitOut' && e.id === meId) {
+          if (hud.enduT && !e.cancel) hud.enduT.fuelIn += e.fuel || 0;
+          if (G.PitGame) G.PitGame.released(e);
+          if (!e.cancel && audio) audio.go();
+        } else if (e.type === 'go') {
           if (audio) audio.go();
+          if (audio && audio.musicIntensity) audio.musicIntensity(0);
           const cheer = world.trackGroup && world.trackGroup.userData.cheer;
           if (cheer) cheer(0.6);
         } else if (e.type === 'lap' && e.id === meId) {
@@ -76,9 +106,10 @@
             cls = 'best';
           } else if (prev != null) sub = '+' + ((e.ms - prev) / 1000).toFixed(3);
           const tr = hud.track;
-          const finalLap = tr && tr.closed && lv && !lv.practice && e.lap === tr.laps - 1;
+          const finalLap = tr && tr.closed && lv && !lv.practice && e.lap === lv.laps - 1;
           hud.banner(finalLap ? 'FINAL LAP' : txt, finalLap ? txt + (sub ? ' · ' + sub : '') : sub, 2.4, finalLap ? 'final' : cls);
           if (audio) finalLap ? audio.lastLap() : audio.lap();
+          if (audio && audio.musicIntensity) audio.musicIntensity(finalLap ? 1 : 0.25 * (e.lap || 0));
         } else if (e.type === 'finish' && e.id === meId) {
           hud.banner('FINISHED ' + U.ordinal(e.pos), U.fmtTime(e.ms), 4, e.pos === 1 ? 'best' : '');
           world.confetti(meId, e.pos <= 3 ? 110 : 30);
@@ -104,12 +135,27 @@
           }
           world.sparks(e.x, e.z, Math.min(14, 3 + e.j / 1500));
           if (e.j > 4000) world.debris(e.x, e.z, [world.colorOf(e.a), world.colorOf(e.b)], Math.min(16, Math.round(e.j / 900)));
+        } else if (e.type === 'rival' && e.target === meId) {
+          // v5: a rival bot has picked you
+          const who = lv && lv.order.find((o) => o.id === e.id);
+          hud.banner('⚠ RIVAL', `${who ? who.name.replace(' ⚙', '') : 'A bot'} is coming for you`, 1.8, 'warn');
+          if (audio && audio.notify) audio.notify('warn');
         } else if (e.type === 'respawn' && e.id === meId) {
           world.cam.snap = false;
           if (audio) audio.respawn();
         }
       }
     },
+  };
+
+  // v5 horn: play our own at once, then tell the race (host relays it)
+  RaceView.honk = function (carId) {
+    const now = performance.now();
+    if (now - (this._honkT || 0) < 700) return;
+    this._honkT = now;
+    if (G.Audio) G.Audio.horn(carId, 1);
+    if (G.App.mode === 'drive' && G.App.sim) return; // single player: nobody to hear it
+    if (G.Client) G.Client.act({ t: 'horn' });
   };
 
   G.RaceView = RaceView;
