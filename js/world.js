@@ -594,6 +594,7 @@
     // closer camera so body roll and squat are easy to read.
     follow(rs, dt, o) {
       const c = this.cam;
+      if (!Number.isFinite(rs.x) || !Number.isFinite(rs.z)) return; // (a NaN focus used to turn the whole view white)
       if (c.mode === 'tv' && !o && this.track) return this._tvCam(rs, dt);
       const P = CAMS[c.mode] || CAMS.follow;
       const speed = Math.hypot(rs.vx, rs.vz);

@@ -105,6 +105,8 @@
         this._orbit(st, dt);
         return; // silent: the brake-squeal and engine loops kept playing in the garage (use 🔊 Listen)
       }
+      // never let a broken state take the whole screen with it: back on the road
+      if (!Number.isFinite(st.x) || !Number.isFinite(st.z) || !Number.isFinite(st.h) || !Number.isFinite(st.vx)) this._respawn();
       this.acc += dt;
       let n = 0;
       while (this.acc >= P.DT && n < 12) {
@@ -169,6 +171,13 @@
 
     _respawn() {
       const tr = this.track;
+      if (!Number.isFinite(this.st.x) || !Number.isFinite(this.st.z)) {
+        // state went NaN: start a fresh car where it last was on the loop
+        const p0 = tr.pointAt(Number.isFinite(this.lastAlong) ? this.lastAlong : 0, 0);
+        const fresh = P.createCar(p0.x, p0.z, p0.h);
+        for (const k in this.st) if (!(k in fresh)) delete this.st[k];
+        Object.assign(this.st, fresh, { hint: p0.i });
+      }
       const q = tr.query(this.st.x, this.st.z, this.st.hint, this.q);
       const p = tr.pointAt(q.along, 0);
       Object.assign(this.st, { x: p.x, z: p.z, h: p.h, vx: 0, vz: 0, w: 0, steer: 0, ax: 0, ay: 0, gear: 1, offT: 0 });

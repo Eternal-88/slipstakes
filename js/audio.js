@@ -33,19 +33,35 @@
   //   sting : high-revving four — thin, bright, screams at the top
   //   mule  : V8 — deep sub, heavy lumpy lope, dark filter
   // v4.5: res = where the exhaust rings (Hz), grit = combustion rasp amount
+  // v5: every car has its own voice, spread further apart. types = the
+  // waveforms of [firing order, half order, 2nd order] — a square-heavy stack
+  // buzzes, sawtooths rasp, sines and triangles are smooth.
   const PROFILES = {
-    vandal: { cyl: 6, cut: 1.05, rasp: 1.6, lope: 0.04, lopeDiv: 4, sub: 0.45, h2: 0.45, res: 420, grit: 0.6 },
-    brick: { cyl: 4, cut: 1.15, rasp: 7.5, lope: 0.3, lopeDiv: 2, sub: 0.35, h2: 0.3, res: 300, grit: 1.35 },
-    sting: { cyl: 4, cut: 1.7, rasp: 4.5, lope: 0.0, lopeDiv: 4, sub: 0.16, h2: 0.8, res: 620, grit: 1.0 },
-    mule: { cyl: 8, cut: 0.68, rasp: 2.4, lope: 0.62, lopeDiv: 4, sub: 1.15, h2: 0.18, res: 190, grit: 1.1 },
-    // v4: truck = low, gruff, lumpy V6; Apex = high, clean flat-six shriek
-    dune: { cyl: 6, cut: 0.72, rasp: 3.4, lope: 0.24, lopeDiv: 3, sub: 0.95, h2: 0.22, res: 230, grit: 1.2 },
-    apex: { cyl: 6, cut: 2.0, rasp: 3.6, lope: 0.02, lopeDiv: 4, sub: 0.18, h2: 0.95, res: 560, grit: 0.85 },
-    // v5: Pip = buzzy little triple; Stormer = the inline-five warble;
-    // Volt = no combustion, a motor whine that climbs with speed
-    pip: { cyl: 3, cut: 1.9, rasp: 5.0, lope: 0.1, lopeDiv: 3, sub: 0.1, h2: 0.9, res: 720, grit: 1.2 },
-    storm: { cyl: 5, cut: 1.25, rasp: 6.0, lope: 0.36, lopeDiv: 2.5, sub: 0.45, h2: 0.5, res: 340, grit: 1.5 },
-    volt: { cyl: 8, cut: 3.0, rasp: 0.2, lope: 0.0, lopeDiv: 4, sub: 0.04, h2: 1.4, res: 1800, grit: 0, ev: 1 },
+    // smooth straight-six: clean, even, a strong 2nd order
+    vandal: { cyl: 6, types: ['sawtooth', 'triangle', 'sawtooth'], cut: 1.05, rasp: 1.4, lope: 0.03, lopeDiv: 6, sub: 0.35, h2: 0.55, res: 420, grit: 0.5 },
+    // boxer-four rally hatch: gravelly, a lumpy burble at half the firing rate
+    brick: { cyl: 4, types: ['square', 'square', 'sawtooth'], cut: 1.15, rasp: 7.5, lope: 0.35, lopeDiv: 2, sub: 0.4, h2: 0.3, res: 300, grit: 1.4 },
+    // high-revving four: thin and bright, screams at the top
+    sting: { cyl: 4, types: ['sawtooth', 'triangle', 'square'], cut: 1.8, rasp: 4.2, lope: 0.0, lopeDiv: 4, sub: 0.12, h2: 0.9, res: 680, grit: 0.9 },
+    // cross-plane V8: deep sub, heavy lope
+    mule: { cyl: 8, types: ['sawtooth', 'square', 'sawtooth'], cut: 0.62, rasp: 2.6, lope: 0.7, lopeDiv: 4, sub: 1.25, h2: 0.15, res: 180, grit: 1.15 },
+    // kei three-cylinder: a buzzy, uneven little thrum
+    pip: { cyl: 3, types: ['square', 'square', 'triangle'], cut: 2.1, rasp: 5.5, lope: 0.14, lopeDiv: 3, sub: 0.08, h2: 1.0, res: 780, grit: 1.25 },
+    // truck V6: low, gruff and lumpy
+    dune: { cyl: 6, types: ['sawtooth', 'square', 'triangle'], cut: 0.7, rasp: 3.6, lope: 0.28, lopeDiv: 3, sub: 1.0, h2: 0.2, res: 230, grit: 1.3 },
+    // flat-six supercar: a clean, hard shriek
+    apex: { cyl: 6, types: ['square', 'sine', 'sawtooth'], cut: 2.2, rasp: 3.2, lope: 0.02, lopeDiv: 6, sub: 0.15, h2: 1.1, res: 600, grit: 0.8 },
+    // Group B inline-five: the off-beat warble (lope at 2/5 of firing)
+    storm: { cyl: 5, types: ['sawtooth', 'square', 'sawtooth'], cut: 1.3, rasp: 6.2, lope: 0.4, lopeDiv: 2.5, sub: 0.5, h2: 0.45, res: 340, grit: 1.5 },
+    // electric: no combustion — a motor tone and an inverter whine
+    volt: { cyl: 8, types: ['triangle', 'sine', 'sine'], cut: 3.0, rasp: 0.2, lope: 0.0, lopeDiv: 4, sub: 0.04, h2: 1.4, res: 1800, grit: 0, ev: 1 },
+  };
+  const _curves = new Map(); // waveshaper curves by amount (shared)
+  const curveFor = (k) => {
+    const key = Math.round(k * 10) / 10;
+    let c = _curves.get(key);
+    if (!c) _curves.set(key, (c = shaperCurve(key)));
+    return c;
   };
   const vol = (v) => Math.pow(U.clamp(v, 0, 100) / 100, 1.6);
 
@@ -190,9 +206,10 @@
       const c = this.ctx, E = this.bus.engine, X = this.bus.sfx;
       const e = { prof };
       // (v5: an electric motor is tonal and clean — no sawtooth buzz)
-      e.o1 = this._osc(prof.ev ? 'triangle' : 'sawtooth');
-      e.o2 = this._osc(prof.ev ? 'sine' : 'square');
-      e.o3 = this._osc(prof.ev ? 'sine' : 'sawtooth');
+      const ty = prof.types || ['sawtooth', 'square', 'sawtooth'];
+      e.o1 = this._osc(ty[0]);
+      e.o2 = this._osc(ty[1]);
+      e.o3 = this._osc(ty[2]);
       e.o3.detune.value = 9;
       e.g1 = this._gain(0.55);
       e.g2 = this._gain(prof.sub * 0.5);
@@ -354,20 +371,37 @@
 
     // Another car: engine (two oscillators, rasp, lowpass) + its own tyre
     // screech, both through a stereo panner into the "others" bus.
+    // v5: the other car's own character — its waveforms, rasp, exhaust ring,
+    // sub / 2nd-order balance and lope — set whenever the voice moves to a
+    // different kind of car (_voiceCar), so a passing V8 burbles, a kei car
+    // buzzes and the Volt whines instead of every car sounding alike.
     _voice(prof) {
-      const v = { prof, id: null };
+      const v = { prof: null, id: null };
       v.o1 = this._osc('sawtooth');
       v.o2 = this._osc('square');
       v.o3 = this._osc('sawtooth');
       v.o3.detune.value = 11;
+      v.g1 = this._gain(0.55);
+      v.m2 = this._gain(0.25);
       v.m3 = this._gain(0.3);
+      v.mix = this._gain(1);
+      v.sh = this.ctx.createWaveShaper();
+      v.pk = this._filt('peaking', 400, 1.6);
+      v.pk.gain.value = 4;
       v.f = this._filt('lowpass', 700, 1.4);
       v.g = this._gain(0);
       v.p = this.ctx.createStereoPanner ? this.ctx.createStereoPanner() : null;
-      v.o1.connect(v.f);
-      v.o2.connect(v.f);
-      v.o3.connect(v.m3).connect(v.f);
+      v.o1.connect(v.g1).connect(v.mix);
+      v.o2.connect(v.m2).connect(v.mix);
+      v.o3.connect(v.m3).connect(v.mix);
+      v.mix.connect(v.sh).connect(v.pk).connect(v.f);
       v.f.connect(v.g);
+      // lope: the uneven-firing wobble, on the voice's own level
+      v.lfo = this._osc('sine', 10);
+      v.lfoG = this._gain(0);
+      v.lfo.connect(v.lfoG).connect(v.g.gain);
+      v.lfo.start();
+      this._voiceCar(v, prof);
       const out = v.p || this.bus.others;
       if (v.p) v.p.connect(this.bus.others);
       v.g.connect(out);
@@ -389,8 +423,22 @@
       v.n.start(0, Math.random() * 1.5);
       return v;
     },
+    _voiceCar(v, prof) {
+      if (v.prof === prof) return;
+      v.prof = prof;
+      const ty = prof.types || ['sawtooth', 'square', 'sawtooth'];
+      v.o1.type = ty[0];
+      v.o2.type = ty[1];
+      v.o3.type = ty[2];
+      v.sh.curve = curveFor(prof.ev ? 0 : prof.rasp * 0.8);
+      const t = this.ctx.currentTime;
+      v.pk.frequency.setValueAtTime(prof.res || 400, t);
+      v.m2.gain.setValueAtTime(0.5 * (prof.sub == null ? 0.5 : prof.sub), t);
+      v.m3.gain.setValueAtTime(0.45 * (prof.h2 == null ? 0.5 : prof.h2), t);
+    },
     _killVoice(v) {
       try {
+        v.lfo.stop();
         v.o1.stop();
         v.o2.stop();
         v.o3.stop();
@@ -635,6 +683,7 @@
         // out, so after a race next to a boosted bot the whine played on at
         // its last level through the whole main menu.
         v.wg.gain.setTargetAtTime(0, t, 0.06);
+        v.lfoG.gain.setTargetAtTime(0, t, 0.06);
         v.id = null;
         v.o = null;
       }
@@ -699,6 +748,7 @@
         const o = v.o;
         if (!o) {
           v.g.gain.setTargetAtTime(0, t, 0.1);
+          v.lfoG.gain.setTargetAtTime(0, t, 0.06);
           v.ng.gain.setTargetAtTime(0, t, 0.06);
           v.wg.gain.setTargetAtTime(0, t, 0.06);
           continue;
@@ -706,14 +756,16 @@
         const rs = o.rs;
         const car = G.Parts.CARS[o.carId] || G.Parts.CARS.vandal;
         const prof = PROFILES[car.id] || PROFILES.vandal;
+        this._voiceCar(v, prof);
         const rpm = U.clamp(rs.rpm || 0.14, 0.1, 1.05);
         const dx = rs.x - lx, dz = rs.z - lz, d = v.d || 1;
         // Doppler: closing speed along the line between car and listener
         const closing = -(((rs.vx || 0) - (lvx || 0)) * dx + ((rs.vz || 0) - (lvz || 0)) * dz) / d;
         const dop = U.clamp(343 / (343 - closing), 0.82, 1.22);
         const crank = (rpm * car.redline) / 60;
-        const f0 = crank * (prof.cyl / 2) * dop;
+        const f0 = (prof.ev ? 90 + crank * 3.2 : crank * (prof.cyl / 2)) * dop;
         v.o1.frequency.setTargetAtTime(f0, t, 0.04);
+        v.lfo.frequency.setTargetAtTime(f0 / (prof.lopeDiv || 4), t, 0.05);
         v.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.04);
         v.o3.frequency.setTargetAtTime(f0 * 2, t, 0.04);
         // their mods colour their note too (exhaust / ECU / stripped shell)
@@ -727,14 +779,16 @@
         }
         v.f.frequency.setTargetAtTime((320 + rpm * 1900 * prof.cut) * (0.8 + 0.2 * dop) * oms.cut, t, 0.05);
         v.f.Q.setTargetAtTime(1.4 * (oms.q / 1.6), t, 0.1);
-        v.m3.gain.setTargetAtTime(0.3 * oms.rasp, t, 0.1);
+        v.pk.gain.setTargetAtTime(2 + oms.q, t, 0.2);
         const thr = rs.thr ? U.clamp(rs.thr, 0.5, 1) : 0.45;
         const fall = 1 / (1 + d / 11);
-        v.g.gain.setTargetAtTime((0.035 + 0.06 * thr) * fall * oms.loud, t, 0.06);
+        const vg = (0.035 + 0.06 * thr) * fall * oms.loud;
+        v.g.gain.setTargetAtTime(vg, t, 0.06);
+        v.lfoG.gain.setTargetAtTime(vg * (prof.lope || 0) * oms.lope, t, 0.08);
         // straight pipes / race maps crackle as they lift past you
         // (at most every 0.7 s per car: a bot's throttle flickers, and each
         // lift used to fire another burst of pops)
-        if (oms.pops > 0.4 && v.lt > 0.5 && !rs.thr && fall > 0.2 && performance.now() - (v.crT || 0) > 700) {
+        if (!prof.ev && oms.pops > 0.4 && v.lt > 0.5 && !rs.thr && fall > 0.2 && performance.now() - (v.crT || 0) > 700) {
           v.crT = performance.now();
           this.crackle(oms.pops * 0.6, fall * 0.7);
         }
@@ -752,9 +806,15 @@
         }
         // their induction: supercharger whine on the revs, turbo whistle on boost
         const ind = (o.parts && o.parts.induction) || 'na';
-        const okind = G.Parts.opt('induction', ind).kind;
+        const okind = prof.ev ? 'ev' : G.Parts.opt('induction', ind).kind;
         const bst = rs.boost || 0;
-        if (okind === 'sc') {
+        if (okind === 'ev') {
+          // their inverter + reduction gear whine, rising with road speed
+          const spd = Math.hypot(rs.vx || 0, rs.vz || 0);
+          if (v.w.type !== 'sine') v.w.type = 'sine';
+          v.w.frequency.setTargetAtTime((700 + spd * 62) * dop, t, 0.04);
+          v.wg.gain.setTargetAtTime((0.01 + 0.02 * thr) * Math.min(1, spd / 6 + 0.15) * fall, t, 0.05);
+        } else if (okind === 'sc') {
           if (v.w.type !== 'triangle') v.w.type = 'triangle';
           v.w.frequency.setTargetAtTime(crank * 14 * dop, t, 0.03); // crank-locked, like your own
           v.wg.gain.setTargetAtTime((0.008 + 0.022 * thr) * rpm * fall, t, 0.04);

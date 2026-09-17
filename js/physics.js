@@ -286,6 +286,9 @@
 
     // ---- 6. Engine, gearbox, boost, heat -------------------------------------
     const nG = s.gears.length;
+    // (v5: a car swapped mid-drive can be in a gear its new box doesn't have —
+    // the one-speed Volt in 3rd turned every number into NaN)
+    if (car.gear > nG) car.gear = nG;
     const ratio = car.gear > 0 ? s.gears[car.gear - 1] * s.finalDrive : s.revRatio * s.finalDrive;
     // Driven wheels turn at roughly ROAD speed even when the car is sideways.
     // (Using vLong alone made a slide look like "slowing down": the box

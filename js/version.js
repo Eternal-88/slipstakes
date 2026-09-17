@@ -3,8 +3,14 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.0';
+  G.VERSION = '5.0.1';
   G.CHANGELOG = [
+    {
+      v: '5.0.1', name: 'After Dark hotfix', items: [
+        ['🔋', 'Volt garage fix', 'Choosing the Volt E in the garage no longer turns the screen white.'],
+        ['🔊', 'Every car sounds like itself', 'Other drivers\' cars now have their own engine voices too: the Mule burbles, the Pip buzzes, the Stormer warbles and the Volt whines past, instead of every car sounding alike with only the pitch changed.'],
+      ],
+    },
     {
       v: '5.0', name: 'After Dark', items: [
         ['⛽', 'Endurance mode', 'Pick Endurance in the lobby (or Race: Endurance for a quick race): ~6-minute races on circuits with a pit box. Fuel and tyres run down, so stop in the box and work your crew: choose tyres and fuel, hold to fill and let go on the line, then hit the wheel gun in the green. Your HUD tells you when to box. Bots pit too.'],
