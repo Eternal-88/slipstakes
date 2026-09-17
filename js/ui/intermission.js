@@ -22,12 +22,15 @@
   };
 
   function standingsRows(st, me) {
-    const list = Object.values(st.players).map((p) => ({ p, worth: p.money + Math.round(Parts.partsValue(p.garage) * 0.5) })).sort((a, b) => b.worth - a.worth);
+    const byPts = st.settings.champ === 'points';
+    const list = Object.values(st.players)
+      .map((p) => ({ p, worth: p.money + Math.round(Parts.partsValue(p.garage) * 0.5) }))
+      .sort((a, b) => (byPts ? (b.p.stats.points || 0) - (a.p.stats.points || 0) || b.p.stats.wins - a.p.stats.wins : 0) || b.worth - a.worth);
     return list
       .map(({ p, worth }, i) => {
         const s = p.stats;
         const hist = s.history.slice(-8).map((x) => `<i class="f ${x === 'DNF' ? 'fd' : 'f' + Math.min(x, 4)}">${x === 'DNF' ? '×' : x}</i>`).join('');
-        return `<tr class="${me && p.id === me.id ? 'me' : ''}"><td class="p">${i + 1}</td><td><i class="dot" style="background:${hex(p.color)}"></i>${U.esc(p.name)}${p.isBot ? ' <em class="tag-bot">BOT</em>' : ''}${!p.isBot && !p.connected ? ' <em class="tag-off">OFF</em>' : ''}</td><td class="num">${U.fmtMoney(worth)}</td><td class="num">${U.fmtMoney(p.money)}</td><td>${s.wins}</td><td>${s.podiums}</td><td>${hist}</td><td class="num ${s.bets + s.casino >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(s.bets + s.casino)}</td></tr>`;
+        return `<tr class="${me && p.id === me.id ? 'me' : ''}"><td class="p">${i + 1}</td><td><i class="dot" style="background:${hex(p.color)}"></i>${U.esc(p.name)}${p.isBot ? ' <em class="tag-bot">BOT</em>' : ''}${!p.isBot && !p.connected ? ' <em class="tag-off">OFF</em>' : ''}</td><td class="num pts">${s.points || 0}</td><td class="num">${U.fmtMoney(worth)}</td><td class="num">${U.fmtMoney(p.money)}</td><td>${s.wins}</td><td>${s.podiums}</td><td>${hist}</td><td class="num ${s.bets + s.casino >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(s.bets + s.casino)}</td></tr>`;
       })
       .join('');
   }
@@ -60,8 +63,8 @@
       UI.patch(
         this.el.body,
         `<h2>Standings after race ${st.raceNo}/${st.settings.races}</h2>
-         <table class="stand"><tr><th>#</th><th>Driver</th><th>Net worth</th><th>Cash</th><th>Wins</th><th>Pods</th><th>Results</th><th>Bets+casino</th></tr>${standingsRows(st, me)}</table>
-         <p class="muted small">Net worth = cash + half the value of owned parts (their resale value). The richest start at the BACK of the grid.</p>
+         <table class="stand"><tr><th>#</th><th>Driver</th><th>Pts</th><th>Net worth</th><th>Cash</th><th>Wins</th><th>Pods</th><th>Results</th><th>Bets+casino</th></tr>${standingsRows(st, me)}</table>
+         <p class="muted small">${st.settings.champ === 'points' ? 'Championship: most points after the last race wins (25-18-15-12-10-8-6-4, +1 fastest lap). ' : 'The richest driver after the last race wins. '}Net worth = cash + half the value of owned parts (their resale value). The richest start at the BACK of the grid.</p>
          <h3>Schedule</h3><div class="sched">${sched}</div>`
       );
       const log = st.chat
@@ -106,7 +109,7 @@
       const pod = rows.slice(0, 3);
       const podium = [1, 0, 2]
         .filter((i) => pod[i])
-        .map((i) => `<div class="pod pod${i + 1}"><div class="pn" style="border-color:${hex(pod[i].color)}">${U.esc(pod[i].name)}</div><div class="pw">${U.fmtMoney(pod[i].worth)}</div><div class="pb">${i + 1}</div></div>`)
+        .map((i) => `<div class="pod pod${i + 1}"><div class="pn" style="border-color:${hex(pod[i].color)}">${U.esc(pod[i].name)}</div><div class="pw">${st.final.champ === 'points' ? (pod[i].stats.points || 0) + ' pts' : U.fmtMoney(pod[i].worth)}</div><div class="pb">${i + 1}</div></div>`)
         .join('');
       const by = (f, dir) => rows.slice().sort((a, b) => (dir || -1) * (f(a) - f(b)))[0];
       const aw = [];
@@ -123,13 +126,13 @@
       const fu = by((r) => r.stats.fuel);
       if (fu && fu.stats.fuel) aw.push(['⛽ Thirstiest', fu.name, U.fmtMoney(fu.stats.fuel) + ' of fuel']);
       const table = rows
-        .map((r, i) => `<tr class="${me && r.id === me.id ? 'me' : ''}"><td class="p">${i + 1}</td><td><i class="dot" style="background:${hex(r.color)}"></i>${U.esc(r.name)}${r.isBot ? ' <em class="tag-bot">BOT</em>' : ''}</td><td class="num">${U.fmtMoney(r.worth)}</td><td>${r.stats.wins}</td><td>${r.stats.podiums}</td><td class="num">${U.fmtMoney(r.stats.earned)}</td><td class="num">${U.fmtMoney(r.stats.spent)}</td><td class="num">${U.fmtMoney(r.stats.repairs + r.stats.fuel)}</td><td class="num ${r.stats.bets >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(r.stats.bets)}</td><td class="num ${r.stats.casino >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(r.stats.casino)}</td></tr>`)
+        .map((r, i) => `<tr class="${me && r.id === me.id ? 'me' : ''}"><td class="p">${i + 1}</td><td><i class="dot" style="background:${hex(r.color)}"></i>${U.esc(r.name)}${r.isBot ? ' <em class="tag-bot">BOT</em>' : ''}</td><td class="num pts">${r.stats.points || 0}</td><td class="num">${U.fmtMoney(r.worth)}</td><td>${r.stats.wins}</td><td>${r.stats.podiums}</td><td class="num">${U.fmtMoney(r.stats.earned)}</td><td class="num">${U.fmtMoney(r.stats.spent)}</td><td class="num">${U.fmtMoney(r.stats.repairs + r.stats.fuel)}</td><td class="num ${r.stats.bets >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(r.stats.bets)}</td><td class="num ${r.stats.casino >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(r.stats.casino)}</td></tr>`)
         .join('');
       UI.patch(
         this.body,
-        `<h1 class="fin-t">FINAL STANDINGS</h1><div class="podium">${podium}</div>
+        `<h1 class="fin-t">${st.final.champ === 'points' ? 'CHAMPIONSHIP' : 'FINAL STANDINGS'}</h1><div class="podium">${podium}</div>
          <div class="awards">${aw.map((a) => `<div class="aw"><span>${a[0]}</span><b>${U.esc(a[1])}</b><em>${a[2]}</em></div>`).join('')}</div>
-         <table class="stand"><tr><th>#</th><th>Driver</th><th>Net worth</th><th>Wins</th><th>Pods</th><th>Prize money</th><th>Parts</th><th>Fuel+repairs</th><th>Bets</th><th>Casino</th></tr>${table}</table>
+         <table class="stand"><tr><th>#</th><th>Driver</th><th>Pts</th><th>Net worth</th><th>Wins</th><th>Pods</th><th>Prize money</th><th>Parts</th><th>Fuel+repairs</th><th>Bets</th><th>Casino</th></tr>${table}</table>
          <div class="fin-btns">${G.Game.role === 'host' ? '<button class="btn primary big" data-act="again">🔁 Play again — same room</button>' : '<span class="muted">The host can start a rematch in this room — stay here, or</span>'}<button class="btn ghost big" data-act="menu">Back to menu</button></div>`
       );
     },

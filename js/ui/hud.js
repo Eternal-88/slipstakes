@@ -36,8 +36,10 @@
             <div class="gauge brk"><span>BRAKES</span><div><i></i></div></div>
             <div class="gauge tyre"><span>TYRES</span><div><i></i></div></div>
             <div class="gauge eng"><span>ENGINE</span><div><i></i></div></div>
+            <div class="gauge fuel"><span>FUEL</span><div><i></i></div></div>
           </div>
         </div>
+        <div class="hud-pit"><b class="hp-t"></b><em class="hp-s"></em></div>
         <div class="hud-lights"><i></i><i></i><i></i><i></i><i></i></div>
         <div class="hud-center"><div class="cd"></div><div class="banner"></div><div class="sub"></div></div>
         <div class="hud-tags"></div>
@@ -50,6 +52,7 @@
         boost: $('.boost i'), heat: $('.heat i'), heatBox: $('.gauge.heat'), boostBox: $('.gauge.boost'), brk: $('.brk i'), brkBox: $('.gauge.brk'), tyre: $('.tyre i'), eng: $('.eng i'),
         cd: $('.cd'), banner: $('.banner'), sub: $('.sub'), tags: $('.hud-tags'), br: $('.hud-br'), tl: $('.hud-tl'), debug: $('.hud-debug'), help: $('.hud-help'),
         lights: root.querySelectorAll('.hud-lights i'), lightsBox: $('.hud-lights'), prog: $('.hud-prog'), pgDots: $('.pg-dots'), vig: $('.hud-vig'), flash: $('.hud-flash'),
+        fuel: $('.fuel i'), fuelBox: $('.gauge.fuel'), engBox: $('.gauge.eng'), tyreLbl: $('.gauge.tyre span'), pit: $('.hud-pit'), pitT: $('.hp-t'), pitS: $('.hp-s'),
         nos: $('.nos i'), nosBox: $('.gauge.nos'), dr: $('.hud-draft'), drBar: $('.dr-m u'), drV: $('.dr-v'), drGlow: $('.hud-draftglow'), asCu: $('.as-cu'),
       };
       this.ctx = this.el.map.getContext('2d');
@@ -92,9 +95,9 @@
       this.el.speedo.height = Math.round(150 * k);
       this._spk = null;
       if (this.track) {
-        const keep = [this.bestSeen, this.lastPos, this._wearTold];
+        const keep = [this.bestSeen, this.lastPos, this._wearTold, this.enduT];
         this.setTrack(this.track); // redraw the map background at the new size
-        [this.bestSeen, this.lastPos, this._wearTold] = keep;
+        [this.bestSeen, this.lastPos, this._wearTold, this.enduT] = keep;
       }
     }
 
@@ -112,6 +115,7 @@
 
     setTrack(track) {
       this.track = track;
+      this.enduT = null; // v5: fuel tracking starts again every race
       // Pre-render the track outline into an offscreen canvas.
       const b = track.bounds;
       const size = 200, pad = 14;
@@ -152,7 +156,7 @@
       for (const p of track.patches) {
         const q = track.pointAt(p.at, p.lat);
         const [x, y] = M(q.x, q.z);
-        c.fillStyle = p.k === 'oil' ? '#15171c' : p.k === 'mud' ? '#8a5a30' : '#dff3ff';
+        c.fillStyle = p.k === 'oil' ? '#15171c' : p.k === 'mud' ? '#8a5a30' : p.k === 'water' ? '#4f9be0' : '#dff3ff';
         c.beginPath();
         c.arc(x, y, 3.2, 0, Math.PI * 2);
         c.fill();
@@ -162,6 +166,31 @@
         const [x, y] = M(q.x, q.z);
         c.fillStyle = '#39d4ff';
         c.fillRect(x - 2.5, y - 2.5, 5, 5);
+      }
+      if (track.pit) {
+        // v5: the pit box, a white P
+        const q = track.pointAt(track.pit.at, track.pit.lat);
+        const [x, y] = M(q.x, q.z);
+        c.fillStyle = '#f5f7fc';
+        c.beginPath();
+        if (c.roundRect) c.roundRect(x - 5, y - 5, 10, 10, 2);
+        else c.rect(x - 5, y - 5, 10, 10);
+        c.fill();
+        c.fillStyle = '#0e1322';
+        c.font = "bold 8px 'Nunito', sans-serif";
+        c.textAlign = 'center';
+        c.fillText('P', x, y + 3);
+      }
+      for (const o of track.dyn || []) {
+        // v5 moving hazards: rockfall zones and wrecking balls, orange
+        const q = track.pointAt(o.at, 0);
+        const [x, y] = M(q.x, q.z);
+        c.fillStyle = '#ff9a1f';
+        c.beginPath();
+        c.moveTo(x, y - 3.6);
+        c.lineTo(x + 3.4, y + 2.6);
+        c.lineTo(x - 3.4, y + 2.6);
+        c.fill();
       }
       for (const o of track.obs) {
         const [x, y] = M(o.x, o.z);
@@ -412,8 +441,18 @@
         else if (dr < 0.1) this._drIn = false;
         const cu = rs.cu || 0;
         this.set('cu', el.asCu, cu > 0.012 ? 'CATCH-UP +' + Math.round(cu * 100) + '%' : '');
-        this.set('tyre', el.tyre, Math.round((1 - U.clamp(rs.tyreWear || 0, 0, 1)) * 100) + '%', 'width');
+        // v5 endurance: this set of tyres (not the race-long wear) and the tank
+        const endu = !!v.endu;
+        this.set('tyre', el.tyre, Math.round((1 - U.clamp(endu ? rs.tw || 0 : rs.tyreWear || 0, 0, 1)) * 100) + '%', 'width');
         this.set('eng', el.eng, Math.round((1 - U.clamp(rs.engineWear || 0, 0, 1)) * 100) + '%', 'width');
+        this.set('engBox', el.engBox, endu ? 'none' : '', 'display');
+        this.set('fuelBox', el.fuelBox, endu ? '' : 'none', 'display');
+        if (endu) {
+          this.set('fuel', el.fuel, Math.round(U.clamp(rs.tank, 0, 1) * 100) + '%', 'width');
+          const fc = 'gauge fuel' + (rs.tank <= 0 ? ' over' : rs.tank < 0.15 ? ' warn' : '');
+          if (this.cache.fuelCls !== fc) { this.cache.fuelCls = fc; el.fuelBox.className = fc; }
+          this._pitAdvice(v, me, rs);
+        } else this.set('pitOn', el.pit, '', 'className');
         this._wrongT -= dt;
         if (me.wrong && this.bannerT <= 0) {
           this.banner('WRONG WAY', 'Press ' + G.Settings.keyName(s.keys.reset) + ' to reset', 0.5, 'warn');
@@ -435,11 +474,11 @@
         this.set('drGlow', el.drGlow, '0', 'opacity');
       }
       // standings tower
-      const tower = v.order.map((c, i) => `${i + 1}|${c.name}|${c.color}|${c.finished ? 1 : 0}|${c.dnf ? 1 : 0}|${c.id === (me && me.id) ? 1 : 0}|${c.bet || ''}`).join(';');
+      const tower = v.order.map((c, i) => `${i + 1}|${c.name}|${c.color}|${c.finished ? 1 : 0}|${c.dnf ? 1 : 0}|${c.id === (me && me.id) ? 1 : 0}|${c.bet || ''}|${v.endu ? (c.stops || 0) + (c.pit ? 'p' : '') : ''}`).join(';');
       if (this.cache.tower !== tower) {
         this.cache.tower = tower;
         el.tower.innerHTML = v.order
-          .map((c, i) => `<div class="row${me && c.id === me.id ? ' me' : ''}${c.finished ? ' fin' : ''}"><span class="p">${i + 1}</span><i style="background:#${c.color.toString(16).padStart(6, '0')}"></i><span class="n">${U.esc(c.name)}</span>${c.bet ? `<em>${U.esc(c.bet)}</em>` : ''}${c.finished ? '<b>🏁</b>' : c.dnf ? '<b>DNF</b>' : ''}</div>`)
+          .map((c, i) => `<div class="row${me && c.id === me.id ? ' me' : ''}${c.finished ? ' fin' : ''}"><span class="p">${i + 1}</span><i style="background:#${c.color.toString(16).padStart(6, '0')}"></i><span class="n">${U.esc(c.name)}</span>${c.bet ? `<em>${U.esc(c.bet)}</em>` : ''}${v.endu ? (c.pit ? '<s class="pit">PIT</s>' : c.stops ? `<s>${c.stops}×</s>` : '') : ''}${c.finished ? '<b>🏁</b>' : c.dnf ? '<b>DNF</b>' : ''}</div>`)
           .join('');
       }
       this.drawMap(v.cars.map((c) => ({ x: c.rs.x, z: c.rs.z, h: c.rs.h, color: c.color, id: c.id })), me && me.id);
@@ -512,6 +551,49 @@
         el.debug.textContent = `${w.fps.toFixed(0)} fps · ${w.ms.toFixed(1)} ms · ${w.calls} calls · ${(w.tris / 1000).toFixed(0)}k tris · ${w.parts} fx · q${w.level} pr${w.pr.toFixed(2)} ${w.tier}` + (v.net ? ' · ' + v.net : '');
       }
       this.set('dbg', el.debug, dbg ? '' : 'none', 'display');
+    }
+
+    // v5 endurance: how many laps the fuel is good for, and when to box.
+    // Fuel use is measured as you go (what's gone from the tank, plus what
+    // the crew put in, per metre driven), like the bots' strategy (race.js).
+    _pitAdvice(v, me, rs) {
+      const tr = this.track, el = this.el;
+      if (!tr || !tr.pit) return;
+      const E = this.enduT || (this.enduT = { fuelIn: 1 });
+      const d = Math.max(0, (v.cars.find((c) => c.id === me.id) || {}).dist || 0);
+      const L = tr.length, total = L * v.laps;
+      const used = E.fuelIn - rs.tank;
+      const perM = used > 0.02 ? used / Math.max(250, d) : 1 / (total * 0.6);
+      const rem = Math.max(0, total - d), need = perM * rem;
+      const lapsOfFuel = rs.tank / Math.max(1e-6, perM * L);
+      const ahead = G.RaceEnv.pitAhead(tr, ((d % L) + L) % L);
+      let t = '', sub = '', cls = 'hud-pit';
+      if (rs.pit) {
+        t = 'IN THE PIT';
+        cls += ' on';
+      } else if (me.finished || v.phase !== 'race') {
+        t = '';
+      } else if (rs.tank <= 0) {
+        t = 'OUT OF FUEL';
+        sub = ahead > 0 ? `limp to the pit box · ${Math.round(ahead)} m` : 'limp round to the pit box';
+        cls += ' on bad';
+      } else if (G.RaceEnv.shouldPit(rs, need, rem / L)) {
+        t = 'BOX THIS LAP';
+        sub = ahead > 0 && ahead < 600 ? `pit box in ${Math.round(ahead)} m · stop inside it` : `fuel for ${lapsOfFuel.toFixed(1)} laps`;
+        cls += ' on warn';
+      } else if (rs.tw > 0.8 && rem > L * 1.3) {
+        t = 'TYRES GONE';
+        sub = 'pit for a fresh set';
+        cls += ' on warn';
+      } else if (rem > L * 0.3) {
+        t = `FUEL ${lapsOfFuel >= 9.95 ? Math.round(lapsOfFuel) : lapsOfFuel.toFixed(1)} LAPS`;
+        sub = rs.tank >= need ? 'enough to the flag' : `${Math.max(0, need - rs.tank).toFixed(2) * 100 | 0}% short of the flag`;
+        cls += ' on quiet';
+      }
+      this.set('pitT', el.pitT, t);
+      this.set('pitS', el.pitS, sub);
+      this.set('pitOn', el.pit, cls, 'className');
+      E.info = { tank: rs.tank, tw: rs.tw, need, lapsLeft: rem / L };
     }
 
     clearTags() {

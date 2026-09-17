@@ -59,17 +59,28 @@
       );
       const CU = { off: 'Off (pure racing)', mild: 'Mild', wild: 'Wild (chaos)' };
       const cu = s.catchup || 'mild';
+      const WX = { auto: 'Changeable', dry: 'Always dry', rain: 'Rain' };
       UI.patch(
         this.el.set,
         isHost
-          ? `<label class="fld inline"><span>Room name</span><input class="txt-in" maxlength="28" value="${U.esc(s.name || '')}" placeholder="${U.esc(roomName)}" data-change="rname" title="How the room shows on the server list (press Enter)"></label>
-             <label class="fld inline" title="Private: anyone with the code walks in; strangers on the server list ask you first and never see the code. Public: anyone on the server list walks straight in."><span>Who can join</span><select data-input="vis"><option value="private" ${s.vis !== 'public' ? 'selected' : ''}>🔒 Private — code, or ask me</option><option value="public" ${s.vis === 'public' ? 'selected' : ''}>🌐 Public — anyone</option></select></label>
-             <label class="fld inline"><span>Max drivers</span><select data-input="maxPlayers">${[2, 3, 4, 5, 6, 7, 8].map((n) => `<option ${n === (s.maxPlayers || 8) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-             <label class="fld inline"><span>Races</span><input class="num-in" type="number" min="1" max="100" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 100, then press Enter"></label>
-             <label class="fld inline" title="Bots fill empty grid slots (8 cars at most). You can change this between races too."><span>Bots</span><select data-input="bots">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option ${n === s.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
-             <label class="fld inline" title="Cars trailing the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${Object.keys(CU).map((k) => `<option value="${k}" ${k === cu ? 'selected' : ''}>${CU[k]}</option>`).join('')}</select></label>
-             <span class="muted small">~${s.races * 6 >= 90 ? (s.races * 6 / 60).toFixed(1) + ' h' : Math.round(s.races * 6) + ' min'} session · drivers can join at any time (late joiners start with 80% of the poorest driver's worth)</span>`
-          : `<span class="muted">${s.races} race${s.races === 1 ? '' : 's'} · ${s.bots} bots · catch-up ${CU[cu]} · waiting for the host to start</span>`
+          ? `<section class="lb-group"><h4>Room</h4><div class="lb-grid">
+               <label class="fld lb-wide"><span>Room name</span><input class="txt-in" maxlength="28" value="${U.esc(s.name || '')}" placeholder="${U.esc(roomName)}" data-change="rname" title="How the room shows on the server list (press Enter)"></label>
+               <label class="fld lb-two" title="Private: anyone with the code walks in; strangers on the server list ask you first and never see the code. Public: anyone on the server list walks straight in."><span>Who can join</span><select data-input="vis"><option value="private" ${s.vis !== 'public' ? 'selected' : ''}>🔒 Private — code, or ask me</option><option value="public" ${s.vis === 'public' ? 'selected' : ''}>🌐 Public — anyone</option></select></label>
+               <label class="fld"><span>Max drivers</span><select data-input="maxPlayers">${[2, 3, 4, 5, 6, 7, 8].map((n) => `<option ${n === (s.maxPlayers || 8) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+             </div></section>
+             <section class="lb-group"><h4>Session</h4><div class="lb-grid">
+               <label class="fld" title="Classic: every kind of track. Endurance: ~6 minute races on circuits with a pit box — fuel and tyres run down, so you stop and work the pit crew."><span>Mode</span><select data-input="mode"><option value="classic" ${s.mode !== 'endurance' ? 'selected' : ''}>Classic</option><option value="endurance" ${s.mode === 'endurance' ? 'selected' : ''}>Endurance</option></select></label>
+               <label class="fld"><span>Races</span><input class="num-in" type="number" min="1" max="100" step="1" value="${s.races}" data-change="races" title="Type any number from 1 to 100, then press Enter"></label>
+               <label class="fld" title="Money: the richest driver at the end wins. Championship: 25-18-15-12-10-8-6-4 points a race (+1 for the fastest lap), most points wins — the money still buys parts."><span>Winner</span><select data-input="champ"><option value="money" ${s.champ !== 'points' ? 'selected' : ''}>Richest driver</option><option value="points" ${s.champ === 'points' ? 'selected' : ''}>Championship points</option></select></label>
+             </div></section>
+             <section class="lb-group"><h4>Race day</h4><div class="lb-grid four">
+               <label class="fld" title="Bots fill empty grid slots (8 cars at most). You can change this between races too."><span>Bots</span><select data-input="bots">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option ${n === s.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
+               <label class="fld" title="How fast the bots are, how clean they race, and how good their cars get. Hard and above can turn rival and try to knock someone off. Applies from the next race."><span>Bot skill</span><select data-input="botLevel">${G.BotKit.LEVEL_ORDER.map((k) => `<option value="${k}" ${k === (s.botLevel || 'normal') ? 'selected' : ''}>${G.BotKit.LEVELS[k].name}</option>`).join('')}</select></label>
+               <label class="fld" title="Changeable: sometimes a shower starts mid-race and the road gets slippery. Tracks that are already wet or snowy stay that way."><span>Weather</span><select data-input="weather">${Object.keys(WX).map((k) => `<option value="${k}" ${k === (s.weather || 'auto') ? 'selected' : ''}>${WX[k]}</option>`).join('')}</select></label>
+               <label class="fld" title="Cars trailing the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${Object.keys(CU).map((k) => `<option value="${k}" ${k === cu ? 'selected' : ''}>${CU[k]}</option>`).join('')}</select></label>
+             </div></section>
+             <p class="muted small lb-note">~${s.races * (s.mode === 'endurance' ? 9 : 6) >= 90 ? ((s.races * (s.mode === 'endurance' ? 9 : 6)) / 60).toFixed(1) + ' h' : Math.round(s.races * (s.mode === 'endurance' ? 9 : 6)) + ' min'} session · drivers can join at any time (late joiners start with 80% of the poorest driver's worth)</p>`
+          : `<div class="lb-summary">${[s.mode === 'endurance' ? 'Endurance' : 'Classic', `${s.races} race${s.races === 1 ? '' : 's'}`, s.champ === 'points' ? 'Championship points' : 'Richest wins', `${s.bots} ${G.BotKit.level(s.botLevel).name.toLowerCase()} bot${s.bots === 1 ? '' : 's'}`, `${WX[s.weather || 'auto']} weather`, `Catch-up ${CU[cu].split(' ')[0].toLowerCase()}`].map((x) => `<span class="chip-s">${U.esc(x)}</span>`).join('')}</div><p class="muted small lb-note">Waiting for the host to start.</p>`
       );
       UI.patch(this.el.btns, `<button class="btn ghost" data-act="leave">Leave</button><button class="btn" data-act="garage">🎨 Car, tune & paint</button>${isHost ? '<button class="btn primary big" data-act="start">Start session →</button>' : ''}`);
       const log = chatHtml(st);
@@ -81,6 +92,10 @@
     input(k, el) {
       if (k === 'bots') G.Client.act({ t: 'settings', bots: +el.value });
       if (k === 'catchup') G.Client.act({ t: 'settings', catchup: el.value });
+      if (k === 'botLevel') G.Client.act({ t: 'settings', botLevel: el.value });
+      if (k === 'weather') G.Client.act({ t: 'settings', weather: el.value });
+      if (k === 'mode') G.Client.act({ t: 'settings', mode: el.value });
+      if (k === 'champ') G.Client.act({ t: 'settings', champ: el.value });
       if (k === 'vis') G.Client.act({ t: 'settings', vis: el.value });
       if (k === 'maxPlayers') G.Client.act({ t: 'settings', maxPlayers: +el.value });
     },
@@ -234,11 +249,11 @@
           const pay = r.payout;
           const time = r.dnf ? 'DNF' : r === win ? U.fmtTime(r.ms) : '+' + ((r.ms - win.ms) / 1000).toFixed(3) + 's';
           const fast = R.fastest && R.fastest.id === r.id ? ' <em class="tag-fast">FASTEST LAP</em>' : '';
-          return `<tr class="${me && r.id === me.id ? 'me' : ''}"><td class="p">${r.pos}</td><td><i style="background:${hex(r.color)}"></i>${U.esc(r.name)}${fast}</td><td>${time}</td><td>${U.fmtTime(r.bestLap)}</td><td class="gd">${r.grid - r.pos > 0 ? '▲' + (r.grid - r.pos) : r.grid - r.pos < 0 ? '▼' + (r.pos - r.grid) : '–'}</td>${pay ? `<td class="pay">${U.fmtSigned(pay.net)}</td>` : ''}</tr>`;
+          return `<tr class="${me && r.id === me.id ? 'me' : ''}"><td class="p">${r.pos}</td><td><i style="background:${hex(r.color)}"></i>${U.esc(r.name)}${fast}</td><td>${time}</td><td>${U.fmtTime(r.bestLap)}</td><td class="gd">${r.grid - r.pos > 0 ? '▲' + (r.grid - r.pos) : r.grid - r.pos < 0 ? '▼' + (r.pos - r.grid) : '–'}</td>${R.endu ? `<td class="num">${r.stops || 0}</td>` : ''}<td class="num pts">${r.pts ? '+' + r.pts : '–'}</td>${pay ? `<td class="pay">${U.fmtSigned(pay.net)}</td>` : ''}</tr>`;
         })
         .join('');
       const hasPay = R.rows.some((r) => r.payout);
-      UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Time</th><th>Best lap</th><th>Grid</th>${hasPay ? '<th>Net</th>' : ''}</tr>${rows}</table>`);
+      UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Time</th><th>Best lap</th><th>Grid</th>${R.endu ? '<th>Stops</th>' : ''}<th>Pts</th>${hasPay ? '<th>Net</th>' : ''}</tr>${rows}</table>`);
       const bty = R.bounty ? `<div class="bounty">🎯 Bounty on ${U.esc(R.bounty.name)}: ${R.bounty.winner ? `<b>${U.esc(R.bounty.winnerName)}</b> collects ${U.fmtMoney(R.bounty.amount)}` : 'nobody beat them — it stays on the table'}.</div>` : '';
       UI.patch(this.el.extra, bty + (G.Game.resultsExtra ? G.Game.resultsExtra(R) : ''));
       const left = secsLeft(st);

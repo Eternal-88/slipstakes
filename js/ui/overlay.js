@@ -197,7 +197,8 @@
         body =
           `<div class="kbs">${keys}</div>` +
           row('Keyboard steering', sel('steerSpeed', [['slow', 'Smooth (slow ramp)'], ['normal', 'Normal'], ['fast', 'Quick (fast ramp)']]), 'How fast a held key reaches full lock. Taps always give partial steering.') +
-          row('Bot difficulty', sel('botLevel', [['easy', 'Easy'], ['normal', 'Normal'], ['hard', 'Hard (faster, upgraded)']]), 'Quick race and practice bots.') +
+          row('Bot difficulty', sel('botLevel', G.BotKit.LEVEL_ORDER.map((k) => [k, G.BotKit.LEVELS[k].name])), 'Quick race and practice bots. Higher levels take better lines, bring better cars and parts, and sometimes play dirty.') +
+          row('Race weather', sel('raceWeather', [['auto', 'Changeable (showers sometimes)'], ['dry', 'Always dry'], ['rain', 'Rain']]), 'Quick races. In the rain dry roads lose grip: narrow tyres cope best, wide slicks can aquaplane.') +
           row('Touch controls', sel('touch', [['auto', 'Auto (appear once you touch the screen)'], ['on', 'Always show'], ['off', 'Off']]), 'On-screen steer, gas, brake and handbrake buttons for touchscreen Chromebooks.') +
           `<div class="ov-row"><label></label><div class="ov-ctl"><button class="btn small ghost" data-oact="resetKeys">Reset keys to default</button></div></div>` +
           `<p class="muted small">Fixed keys: <b>Esc</b> menu · <b>M</b> sound · <b>F3</b> fps · spectating: <b>1–8</b>/<b>Tab</b> follow a car, <b>WASD Q E</b> free camera, mouse wheel zoom.<br>Gamepad: left stick steer · RT throttle · LT brake · A handbrake · Y reset · RB camera · Start menu.</p>`;

@@ -175,6 +175,10 @@
       const g = me.garage;
       return Parts.SLOTS.map((slot) => {
         const inst = Parts.opt(slot.id, g.installed[slot.id]);
+        // v5: slots this car can't use (the Volt has no engine to turbo or pipe)
+        if (!Parts.partAllowed(me.carId, slot.id)) {
+          return `<div class="slot off"><div class="slot-h"><span class="ic">${slot.icon}</span><span class="sn">${slot.name}</span><span class="si">Not on the ${U.esc(Parts.CARS[me.carId].name)}</span><span class="chev"></span></div></div>`;
+        }
         const open = this.sel === slot.id;
         let h = `<div class="slot ${open ? 'open' : ''}"><div class="slot-h" data-act="slot" data-slot="${slot.id}"><span class="ic">${slot.icon}</span><span class="sn">${slot.name}</span><span class="si">${U.esc(inst.name)}</span><span class="chev">${open ? '▾' : '▸'}</span></div>`;
         if (open) {
@@ -270,7 +274,10 @@
         <div class="pt-sec"><h4>Paint finish</h4><div class="chips2">${LK.finishes.map(([v, l]) => chip('finish', v, l, L.finish === v)).join('')}</div></div>
         <div class="pt-sec"><h4>Headlights</h4><div class="chips2">${LK.lights.map(([v, l]) => chip('lights', v, l, L.lights === v)).join('')}</div></div>
         <div class="pt-sec"><h4>Windows</h4><div class="chips2">${LK.tints.map(([v, l]) => chip('tint', v, l, L.tint === v)).join('')}</div></div>
-        <div class="pt-sec"><h4>Underglow</h4><div class="chips2">${LK.glows.map(([v, l]) => chip('glow', v, l, L.glow === v)).join('')}</div></div>
+        <div class="pt-sec"><h4>Body kit</h4><div class="chips2">${LK.kits.map(([v, l]) => chip('kit', v, l, L.kit === v)).join('')}</div></div>
+        <div class="pt-sec"><h4>Spoiler <span class="muted small">looks only · an aero part replaces it</span></h4><div class="chips2">${LK.spoilers.map(([v, l]) => chip('spoiler', v, l, L.spoiler === v)).join('')}</div></div>
+        <div class="pt-sec"><h4>Exhaust tips</h4><div class="chips2">${LK.tips.map(([v, l]) => chip('tips', v, l, L.tips === v)).join('')}</div></div>
+        <div class="pt-sec"><h4>Underglow</h4><div class="chips2">${LK.glows.map(([v, l]) => chip('glow', v, l, L.glow === v)).join('')}</div>${L.glow !== 'none' ? `<div class="chips2">${LK.glowFx.map(([v, l]) => chip('glowfx', v, l, L.glowFx === v)).join('')}</div>` : ''}</div>
         <p class="muted small">Paint is free and cosmetic only. Your team colour still marks you on the minimap, name tags and standings.</p>`;
     },
     look(patch) {
@@ -493,6 +500,18 @@
       },
       lights(el) {
         this.look({ lights: el.dataset.v });
+      },
+      kit(el) {
+        this.look({ kit: el.dataset.v });
+      },
+      spoiler(el) {
+        this.look({ spoiler: el.dataset.v });
+      },
+      tips(el) {
+        this.look({ tips: el.dataset.v });
+      },
+      glowfx(el) {
+        this.look({ glowFx: el.dataset.v });
       },
       numr() {
         this.look({ num: 1 + Math.floor(Math.random() * 99) });
