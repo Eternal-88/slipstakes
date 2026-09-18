@@ -27,14 +27,17 @@
     rainline: { ground: 0x5d9a6a, ground2: 0x4f8a5f, hill: 0x6aa577, patch: 0x4f8f5c, runoff: 'grass', sky: 0x8fa9c4, fog: 0xa9bccf, trees: 'pine', props: 'rain', wall: [0x2fb5a8, 0xeaf2f2], mtn: 0x6d8494, rain: 1, sunI: 1.25, hemiI: 1.95, hemiSky: 0xcad6e2, fogNear: 120, fogFar: 430, tufts: 'grass' },
     pine: { ground: 0x5f9c55, ground2: 0x4d8a47, hill: 0x71ad5f, patch: 0x7aa85a, runoff: 'grass', sky: 0xa9dcff, fog: 0xcbe9ff, trees: 'pine', props: 'forest', wall: [0xf2c12e, 0x3a3a3a], mtn: 0x6f8f86, snow: 1, tufts: 'grass' },
     salt: { ground: 0xf1eadb, ground2: 0xe6dcc6, hill: 0xd9c9a8, patch: 0xece2cc, runoff: 'sand', sky: 0x9fd0ff, fog: 0xe6f2ff, trees: 'none', props: 'airstrip', wall: [0x8e44ec, 0xf6f0ff], mtn: 0x9c8fa8, snow: 1 },
-    city: { ground: 0x9aa3ad, ground2: 0x8a939e, hill: 0xa7b0ba, patch: 0x949da8, runoff: 'concrete', sky: 0xb4d6ff, fog: 0xd2e5fb, trees: 'round', props: 'city', wall: [0xe8453c, 0xffffff] },
+    city: { song: 'street', ground: 0x9aa3ad, ground2: 0x8a939e, hill: 0xa7b0ba, patch: 0x949da8, runoff: 'concrete', sky: 0xb4d6ff, fog: 0xd2e5fb, trees: 'round', props: 'city', wall: [0xe8453c, 0xffffff] },
     proving: { ground: 0x8cc47a, ground2: 0x7db66c, hill: 0x9fd08a, patch: 0xa9cf7a, runoff: 'grass', sky: 0xb6dcff, fog: 0xd6ecff, trees: 'round', props: 'airstrip', wall: [0xffcc00, 0x26282e], mtn: 0x86a894, tufts: 'grass' },
     // v4 themes. hills = how steeply the ground rises away from the road.
     alpine: { ground: 0x86a86e, ground2: 0x769a60, hill: 0x9aae84, patch: 0xa9b98a, runoff: 'gravel', sky: 0x9ccfff, fog: 0xd6eaff, trees: 'pine', props: 'forest', wall: [0xdfe3e8, 0x39414d], mtn: 0x7f93a6, snow: 1, hills: 2.1, tufts: 'grass', sunI: 2.1, hemiI: 1.8 },
     coast: { ground: 0x88c46c, ground2: 0x76b25e, hill: 0x9bcf7a, patch: 0xd9d59b, runoff: 'sand', sky: 0x8fd3ff, fog: 0xcdeeff, trees: 'palm', props: 'harbour', wall: [0x19c3e6, 0xf4f1e8], sea: [1, 0], mtn: 0x86a99f, tufts: 'grass' },
-    scrap: { ground: 0x8f8a7c, ground2: 0x827d70, hill: 0x9d9686, patch: 0x7c6f5c, runoff: 'concrete', sky: 0xb9c6cf, fog: 0xcfd6da, trees: 'none', props: 'scrap', wall: [0xffc400, 0x1b1d22], mtn: 0x857d78, tufts: 'dry', sunCol: 0xffe7c4 },
+    scrap: { song: 'street', ground: 0x8f8a7c, ground2: 0x827d70, hill: 0x9d9686, patch: 0x7c6f5c, runoff: 'concrete', sky: 0xb9c6cf, fog: 0xcfd6da, trees: 'none', props: 'scrap', wall: [0xffc400, 0x1b1d22], mtn: 0x857d78, tufts: 'dry', sunCol: 0xffe7c4 },
     dusk: { ground: 0x7d8a58, ground2: 0x6f7c4e, hill: 0x8c9563, patch: 0x9ea26c, runoff: 'concrete', sky: 0xff9e6b, fog: 0xf6b48c, trees: 'round', props: 'airstrip', wall: [0xff2d92, 0x1b1d22], mtn: 0x6b5a7a, sunCol: 0xffa060, sunI: 1.9, hemiI: 1.45, hemiSky: 0xffcfb0, fogNear: 150, fogFar: 520, tufts: 'dry' },
-    // v5 themes. night: how dark it is (0 day .. 1 night: street lamps glow and
+    // (v5.1 song: the race music this theme asks for — audio.js SONGS. Without
+  //  one, a night track gets the synthwave song, a loose one the breakbeat,
+  //  and everything else the racer.)
+  // v5 themes. night: how dark it is (0 day .. 1 night: street lamps glow and
     // pool light on the road, headlights on). todTo: the time of day the race
     // ENDS at (it gets darker as the leader goes round). showers: chance of a
     // mid-race shower in Changeable weather (default 0.2). neon: signs on the
@@ -66,6 +69,7 @@
   const TRACKS = [
     {
       id: 'harbour', name: 'Harbour Loop', format: 'circuit', laps: 3, theme: 'harbour', runoff: 10,
+      pit: { at: 0, side: -1, len: 50 }, enduChance: 0.28, enduLaps: 6,
       blurb: 'Fast sweepers and a tight inner complex. Pure tarmac — grip builds shine.',
       pts: [
         [80, 0, { w: 7, s: 'tarmac', kerb: 1 }],
@@ -115,6 +119,7 @@
     },
     {
       id: 'dustbowl', name: 'Dustbowl Oval', format: 'circuit', laps: 4, theme: 'dustbowl', runoff: 7,
+      pit: { at: 0, side: -1, len: 50 }, enduChance: 0.28, enduLaps: 12,
       blurb: 'Banked dirt oval. Throttle-steer it round, flat out. Wide slicks will hate it.',
       pts: [
         [0, -50, { w: 8.5, s: 'dirt', kerb: 0, bank: 11 }],
@@ -126,6 +131,7 @@
     },
     {
       id: 'rainline', name: 'Rainline Hairpins', format: 'circuit', laps: 3, theme: 'rainline', runoff: 9,
+      pit: { at: 0, side: -1, len: 50 }, enduChance: 0.28, enduLaps: 6,
       blurb: 'Two soaked hairpins and a greasy back section. Narrow tyres, soft springs.',
       pts: [
         [60, 0, { w: 7, s: 'tarmac', kerb: 1 }],
@@ -343,6 +349,9 @@
     },
     {
       id: 'tour', name: 'Grand Tour', format: 'circuit', laps: 1, theme: 'tour', runoff: 6, isNew: 1,
+      // (three laps as an endurance race, not two: with only two, a thirsty
+      //  build ran dry before the one pit window it was ever going to get)
+      pit: { at: 150, side: -1, len: 70 }, enduChance: 0.22, enduLaps: 3,
       blurb: 'One lap of a 3.6 km countryside loop as evening falls: a gravel-trap S you can cut if you dare, a gusty causeway, a dirt rally stage and a ford.',
       pts: [
         [0, 0, { w: 8, s: 'tarmac', kerb: 1, y: 0 }],
@@ -403,7 +412,9 @@
     },
     {
       // v5: the endurance track. Raced like any other track in the rotation,
-      // but this one is a long race with fuel, tyres and pit stops.
+      // but this one is ALWAYS the long race with fuel, tyres and pit stops.
+      // (v5.1: four more circuits have a pit lane and an enduChance — when one
+      // of those comes up it is sometimes run as an endurance race instead.)
       id: 'endu', name: 'Endurance Park', format: 'circuit', laps: 3, theme: 'endu', runoff: 7, isNew: 1,
       pit: { at: 170, side: -1, len: 70 }, endurance: 1, enduLaps: 3,
       blurb: 'The endurance race: three laps of parkland with a proper pit lane. Fuel and tyres run down, so you stop and work your pit crew. The sun goes down as you race.',
@@ -429,10 +440,16 @@
     },
   ];
 
-  // (endurance: this track is raced as an endurance race — enduLaps long, with
-  //  fuel, tyre wear and a pit box at pit {at, side, len})
+  // (endurance: this track is ALWAYS raced as an endurance race. enduChance:
+  //  the odds it is run as one this time. Either way that means enduLaps laps
+  //  with fuel, tyre wear and a pit box at pit {at, side, len}.)
   // Format rotation: never the same format twice in a row, cycles all tracks.
   const ROTATION = ['harbour', 'canyon', 'quarter', 'dustbowl', 'serpent', 'rainline', 'saltflat', 'pine', 'city', 'summit', 'coast', 'scrap', 'mile', 'neon', 'tour', 'endu'];
+  // v5.1: tracks that can turn into an endurance race, and the one that always is
+  const ENDURANCE = ROTATION.filter((id) => {
+    const d = TRACKS.find((t) => t.id === id);
+    return d && (d.endurance || d.enduChance);
+  });
 
-  G.TrackDefs = { THEMES, TRACKS, ROTATION, PROVING, byId: (id) => (id === 'proving' ? PROVING : TRACKS.find((t) => t.id === id)) };
+  G.TrackDefs = { THEMES, TRACKS, ROTATION, ENDURANCE, PROVING, byId: (id) => (id === 'proving' ? PROVING : TRACKS.find((t) => t.id === id)) };
 })(window.G);

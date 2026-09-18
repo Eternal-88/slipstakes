@@ -10,8 +10,10 @@
 (function (G) {
   const U = G.U, Parts = G.Parts;
 
-  const START_MONEY = 3000;
-  const SANDBOX_MONEY = 25000;
+  // v5.1: 3000 bought a top-tier part before the first race had run
+  const START_MONEY = 1400;
+  // v5.1: the sandbox is for trying things, and the top parts cost more now
+  const SANDBOX_MONEY = 60000;
   const MAX_PLAYERS = 8;
   const T = { carselect: 75000, results: 15000, intermission: 150000, allReadyGrace: 2500 };
 
@@ -44,7 +46,7 @@
         // derives the room codes after a host change); lobbySince: when the
         // lobby opened (an unstarted lobby closes after 15 min, game.js)
         lid: U.uid(10), lobbySince: Date.now(),
-        raceNo: 0, schedule: [], players: {}, order: [], chat: [], race: null, results: null,
+        raceNo: 0, schedule: [], enduPlan: [], players: {}, order: [], chat: [], race: null, results: null,
         bets: [], sideBets: [], odds: {}, casino: null, final: null, seq: 0, nextId: 1,
       };
       this.dirty = true;
@@ -377,6 +379,7 @@
     toCarSelect() {
       const st = this.state;
       st.schedule = this.makeSchedule(st.settings.races);
+      st.enduPlan = this.makeEnduPlan(st.schedule);
       for (const p of Object.values(st.players)) p.ready = !!p.isBot;
       this.setPhase('carselect', T.carselect);
     }
@@ -407,6 +410,24 @@
     }
     nextTrackId() {
       return this.state.schedule[this.state.raceNo] || null;
+    }
+
+    // v5.1: which races are endurance races. Endurance Park always is. The
+    // other circuits with a pit lane each roll their own odds, but a session
+    // only ever gets ONE surprise on top of Endurance Park — they take about
+    // twice as long as a normal race, and three of them in a five-race
+    // session would be a different evening than the host signed up for.
+    makeEnduPlan(sched) {
+      let extra = 0;
+      return sched.map((id) => {
+        const d = G.getTrack(id).def;
+        if (d.endurance) return 1;
+        if (d.enduChance && !extra && U.cryptoInt(1000) < d.enduChance * 1000) {
+          extra = 1;
+          return 1;
+        }
+        return 0;
+      });
     }
 
     // Who races: bots, plus connected humans who didn't choose to sit out.
@@ -447,8 +468,9 @@
         no: st.raceNo + 1, trackId, startedAt: Date.now(),
         // catch-up strength travels with the race so the host's sim uses it
         catchup: G.Settings.CATCHUP[st.settings.catchup || 'mild'] || 0,
-        // v5: an endurance track brings its own long race with pit stops
-        endu: G.getTrack(trackId).def.endurance ? G.RaceEnv.endu(G.getTrack(trackId)) : null,
+        // v5.1: an endurance race — always on Endurance Park, sometimes on
+        // one of the other circuits with a pit lane (makeEnduPlan)
+        endu: G.RaceEnv.planned(st, st.raceNo) ? G.RaceEnv.endu(G.getTrack(trackId)) : null,
         entrants: racers.map((p) => ({
           id: p.id, name: p.name, carId: p.carId, color: p.color,
           parts: Object.assign({}, p.garage.installed), wear: Object.assign({}, p.garage.wear),
@@ -719,7 +741,7 @@
         q.ready = !!q.isBot;
         q.entry = null;
       }
-      Object.assign(st, { raceNo: 0, schedule: [], race: null, results: null, final: null, bets: [], sideBets: [], odds: {}, stipend: [], casino: null });
+      Object.assign(st, { raceNo: 0, schedule: [], enduPlan: [], race: null, results: null, final: null, bets: [], sideBets: [], odds: {}, stipend: [], casino: null });
       this.syncBots();
       this.sys(`${p.name} started a rematch: fresh cars and ${U.fmtMoney(START_MONEY)} each.`);
       st.lobbySince = Date.now();

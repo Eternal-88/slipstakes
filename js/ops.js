@@ -294,24 +294,70 @@
   // what they raced), plus every room seen in the directory while unlocked.
   // It runs for everyone but is only written to disk on a computer where the
   // passphrase has been used: every other player's game still keeps nothing.
-  const HKEY = 'ss.ops.hist', HON = 'ss.ops.on';
+  const HKEY = 'ss.ops.hist', HON = 'ss.ops.on', BGKEY = 'ss.ops.bg';
   const Hist = {
     rooms: [], // oldest first
     seen: {}, // lid -> other rooms noticed on the server list
+    // the roll-ups: who plays, when they play, and what they race
+    people: {}, // name -> {first, last, n, ms, host, cars:{}, days:{}}
+    days: {}, // YYYY-MM-DD -> {rooms, drivers:{}, races, peak, peakAt}
+    tracks: {}, // trackId -> races finished
+    cars: {}, // carId -> times a driver was seen in one
+    hours: null, // 24 buckets: when rooms are busy, local time
+    peak: { players: 0, at: 0, rooms: 0, roomsAt: 0 },
     cur: null,
     load() {
       const d = U.store.get(HKEY, null);
       if (d && Array.isArray(d.rooms)) {
         this.rooms = d.rooms;
         this.seen = d.seen || {};
+        this.people = d.people || {};
+        this.days = d.days || {};
+        this.tracks = d.tracks || {};
+        this.cars = d.cars || {};
+        this.hours = Array.isArray(d.hours) && d.hours.length === 24 ? d.hours : null;
+        this.peak = d.peak || this.peak;
       }
+      if (!this.hours) this.hours = new Array(24).fill(0);
+    },
+    // ---- roll-ups. `name` is what the log is keyed on: a driver's id only
+    // lasts as long as their session, but the name is what you recognise.
+    day(now) {
+      const d = new Date(now);
+      const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      return this.days[k] || (this.days[k] = { rooms: 0, drivers: {}, races: 0, peak: 0, peakAt: 0 });
+    },
+    person(name, now) {
+      name = String(name || '').slice(0, 24);
+      if (!name) return null;
+      const P = this.people[name] || (this.people[name] = { first: now, last: now, n: 0, ms: 0, host: 0, cars: {}, days: {} });
+      P.last = now;
+      const d = new Date(now);
+      P.days[d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0')] = 1;
+      this.day(now).drivers[name] = 1;
+      return P;
+    },
+    trim() {
+      const cut = (obj, max, keyOf) => {
+        const ids = Object.keys(obj);
+        if (ids.length <= max) return;
+        ids.sort((a, b) => keyOf(obj[a]) - keyOf(obj[b])).slice(0, ids.length - max).forEach((k) => delete obj[k]);
+      };
+      cut(this.people, 800, (x) => x.last || 0);
+      cut(this.days, 400, (x) => 0); // (days are tiny; the sort key is the key itself)
+      const dk = Object.keys(this.days).sort();
+      while (dk.length > 400) delete this.days[dk.shift()];
     },
     kept() {
       return !!U.store.get(HON, 0);
     },
     save() {
       if (!this.kept()) return;
-      U.store.set(HKEY, { rooms: this.rooms.slice(-40), seen: this.seen });
+      this.trim();
+      U.store.set(HKEY, {
+        rooms: this.rooms.slice(-120), seen: this.seen, people: this.people,
+        days: this.days, tracks: this.tracks, cars: this.cars, hours: this.hours, peak: this.peak,
+      });
     },
     keep() {
       U.store.set(HON, 1);
@@ -320,6 +366,12 @@
     clear() {
       this.rooms = [];
       this.seen = {};
+      this.people = {};
+      this.days = {};
+      this.tracks = {};
+      this.cars = {};
+      this.hours = new Array(24).fill(0);
+      this.peak = { players: 0, at: 0, rooms: 0, roomsAt: 0 };
       this.cur = null;
       U.store.del(HKEY);
     },
@@ -343,7 +395,7 @@
             this.end(now);
             this.cur = { code: g.code, role: g.role, t0: now, players: {}, races: [] };
             this.rooms.push(this.cur);
-            if (this.rooms.length > 40) this.rooms.shift();
+            if (this.rooms.length > 120) this.rooms.shift();
           }
         }
         const c = this.cur;
@@ -366,12 +418,31 @@
               if (r._t) r.ms += now - r._t;
               r._t = now;
               r.last = now;
-            } else r._t = 0;
+              if (!p.isBot) {
+                const P = this.person(p.name, now);
+                if (P) {
+                  if (!c._counted) c._counted = {};
+                  if (!c._counted[p.name]) {
+                    c._counted[p.name] = 1;
+                    P.n++;
+                    if (p.id === st.hostId) P.host++;
+                  }
+                  if (r._t0) P.ms += now - r._t0;
+                  r._t0 = now;
+                  if (p.carId) P.cars[p.carId] = (P.cars[p.carId] || 0) + 1;
+                }
+              }
+            } else {
+              r._t = 0;
+              r._t0 = 0;
+            }
           }
           if (st.results && st.results.no !== c.lastRes) {
             c.lastRes = st.results.no;
             const w = (st.results.rows || [])[0];
             c.races.push({ no: st.results.no, track: st.results.trackId, winner: w ? w.name : '?', at: now });
+            if (st.results.trackId) this.tracks[st.results.trackId] = (this.tracks[st.results.trackId] || 0) + 1;
+            this.day(now).races++;
           }
           if (st.final && !c.final) c.final = (st.final.rows || []).slice(0, 8).map((r) => ({ name: r.name, worth: r.worth }));
         }
@@ -382,7 +453,12 @@
       if (board && board.list) {
         for (const r of board.list()) {
           if (!r.lid) continue;
+          const fresh = !this.seen[r.lid];
           const s = this.seen[r.lid] || (this.seen[r.lid] = { first: now });
+          if (fresh) {
+            this.day(now).rooms++;
+            this.hours[new Date(now).getHours()]++;
+          }
           if (r.name) s.name = r.name;
           if (r.host) s.host = r.host;
           if (r.code) s.code = r.code;
@@ -394,11 +470,47 @@
             s.code = d.code;
             s.races = d.race;
             const names = s.drivers || (s.drivers = {});
-            for (const p of d.p) if (!p[2]) names[p[1]] = 1;
+            for (const p of d.p) {
+              if (p[2]) continue; // a bot
+              names[p[1]] = 1;
+              const P = this.person(p[1], now);
+              if (P) {
+                if (!s._counted) s._counted = {};
+                if (!s._counted[p[1]]) {
+                  s._counted[p[1]] = 1;
+                  P.n++;
+                  if (p[5]) P.host++;
+                }
+                if (p[6]) {
+                  P.cars[p[6]] = (P.cars[p[6]] || 0) + 1;
+                  this.cars[p[6]] = (this.cars[p[6]] || 0) + 1;
+                }
+              }
+            }
+            if (d.track) this.tracks[d.track] = (this.tracks[d.track] || 0) + 1;
           }
         }
+        // all-time peaks, and the busiest the server has been today
+        let live = 0, rooms = 0;
+        for (const r of board.list()) {
+          live += r.players || 0;
+          rooms++;
+        }
+        if (live > this.peak.players) {
+          this.peak.players = live;
+          this.peak.at = now;
+        }
+        if (rooms > this.peak.rooms) {
+          this.peak.rooms = rooms;
+          this.peak.roomsAt = now;
+        }
+        const D = this.day(now);
+        if (live > D.peak) {
+          D.peak = live;
+          D.peakAt = now;
+        }
         const ids = Object.keys(this.seen);
-        if (ids.length > 150) ids.sort((a, b) => (this.seen[a].last || 0) - (this.seen[b].last || 0)).slice(0, ids.length - 150).forEach((k) => delete this.seen[k]);
+        if (ids.length > 400) ids.sort((a, b) => (this.seen[a].last || 0) - (this.seen[b].last || 0)).slice(0, ids.length - 400).forEach((k) => delete this.seen[k]);
       }
       if (now - (this._saveT || 0) > 10000) {
         this._saveT = now;
@@ -409,7 +521,7 @@
 
   // ------------------------------------------------------------------ panel
   // [id, icon, name]
-  const TABS = [['dir', '🌐', 'All rooms'], ['stats', '📊', 'Stats'], ['room', '🏁', 'This room'], ['players', '👥', 'Drivers'], ['hist', '🕘', 'History'], ['debug', '🧰', 'Tools'], ['log', '📜', 'Log']];
+  const TABS = [['dir', '🌐', 'All rooms'], ['stats', '📊', 'Stats'], ['data', '📈', 'Activity'], ['room', '🏁', 'This room'], ['players', '👥', 'Drivers'], ['hist', '🕘', 'History'], ['debug', '🧰', 'Tools'], ['log', '📜', 'Log']];
   const PHASES = { lobby: 'Lobby', carselect: 'Picking cars', entry: 'Entry', betting: 'Betting', race: 'Racing', results: 'Results', intermission: 'Garage break', final: 'Finished' };
   const enc64 = (a) => encodeURIComponent(JSON.stringify(a || {}));
   const btn = (k, label, cls, a) => `<button class="btn small ${cls || ''}" data-o="cmd" data-k="${k}" data-a="${enc64(a)}">${label}</button>`;
@@ -599,6 +711,95 @@
     return h;
   }
 
+  // --- Activity: who plays, when they play, and what they race.
+  // Everything here is rolled up from what THIS browser has seen, so it only
+  // knows about rooms that reached the relay — a solo quick race never does.
+  // Turn on background logging and leave the game open somewhere and it keeps
+  // counting; driver names need the console unlocked to read the sealed cards.
+  const DAYMS = 86400000;
+  const dayKey = (t) => {
+    const d = new Date(t);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  };
+  const bar = (v, max, cls) => `<i class="bar${cls ? ' ' + cls : ''}" style="width:${max > 0 ? Math.max(2, Math.round((v / max) * 100)) : 0}%"></i>`;
+
+  function dataHtml(O) {
+    const now = Date.now();
+    const ppl = Object.entries(Hist.people || {});
+    const active = (ms) => ppl.filter(([, P]) => (P.last || 0) >= now - ms).length;
+    const returning = ppl.filter(([, P]) => Object.keys(P.days || {}).length > 1).length;
+    const mine = Hist.rooms.length;
+    const seenN = Object.keys(Hist.seen || {}).length;
+    const racesLogged = Object.values(Hist.tracks || {}).reduce((a, b) => a + b, 0);
+    const pk = Hist.peak || {};
+
+    let h = `<div class="row">${btnL('dataJson', 'Export JSON', 'ghost')}${btnL('dataCsv', 'Drivers CSV', 'ghost')}${btnL('dataCopy', 'Copy summary', 'ghost')}${btnL('histClear', 'Clear log', 'ghost')}</div>`;
+    h += `<div class="row"><label class="tog"><input type="checkbox" data-o="bglog"${Ops.bgLog ? ' checked' : ''}><span></span>Keep logging in the background</label><span class="note">${Hist.kept() ? 'kept on this computer' : 'this visit only — use “keep” in 🕘 History'}</span></div>`;
+
+    h += '<h4>Drivers</h4>' + kv([
+      ['Seen in all', `${ppl.length}${returning ? ` · ${returning} came back another day` : ''}`],
+      ['Last 24 hours', String(active(DAYMS))],
+      ['Last 7 days', String(active(7 * DAYMS))],
+      ['Last 30 days', String(active(30 * DAYMS))],
+    ]);
+    h += '<h4>Rooms</h4>' + kv([
+      ['Logged', `${seenN} on the server list · ${mine} you were in`],
+      ['Races', racesLogged ? String(racesLogged) : '—'],
+      ['Peak drivers', pk.players ? `${pk.players} · ${when(pk.at)}` : '—'],
+      ['Peak rooms', pk.rooms ? `${pk.rooms} · ${when(pk.roomsAt)}` : '—'],
+    ]);
+
+    // last 14 days
+    const dayRows = [];
+    for (let i = 13; i >= 0; i--) {
+      const t = now - i * DAYMS, k = dayKey(t), d = Hist.days[k];
+      dayRows.push({ k, t, r: (d && d.rooms) || 0, p: d ? Object.keys(d.drivers || {}).length : 0, peak: (d && d.peak) || 0 });
+    }
+    const maxR = Math.max(1, ...dayRows.map((d) => d.r));
+    if (dayRows.some((d) => d.r || d.p)) {
+      h += '<h4>Last 14 days</h4><div class="bars">';
+      for (const d of dayRows) {
+        const lab = new Date(d.t).toLocaleDateString([], { weekday: 'short', day: 'numeric' });
+        h += `<div class="br"><span>${U.esc(lab)}</span><div>${bar(d.r, maxR)}</div><b>${d.r} room${d.r === 1 ? '' : 's'}${d.p ? ` · ${d.p} driver${d.p === 1 ? '' : 's'}` : ''}${d.peak ? ` · peak ${d.peak}` : ''}</b></div>`;
+      }
+      h += '</div>';
+    }
+
+    // when people play
+    const hrs = Hist.hours || [];
+    const maxH = Math.max(1, ...hrs);
+    if (hrs.some(Boolean)) {
+      h += '<h4>When rooms open (your local time)</h4><div class="hrs">';
+      for (let i = 0; i < 24; i++) h += `<div class="hr" title="${i}:00 — ${hrs[i]} rooms"><i style="height:${Math.max(2, Math.round((hrs[i] / maxH) * 34))}px"></i><span>${i % 6 === 0 ? i : ''}</span></div>`;
+      h += '</div>';
+    }
+
+    const top = (obj, name, n) => {
+      const es = Object.entries(obj || {}).sort((a, b) => b[1] - a[1]).slice(0, n || 6);
+      if (!es.length) return '';
+      const max = es[0][1];
+      return `<h4>${name}</h4><div class="bars">` + es.map(([k, v]) => `<div class="br"><span>${name === 'Cars' ? carName(k) || U.esc(k) : trackName(k)}</span><div>${bar(v, max, 'alt')}</div><b>${v}</b></div>`).join('') + '</div>';
+    };
+    h += top(Hist.tracks, 'Tracks', 8);
+    h += top(Hist.cars, 'Cars', 9);
+
+    // people
+    const q = (O.pq || '').toLowerCase();
+    const list = ppl
+      .filter(([n]) => !q || n.toLowerCase().includes(q))
+      .sort((a, b) => (b[1].last || 0) - (a[1].last || 0));
+    h += `<h4>People (${list.length})</h4>`;
+    h += `<div class="row"><input data-f="pq" placeholder="Find a driver…" value="${U.esc(O.pq || '')}" class="grow"></div>`;
+    if (!list.length) h += '<p class="note">Nobody logged yet. Open 🌐 All rooms, or turn on background logging.</p>';
+    else
+      h += '<div class="pps">' + list.slice(0, 60).map(([n, P]) => {
+        const car = Object.entries(P.cars || {}).sort((a, b) => b[1] - a[1])[0];
+        const dn = Object.keys(P.days || {}).length;
+        return `<div class="pp"><span>${U.esc(n)}${P.host ? ' 👑' : ''}</span><b>${P.n || 1} room${(P.n || 1) === 1 ? '' : 's'}${P.ms ? ' · ' + fmtSecs(P.ms) : ''}</b><em>${dn} day${dn === 1 ? '' : 's'} · last ${when(P.last)}${car ? ' · ' + (carName(car[0]) || car[0]) : ''}</em></div>`;
+      }).join('') + '</div>';
+    return h;
+  }
+
   function debugHtml(O) {
     const sn = G.NetSim || {}, s = G.Settings.s, g = G.Game;
     return `<h4>Network simulator</h4><p class="note">Adds lag and loss to what this browser sends as a joiner.</p>
@@ -663,6 +864,23 @@
 #ops .dp.off span, #ops .dp.off b { opacity: .45; }
 #ops .op-mini { width: 20px; height: 18px; border: 0; border-radius: 5px; background: rgba(255,74,61,.18); color: #ff8a80; cursor: pointer; font-size: 10px; }
 #ops .op-mini:hover { background: rgba(255,74,61,.4); }
+/* v5.1 Activity: day and top-N bars, and an hour-of-day histogram. */
+#ops .bars { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+#ops .br { display: grid; grid-template-columns: 74px 1fr auto; gap: 8px; align-items: center; }
+#ops .br > span { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ops .br > div { background: rgba(255,255,255,.07); border-radius: 4px; height: 9px; overflow: hidden; }
+#ops .br b { font-size: 11px; font-variant-numeric: tabular-nums; color: #c9d3ea; white-space: nowrap; }
+#ops .bar { display: block; height: 100%; background: linear-gradient(90deg, #2f6bff, #39d6ff); border-radius: 4px; }
+#ops .bar.alt { background: linear-gradient(90deg, #14b8a6, #7fe0ff); }
+#ops .hrs { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; align-items: end; margin-top: 6px; }
+#ops .hr { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+#ops .hr i { display: block; width: 100%; background: #2f6bff; border-radius: 2px 2px 0 0; }
+#ops .hr span { font-size: 9px; color: var(--muted); }
+#ops .pps { display: flex; flex-direction: column; margin-top: 4px; }
+#ops .pp { display: grid; grid-template-columns: 1fr auto; gap: 1px 8px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+#ops .pp > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ops .pp b { font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; color: #c9d3ea; }
+#ops .pp em { grid-column: 1 / -1; font-style: normal; font-size: 11px; color: var(--muted); }
 #ops .hs { padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
 #ops .hs > span { display: block; color: var(--muted); font-size: 11px; }
 #ops .hs em { display: block; font-style: normal; font-size: 11px; color: #c9d3ea; overflow-wrap: anywhere; }
@@ -689,6 +907,7 @@
     wait: new Map(),
     remote: null,
     board: null, // the room directory, while unlocked
+    bgLog: false, // keep the directory running (and logging) with the panel shut
     dir: new Map(), // sealed card ciphertext -> details (or null while opening, 'bad')
     known: new Set(),
     alerts: true,
@@ -709,9 +928,16 @@
         const o = e.target.dataset.o;
         if (o === 'relay' && G.NetSim) G.NetSim.forceRelay = e.target.checked;
         if (o === 'alerts') this.alerts = e.target.checked;
+        if (o === 'bglog') this.setBgLog(e.target.checked);
       });
       el.addEventListener('input', (e) => {
-        if (e.target.dataset.f !== 'q') return;
+        const f = e.target.dataset.f;
+        if (f === 'pq') {
+          this.pq = e.target.value;
+          this.render();
+          return;
+        }
+        if (f !== 'q') return;
         this.q = e.target.value;
         this.render();
       });
@@ -755,6 +981,8 @@
       setInterval(() => this._tick(), 500);
       // the room diary runs whether or not anyone unlocks (and never breaks the game)
       Hist.load();
+      this.bgLog = !!U.store.get(BGKEY, 0);
+      if (this.bgLog && Hist.kept()) this._boardOn();
       setInterval(() => {
         try {
           Hist.tick();
@@ -879,6 +1107,20 @@
       this._boardOff();
       this.hide();
       G.UI.toast('Locked.', 'info', false);
+    },
+
+    // v5.1: with this on, the room directory keeps running after the panel is
+    // closed, so the activity log keeps counting while the game sits open on
+    // this computer. Only rooms and player counts — reading the sealed cards
+    // for driver names still needs the key, which lives in one tab's memory.
+    setBgLog(on) {
+      this.bgLog = !!on;
+      U.store.set(BGKEY, this.bgLog ? 1 : 0);
+      if (this.bgLog) {
+        Hist.keep();
+        this._boardOn();
+      } else if (!this.open) this._boardOff();
+      this.render(true);
     },
 
     // ---------------------------------------------------- directory
@@ -1038,12 +1280,30 @@
         G.UI.patch(this.body.querySelector('.op-dl'), dirList(this));
         return;
       }
-      if (this._bodyTab === 'dir') this.body._html = null;
+      if (this._bodyTab === 'dir' || this._bodyTab === 'data') this.body._html = null;
       this._bodyTab = this.tab;
       let html;
       if (this.tab === 'stats') html = statsHtml();
       else if (this.tab === 'log') html = logHtml(this);
       else if (this.tab === 'hist') html = histHtml(this);
+      else if (this.tab === 'data') {
+        // the search box stays put while the list under it updates
+        if (this._bodyTab !== 'data') {
+          this._bodyTab = 'data';
+          this.body.innerHTML = dataHtml(this);
+          return;
+        }
+        const el = this.body.querySelector('[data-f="pq"]');
+        const foc = el && document.activeElement === el;
+        const pos = foc ? el.selectionStart : 0;
+        G.UI.patch(this.body, dataHtml(this));
+        const el2 = this.body.querySelector('[data-f="pq"]');
+        if (foc && el2) {
+          el2.focus();
+          try { el2.setSelectionRange(pos, pos); } catch (e) {}
+        }
+        return;
+      }
       else {
         // This room / Drivers / Tools re-render only when their data changes
         // (a re-render would reset a half-picked dropdown or a typed amount)
@@ -1153,7 +1413,45 @@
         Hist.clear();
         this.hsel = null;
       } else if (k === 'histCopy') this._copy(JSON.stringify({ rooms: Hist.rooms, seen: Hist.seen }, (kk, v) => (kk === '_t' ? undefined : v), 1), 'History copied.');
+      else if (k === 'dataJson') {
+        const blob = JSON.stringify({
+          exported: new Date().toISOString(), version: G.VERSION,
+          people: Hist.people, days: Hist.days, tracks: Hist.tracks, cars: Hist.cars,
+          hours: Hist.hours, peak: Hist.peak, rooms: Hist.rooms, seen: Hist.seen,
+        }, (kk, v) => (kk === '_t' || kk === '_t0' || kk === '_counted' ? undefined : v), 1);
+        this._download('slipstakes-activity-' + new Date().toISOString().slice(0, 10) + '.json', blob, 'application/json');
+      } else if (k === 'dataCsv') {
+        const esc = (x) => '"' + String(x == null ? '' : x).replace(/"/g, '""') + '"';
+        const rows = [['name', 'first seen', 'last seen', 'rooms', 'minutes', 'days', 'times hosting', 'top car'].join(',')];
+        for (const [n, P] of Object.entries(Hist.people)) {
+          const car = Object.entries(P.cars || {}).sort((a, b) => b[1] - a[1])[0];
+          rows.push([esc(n), esc(new Date(P.first).toISOString()), esc(new Date(P.last).toISOString()), P.n || 1,
+            Math.round((P.ms || 0) / 60000), Object.keys(P.days || {}).length, P.host || 0, esc(car ? car[0] : '')].join(','));
+        }
+        this._download('slipstakes-drivers-' + new Date().toISOString().slice(0, 10) + '.csv', rows.join('\n'), 'text/csv');
+      } else if (k === 'dataCopy') {
+        const ppl = Object.values(Hist.people), now = Date.now();
+        const act = (ms) => ppl.filter((P) => (P.last || 0) >= now - ms).length;
+        this._copy([
+          'SLIPSTAKES activity',
+          `drivers: ${ppl.length} all time, ${act(86400000)} in 24 h, ${act(7 * 86400000)} in 7 days`,
+          `rooms logged: ${Object.keys(Hist.seen).length} (you were in ${Hist.rooms.length})`,
+          `peak: ${(Hist.peak || {}).players || 0} drivers at once, ${(Hist.peak || {}).rooms || 0} rooms at once`,
+        ].join('\n'), 'Summary copied.');
+      }
       if (['simApply', 'simOff', 'dropLink', 'dropHost', 'time', 'cap', 'quality', 'histClear'].includes(k)) this._log('· ' + k + (a.v != null ? ' ' + a.v : ''));
+    },
+    _download(name, text, mime) {
+      try {
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([text], { type: mime || 'text/plain' }));
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+        G.UI.toast('Saved ' + name, 'info', false);
+      } catch (e) {
+        this._copy(text, 'Could not save a file — copied instead.');
+      }
     },
     _copy(text, done) {
       if (!text) return;

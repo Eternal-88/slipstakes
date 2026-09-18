@@ -75,6 +75,10 @@
       hint: -1, spin: 0, lock: 0, offT: 0, wallHit: 0, backfire: 0,
       tyreWear: 0, engineWear: 0, body: 0, fuel: 0, odo: 0, thr: 0, brk: 0, hb: 0,
       ghost: 0, // seconds of no car-car collision after a respawn
+      // v5.1 crosswind, for the picture only (never networked): how hard the
+      // gust is pushing right now in m/s² (+ = toward the left of the road)
+      // and the road normal it pushes along.
+      gust: 0, gnx: 0, gnz: 0,
       bt: 0, // brake temperature (0 cold .. ~1.4); see §7b
       // v4 race assists, all set by the HOST (race.js) and replicated: a
       // client's prediction just holds the last value it was sent.
@@ -333,7 +337,18 @@
     car.heat = Math.max(0, car.heat + dt * (s.heatRate * car.boost * (s.antilag ? Math.max(driveThr, 0.55) : driveThr) + (s.evHeat || 0) * driveThr * U.clamp(rEng, 0, 1) - cool));
     if (car.heat >= 1) car.overheat = 1;
     else if (car.overheat && car.heat < 0.65) car.overheat = 0;
-    const limp = car.overheat ? 0.55 : 1;
+    // v5.1: an electric motor doesn't run flat out and then fall off a cliff —
+    // it derates. Past 55% temperature the Volt bleeds power smoothly (down to
+    // -45% at the top of the gauge), so a long flat-out run is a thing to
+    // manage: lift early, brake earlier and let regen cool it. A combustion
+    // engine still has the hard limp mode.
+    const limp = s.ev
+      ? car.overheat
+        ? 0.5
+        : 1 - 0.45 * U.clamp((car.heat - 0.55) / 0.45, 0, 1)
+      : car.overheat
+        ? 0.55
+        : 1;
     // Nitrous (v4): while the button is held with the throttle down, burn the
     // bottle for +nosGain power. It adds heat and engine wear, costs money
     // (billed with the fuel) and refills while you sit in someone's slipstream.
@@ -550,11 +565,16 @@
       const wi = track.WZ[Q.i];
       if (wi >= 0) {
         const W = track.winds[wi];
-        const gust = W.str * s.mass * (0.55 + 0.45 * Math.sin((env.t * 2 * Math.PI) / W.period + W.ph)) * W.dir;
-        gwx += Q.nx * gust;
-        gwz += Q.nz * gust;
-      }
-    }
+        const acc = W.str * (0.55 + 0.45 * Math.sin((env.t * 2 * Math.PI) / W.period + W.ph)) * W.dir;
+        gwx += Q.nx * acc * s.mass;
+        gwz += Q.nz * acc * s.mass;
+        // (visual only: the world blows grit across the road and the HUD says
+        //  CROSSWIND, so the push reads as wind and not as the car misbehaving)
+        car.gust = acc;
+        car.gnx = Q.nx;
+        car.gnz = Q.nz;
+      } else car.gust = 0;
+    } else if (car.gust) car.gust = 0;
 
     // ---- 9. Integrate (semi-implicit Euler) ---------------------------------
     const Fwx = FU * fx + FV * lx + gwx;

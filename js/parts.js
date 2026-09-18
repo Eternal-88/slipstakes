@@ -20,15 +20,18 @@
       // v4.3: the rally car now (it won no track at all): +7% on dirt (was
       // +3%) and +8% in the wet, so Rainline and Copper Canyon are its home.
       mass: 1330, powerKW: 125, redline: 7300, rearBias: 0.6, wheelbase: 2.5, weightFront: 0.6,
-      cgH: 0.56, track: 1.58, cdA: 0.95, vTop: 50.5, inertiaK: 0.97, body: 'hatch', len: 4.0, wid: 1.82, looseBonus: 1.07, wetBonus: 1.08,
+      cgH: 0.56, track: 1.58, cdA: 0.95, vTop: 50.5, inertiaK: 0.97, body: 'hatch', len: 4.0, wid: 1.82, looseBonus: 1.07, wetBonus: 1.13,
     },
     sting: {
       id: 'sting', name: 'Sting S', tag: 'RWD roadster', drive: 'RWD',
       blurb: 'Light, low, darty roadster. Carries speed through corners; loses out on straights.',
       // v4.3: a low road car's weaknesses (−8% on dirt, −5% in the wet). It
       // was the fastest car on 5 of 12 tracks — dirt and wet included.
-      mass: 980, powerKW: 104, redline: 7800, rearBias: 1.0, wheelbase: 2.4, weightFront: 0.49,
-      cgH: 0.45, track: 1.55, cdA: 0.78, vTop: 52, inertiaK: 0.92, body: 'roadster', len: 3.9, wid: 1.76, looseBonus: 0.92, wetBonus: 0.95,
+      // v5.1: it was second-best at everything and best at nothing. Yaw
+      // inertia 0.92 -> 0.85 and 20 kg off: now nothing changes direction like
+      // it, which is worth most exactly where its lack of power hurts least.
+      mass: 960, powerKW: 113, redline: 7800, rearBias: 1.0, wheelbase: 2.4, weightFront: 0.49,
+      cgH: 0.45, track: 1.55, cdA: 0.78, vTop: 52, inertiaK: 0.85, body: 'roadster', len: 3.9, wid: 1.76, looseBonus: 0.92, wetBonus: 0.95, dryBonus: 1.015,
     },
     mule: {
       id: 'mule', name: 'Mule V8', tag: 'RWD muscle', drive: 'RWD',
@@ -37,8 +40,12 @@
       // driver ran wide 46 s over three tracks (worst car by far) -> 33 s,
       // and bot laps moved ~1 s closer to the field (it was slowest
       // everywhere but drags). Spins 0 -> 2.2 s; full-lock slide 27° -> 21°.
-      mass: 1440, powerKW: 178, redline: 6300, rearBias: 1.0, wheelbase: 2.8, weightFront: 0.5,
-      cgH: 0.54, track: 1.66, cdA: 0.98, vTop: 57, inertiaK: 0.98, body: 'muscle', len: 4.75, wid: 1.96,
+      // v5.1: a real V8 curve (tq) — enormous torque from idle, tailing off at
+      // the top. It was last or nearly last everywhere INCLUDING the drags,
+      // which are its whole reason to exist. Now nothing beats it away from a
+      // slow corner or down a long straight; it still can't change direction.
+      mass: 1440, powerKW: 180, redline: 6300, rearBias: 1.0, wheelbase: 2.8, weightFront: 0.5,
+      cgH: 0.54, track: 1.66, cdA: 0.98, vTop: 60, inertiaK: 0.98, body: 'muscle', len: 4.75, wid: 1.96, tq: { lo: 1.2, hi: 1.02 },
     },
     // v4 premium chassis: bought once per session (price), then swappable
     // like any other. Each wins somewhere and pays for it somewhere else.
@@ -48,8 +55,11 @@
       // v4.3: 172 -> 166 kW, dirt bonus 1.14 -> 1.10. Heavy, stable AWD is
       // very forgiving of keyboard driving: it was the keyboard-proxy
       // driver's fastest car on 5 of 12 tracks.
+      // v5.1: more truck. Better again on the loose (1.10 -> 1.13), worse again
+      // on tarmac (drag 1.18 -> 1.23): an easy car with a low ceiling, rather
+      // than a quietly good one.
       mass: 1560, powerKW: 166, redline: 5900, rearBias: 0.58, wheelbase: 2.95, weightFront: 0.55,
-      cgH: 0.68, track: 1.74, cdA: 1.18, vTop: 49, inertiaK: 1.04, body: 'truck', len: 4.9, wid: 2.02, looseBonus: 1.1,
+      cgH: 0.68, track: 1.74, cdA: 1.23, vTop: 49, inertiaK: 1.04, body: 'truck', len: 4.9, wid: 2.02, looseBonus: 1.13,
     },
     // v4.3: 182 -> 140 kW, $4,800 -> $3,800. With traction control it was
     // fastest on 7 of 12 tracks and 7% clear on every drag (the Mule's only
@@ -84,9 +94,13 @@
     volt: {
       id: 'volt', name: 'Volt E', tag: 'electric AWD', drive: 'AWD', price: 4400, ev: 1,
       blurb: 'Electric all-wheel drive: ferocious launches and exits, planted in the rain. Heavy, one gear, and the motor derates when it gets hot on long straights. Braking recharges the battery in endurance.',
-      mass: 1690, powerKW: 215, redline: 12000, rearBias: 0.55, wheelbase: 2.9, weightFront: 0.5,
-      cgH: 0.46, track: 1.68, cdA: 0.68, vTop: 55, inertiaK: 1.05, body: 'ev', len: 4.7, wid: 1.94, wetBonus: 1.1, looseBonus: 0.96,
-      evHeat: 0.085, regen: 0.35, fuelK: 0.45, tankM: 0.62, chargeK: 1.5, noParts: ['induction', 'exhaust', 'nitrous'],
+      mass: 1700, powerKW: 210, redline: 12000, rearBias: 0.55, wheelbase: 2.9, weightFront: 0.5,
+      cgH: 0.46, track: 1.68, cdA: 0.68, vTop: 51.5, inertiaK: 1.05, body: 'ev', len: 4.7, wid: 1.94, wetBonus: 1.1, looseBonus: 0.96,
+      // v5.1: the motor runs hotter, and it now derates SMOOTHLY as it heats
+      // (physics.js) instead of doing nothing and then cutting to half power.
+      // It was the quickest car in the game AND one of the easiest; the long
+      // flat-out tracks now ask you to lift and let it breathe.
+      evHeat: 0.115, regen: 0.35, fuelK: 0.45, tankM: 0.62, chargeK: 1.5, noParts: ['induction', 'exhaust', 'nitrous'],
     },
     // Stormer: a Group B monster. Light, short, rear-biased AWD with a big
     // turbo built in — nothing, nothing, then everything. On gravel, dirt and
@@ -97,23 +111,60 @@
       blurb: 'Group B rally legend: light, short, turbocharged all-wheel drive. King of dirt, gravel and snow. On tarmac the boost hits hard and late and the tail steps out — tame the lag and it flies.',
       mass: 1080, powerKW: 100, redline: 8200, rearBias: 0.68, wheelbase: 2.3, weightFront: 0.46,
       cgH: 0.5, track: 1.62, cdA: 0.9, vTop: 53, inertiaK: 0.82, body: 'rally', len: 4.1, wid: 1.84, looseBonus: 1.1, dryBonus: 0.94, wearK: 1.15, tyreK: 1.3,
-      turbo: { boostGain: 0.62, boostLag: 1.05, boostOn: 0.62, heatRate: 0.085, fuelMult: 2.0 },
+      // v5.1: the turbo IS the car, so it doesn't take shop induction parts
+      // (bolting a Big Turbo on read as "the same car, but more power"). The
+      // Rally Turbo slot swaps it for one with a different character instead.
+      turbo: 1, noParts: ['induction'],
     },
   };
   const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule', 'pip', 'dune', 'apex', 'volt', 'storm'];
   const BASE_CARS = ['vandal', 'brick', 'sting', 'mule', 'pip']; // free for everyone
-  // v5: parts a car can't take (the Volt has no engine to turbo or pipe)
-  const partAllowed = (carId, slot) => !((CARS[carId] || {}).noParts || []).includes(slot);
+  // v5: parts a car can't take (the Volt has no engine to turbo or pipe), and
+  // v5.1 the other way round: slots only one kind of car has (the Stormer's
+  // rally turbo, the Volt's motor).
+  const partAllowed = (carId, slot) => {
+    const c = CARS[carId] || {};
+    const sl = SLOT_MAP[slot];
+    if (sl && sl.evOnly && !c.ev) return false;
+    if (sl && sl.turboOnly && !c.turbo) return false;
+    return !(c.noParts || []).includes(slot);
+  };
+  // v5.1: the most of its own weight a car can have stripped out of it
+  const STRIP_MAX = 0.26;
 
   // Every option lists its upside (desc) and its downside (cons) — shown verbatim in the shop.
+  // v5.1 prices: only the TOP of each ladder moved (up). Everything cheap is
+  // where it was, so the first races are spent on pads, a cat-back and narrow
+  // tyres — parts nobody used to buy, because a single race paid for the best
+  // thing in the slot.
   const SLOTS = [
     {
       id: 'induction', name: 'Induction', icon: '⚙',
       options: [
         { id: 'na', name: 'Naturally Aspirated', price: 0, desc: 'Linear and predictable. Never overheats.', cons: 'No extra power.', boostGain: 0, boostLag: 0.1, boostOn: 0, heatRate: 0, fuelMult: 1, kind: 'none' },
         { id: 'sc', name: 'Supercharger', price: 2400, desc: '+32% power from low revs, instant response.', cons: 'Heat builds on long straights. Fuel ×1.6.', boostGain: 0.32, boostLag: 0.06, boostOn: 0, heatRate: 0.07, fuelMult: 1.6, kind: 'sc' },
-        { id: 't1', name: 'Street Turbo', price: 3200, desc: '+55% power once spooled.', cons: '0.5 s lag, weak below half revs. Fuel ×1.9. Heat.', boostGain: 0.55, boostLag: 0.5, boostOn: 0.45, heatRate: 0.1, fuelMult: 1.9, kind: 'turbo' },
-        { id: 't2', name: 'Big Turbo', price: 4200, desc: '+105% power at the top end. Brutal.', cons: '1.1 s lag, nothing below 60% revs, then all at once. Violent heat, fuel ×2.7, engine wear.', boostGain: 1.05, boostLag: 1.1, boostOn: 0.6, heatRate: 0.155, fuelMult: 2.7, kind: 'turbo' },
+        { id: 't1', name: 'Street Turbo', price: 3400, desc: '+55% power once spooled.', cons: '0.5 s lag, weak below half revs. Fuel ×1.9. Heat.', boostGain: 0.55, boostLag: 0.5, boostOn: 0.45, heatRate: 0.1, fuelMult: 1.9, kind: 'turbo' },
+        { id: 't2', name: 'Big Turbo', price: 6000, desc: '+105% power at the top end. Brutal.', cons: '1.1 s lag, nothing below 60% revs, then all at once. Violent heat, fuel ×2.7, engine wear.', boostGain: 1.05, boostLag: 1.1, boostOn: 0.6, heatRate: 0.155, fuelMult: 2.7, kind: 'turbo' },
+      ],
+    },
+    // v5.1 bespoke slots. A car whose engine IS its character doesn't take the
+    // generic induction parts — it gets its own path instead, and every step on
+    // that path trades top end against how hard the car is to drive, rather
+    // than being a straight power ladder.
+    {
+      id: 'gbturbo', name: 'Rally Turbo', icon: '\u{1f300}', turboOnly: 1,
+      options: [
+        { id: 'factory', name: 'Factory Turbo', price: 0, desc: 'Homologation spec: +62% once it is lit, and it stays lit off the throttle (anti-lag from the factory).', cons: '1.05 s to spool, and nothing at all below 62% revs.', boostGain: 0.62, boostLag: 1.05, boostOn: 0.62, heatRate: 0.085, fuelMult: 2.0 },
+        { id: 'small', name: 'Small Rally Turbo', price: 2400, desc: 'Spools in half a second and pulls from half revs. Turns the Stormer into a car you can drive on tarmac.', cons: '+44% instead of +62%: it gives up the top end, and the stages it owns with it.', boostGain: 0.44, boostLag: 0.5, boostOn: 0.42, heatRate: 0.06, fuelMult: 1.7 },
+        { id: 'big', name: 'Group B Turbo', price: 5400, desc: '+95% at full boost. Nothing, nothing, then everything at once.', cons: '1.4 s of lag, dead below 68% revs, violent heat and fuel \u00d72.6. On tarmac it arrives in the middle of the corner.', boostGain: 0.95, boostLag: 1.4, boostOn: 0.68, heatRate: 0.15, fuelMult: 2.6 },
+      ],
+    },
+    {
+      id: 'motor', name: 'Motor & Inverter', icon: '\u{1f50b}', evOnly: 1,
+      options: [
+        { id: 'stockm', name: 'Factory Inverter', price: 0, desc: 'The standard motor and inverter. The coolest-running of the three and the kindest to the battery.', cons: 'No extra power.', pMul: 1, heatM: 1, drainM: 1, kg: 0 },
+        { id: 'sport', name: 'Sport Inverter', price: 2400, desc: '+24% motor power and a sharper throttle.', cons: '+6 kg, the motor heats 40% faster \u2014 it starts backing off sooner on a long straight \u2014 and the battery drains 12% quicker.', pMul: 1.24, heatM: 1.4, drainM: 1.12, kg: 6 },
+        { id: 'racem', name: 'Race Motor Pack', price: 5200, desc: '+52% power: the hardest launch in the game, and it never stops pulling out of a slow corner.', cons: '+28 kg, and it runs 85% hotter: flat out it is already losing power halfway down the straight. Battery drains 30% faster.', pMul: 1.52, heatM: 1.85, drainM: 1.3, kg: 28 },
       ],
     },
     {
@@ -121,8 +172,8 @@
       options: [
         { id: 'stock', name: 'Stock Trim', price: 0, desc: 'Full interior, steel panels.', cons: 'Heavy.', kg: 0 },
         { id: 'w1', name: 'Stripped Interior', price: 1500, desc: '−120 kg. Quicker everywhere.', cons: 'Easier to shove in contact.', kg: 120 },
-        { id: 'w2', name: 'Carbon Panels', price: 3400, desc: '−240 kg. Big acceleration and turn-in gains.', cons: 'Gets bullied in contact. Twitchier yaw.', kg: 240 },
-        { id: 'w3', name: 'Race Shell', price: 6000, desc: '−340 kg. Featherweight.', cons: 'Pinballs off other cars. Snappy — low inertia means slides happen fast.', kg: 340 },
+        { id: 'w2', name: 'Carbon Panels', price: 3900, desc: '−240 kg. Big acceleration and turn-in gains.', cons: 'Gets bullied in contact. Twitchier yaw.', kg: 240 },
+        { id: 'w3', name: 'Race Shell', price: 8000, desc: '−340 kg. Featherweight.', cons: 'Pinballs off other cars. Snappy — low inertia means slides happen fast.', kg: 340 },
       ],
     },
     {
@@ -133,8 +184,8 @@
         // v4.3: more downforce (2.4 -> 3.2, 3.8 -> 5.2) and the kit $6,200 ->
         // $5,200. The full kit bought 1.4 s on Harbour, half what a $1,500
         // stripped interior did.
-        { id: 'a2', name: 'GT Wing', price: 3600, desc: 'Real downforce in fast corners.', cons: 'Drag costs top speed. Useless in slow corners.', clA: 3.2, cdA: 0.27, kg: 20 },
-        { id: 'a3', name: 'Full Aero Kit', price: 5200, desc: 'Huge high-speed grip. Glued in fast sweepers.', cons: 'Massive drag — slow on straights, terrible for drags. Does nothing below ~60 km/h.', clA: 5.2, cdA: 0.6, kg: 45 },
+        { id: 'a2', name: 'GT Wing', price: 4000, desc: 'Real downforce in fast corners.', cons: 'Drag costs top speed. Useless in slow corners.', clA: 3.2, cdA: 0.27, kg: 20 },
+        { id: 'a3', name: 'Full Aero Kit', price: 6000, desc: 'Huge high-speed grip. Glued in fast sweepers.', cons: 'Massive drag — slow on straights, terrible for drags. Does nothing below ~60 km/h.', clA: 5.2, cdA: 0.6, kg: 45 },
       ],
     },
     {
@@ -145,7 +196,7 @@
         // tyres took 8.4 s off Harbour for $1,900, a $3,200 turbo 1.2 s), so
         // every build started with soft + wide. +13% -> +7%, +6% -> +3.5%.
         { id: 'medium', name: 'Medium', price: 1000, desc: '+3.5% grip.', cons: 'Wears ~1.8× faster.', mu: 1.035, wear: 1.8, peak: 0.155, set: 400, stripe: 0xffd21f },
-        { id: 'soft', name: 'Soft', price: 2400, desc: '+7% grip. Sticky.', cons: 'Wears ~3× faster — grip falls off within a race or two.', mu: 1.07, wear: 3.0, peak: 0.145, set: 600, stripe: 0xff3b30 },
+        { id: 'soft', name: 'Soft', price: 2900, desc: '+7% grip. Sticky.', cons: 'Wears ~3× faster — grip falls off within a race or two.', mu: 1.07, wear: 3.0, peak: 0.145, set: 600, stripe: 0xff3b30 },
         // v5: a gamble on the weather. Brilliant when it rains (and in fords,
         // on ice and in mud), a liability on a dry track.
         { id: 'rain', name: 'Rain Tyres', price: 1200, desc: '+20% grip on wet roads, water and ice, +4% in mud and on dirt. They never aquaplane.', cons: '−7% grip on dry tarmac, and they wear 4× as fast whenever the road under them is dry.', mu: 1.0, wear: 1.0, peak: 0.16, set: 450, stripe: 0x29d3ff, wetM: 1.2, dryM: 0.93, looseM: 1.04, dryWear: 4, noAqua: 1 },
@@ -169,7 +220,7 @@
         // genuinely launch harder, and still pay with a low limiter.
         { id: 'short', name: 'Short Ratios + Quick-shift', price: 1100, desc: '+22% wheel torque and 0.10 s shifts — quicker off the line and out of corners.', cons: 'Hits the limiter early: much lower top speed. Useless on long straights.', fd: 1.22, gears: [3.25, 2.1, 1.52, 1.17, 0.94], shift: 0.1, kick: 1.0 },
         { id: 'long', name: 'Long Ratios', price: 1100, desc: 'Higher top speed — lets big power keep pulling.', cons: '−16% wheel torque: sluggish out of corners.', fd: 0.84, gears: [3.25, 2.1, 1.52, 1.17, 0.94], shift: 0.16, kick: 1.0 },
-        { id: 'seq', name: 'Sequential Race Box', price: 3000, desc: '6 close ratios, 0.05 s shifts. Straight-cut gear whine.', cons: 'Violent shifts kick the rear loose mid-corner. Extra engine wear.', fd: 1.0, gears: [3.1, 2.2, 1.66, 1.32, 1.09, 0.92], shift: 0.05, kick: 1.7 },
+        { id: 'seq', name: 'Sequential Race Box', price: 3600, desc: '6 close ratios, 0.05 s shifts. Straight-cut gear whine.', cons: 'Violent shifts kick the rear loose mid-corner. Extra engine wear.', fd: 1.0, gears: [3.1, 2.2, 1.66, 1.32, 1.09, 0.92], shift: 0.05, kick: 1.7 },
       ],
     },
     {
@@ -177,7 +228,7 @@
       options: [
         { id: 'stock', name: 'Road Springs', price: 0, desc: 'Comfortable, soaks up kerbs.', cons: 'Lazy turn-in, lots of roll.', loadTau: 0.1, latTau: 0.05, roll: 1.0, bump: 0.55, rideH: 0, roughGrip: 0.1, steer: 1.0, looseM: 1.0 },
         { id: 'sport', name: 'Sport Coilovers', price: 1300, desc: 'Sharper turn-in, less roll.', cons: 'Kerbs and ruts unsettle it.', loadTau: 0.07, latTau: 0.033, roll: 0.7, bump: 0.95, rideH: -0.03, roughGrip: 0.16, steer: 1.15, looseM: 0.97 },
-        { id: 'race', name: 'Race Dampers', price: 2900, desc: 'Razor turn-in, flat cornering.', cons: 'Skips over kerbs/dirt and loses grip there. Snappy at the limit.', loadTau: 0.04, latTau: 0.02, roll: 0.4, bump: 1.5, rideH: -0.06, roughGrip: 0.27, steer: 1.3, looseM: 0.9 },
+        { id: 'race', name: 'Race Dampers', price: 3900, desc: 'Razor turn-in, flat cornering.', cons: 'Skips over kerbs/dirt and loses grip there. Snappy at the limit.', loadTau: 0.04, latTau: 0.02, roll: 0.4, bump: 1.5, rideH: -0.06, roughGrip: 0.27, steer: 1.3, looseM: 0.9 },
         { id: 'rally', name: 'Long-Travel Rally', price: 1900, desc: 'Floats over dirt, kerbs and bumps. +7% loose grip.', cons: 'Soggy on tarmac: slow turn-in, big roll.', loadTau: 0.13, latTau: 0.065, roll: 1.4, bump: 0.2, rideH: 0.07, roughGrip: 0.04, steer: 0.92, looseM: 1.07 },
       ],
     },
@@ -194,8 +245,8 @@
         // with, and keyboard drivers overshot corners, 2-4 s slower a race.)
         { id: 'stock', name: 'Road Brakes', price: 0, desc: 'Full bite from cold. Predictable.', cons: 'Fade after repeated heavy stops — braking zones grow late in a race.', bForce: 1.0, bCap: 1.0, bCold: 1.0, kg: 0, caliper: 0x8c939c },
         { id: 'sport', name: 'Sport Pads', price: 600, desc: '+12% stopping power, 30% more heat capacity.', cons: 'A touch less bite when cold on the first stop.', bForce: 1.12, bCap: 1.3, bCold: 0.95, kg: 0, caliper: 0xe8322b },
-        { id: 'bbk', name: 'Big Brake Kit', price: 1600, desc: '+25% clamping force, 4-piston calipers, very hard to fade.', cons: '+8 kg of unsprung weight: it skips a little more over kerbs and bumps.', bForce: 1.25, bCap: 1.9, bCold: 0.98, kg: 8, bumpM: 1.06, caliper: 0xffc400 },
-        { id: 'carbon', name: 'Carbon-Ceramic', price: 3200, desc: '+32% stopping power, −6 kg, never fades.', cons: 'Weak bite until warm: the first two stops of a race are long.', bForce: 1.32, bCap: 3.0, bCold: 0.85, kg: -6, caliper: 0xd4a017 },
+        { id: 'bbk', name: 'Big Brake Kit', price: 1900, desc: '+25% clamping force, 4-piston calipers, very hard to fade.', cons: '+8 kg of unsprung weight: it skips a little more over kerbs and bumps.', bForce: 1.25, bCap: 1.9, bCold: 0.98, kg: 8, bumpM: 1.06, caliper: 0xffc400 },
+        { id: 'carbon', name: 'Carbon-Ceramic', price: 4400, desc: '+32% stopping power, −6 kg, never fades.', cons: 'Weak bite until warm: the first two stops of a race are long.', bForce: 1.32, bCap: 3.0, bCold: 0.85, kg: -6, caliper: 0xd4a017 },
       ],
     },
     // Exhaust + ECU reshape the torque curve (torqueAt below) rather than just
@@ -205,7 +256,7 @@
       options: [
         { id: 'stock', name: 'Stock Muffler', price: 0, desc: 'Full low-end torque. Quiet, muffled note.', cons: 'Chokes the top end.', tqLow: 1.0, tqHigh: 1.0, kg: 0, pops: 0 },
         { id: 'sport', name: 'Sport Cat-back', price: 800, desc: '+5% power at the top end, −5 kg. Throatier note with a cruising drone.', cons: '−2% torque below half revs.', tqLow: 0.98, tqHigh: 1.05, kg: -5, pops: 0.4 },
-        { id: 'straight', name: 'Straight Pipe', price: 1800, desc: '+10% top-end power, −9 kg. Loud, raw, burbly — pops and bangs on the overrun.', cons: 'Torque hole below half revs (−8%): bogs out of slow corners.', tqLow: 0.92, tqHigh: 1.1, kg: -9, pops: 1 },
+        { id: 'straight', name: 'Straight Pipe', price: 2400, desc: '+10% top-end power, −9 kg. Loud, raw, burbly — pops and bangs on the overrun.', cons: 'Torque hole below half revs (−8%): bogs out of slow corners.', tqLow: 0.92, tqHigh: 1.1, kg: -9, pops: 1 },
       ],
     },
     {
@@ -213,7 +264,7 @@
       options: [
         { id: 'stock', name: 'Factory Map', price: 0, desc: 'Safe timing. Long engine life.', cons: 'Leaves power on the table.', pMul: 1.0, wearM: 1.0, heatM: 1.0, fuelM: 1.0 },
         { id: 'stage1', name: 'Stage 1 Remap', price: 1400, desc: '+8% power everywhere.', cons: 'Engine wear +25%, fuel +10%.', pMul: 1.08, wearM: 1.25, heatM: 1.05, fuelM: 1.1 },
-        { id: 'stage2', name: 'Stage 2 Race Map', price: 3200, desc: '+16% power everywhere. Harder note, crackles on lift, bounces off the limiter.', cons: 'Engine wear +60%, boost heat +20%, fuel +22%. Rebuilds get expensive.', pMul: 1.16, wearM: 1.6, heatM: 1.2, fuelM: 1.22 },
+        { id: 'stage2', name: 'Stage 2 Race Map', price: 4400, desc: '+16% power everywhere. Harder note, crackles on lift, bounces off the limiter.', cons: 'Engine wear +60%, boost heat +20%, fuel +22%. Rebuilds get expensive.', pMul: 1.16, wearM: 1.6, heatM: 1.2, fuelM: 1.22 },
       ],
     },
     {
@@ -221,7 +272,7 @@
       options: [
         { id: 'stock', name: 'Stock Radiator', price: 0, desc: 'Fine for a naturally aspirated car.', cons: 'Boosted engines overheat on long straights.', coolM: 1.0, kg: 0, cdA: 0 },
         { id: 'radiator', name: 'Alloy Radiator', price: 700, desc: '+45% cooling: boost lasts much longer before limp mode.', cons: '+7 kg in the nose.', coolM: 1.45, kg: 7, cdA: 0 },
-        { id: 'race', name: 'Race Cooling Pack', price: 1800, desc: '+100% cooling with an oil cooler. Turbo cars can run flat out.', cons: '+12 kg, and the big front opening adds drag.', coolM: 2.0, kg: 12, cdA: 0.03 },
+        { id: 'race', name: 'Race Cooling Pack', price: 2500, desc: '+100% cooling with an oil cooler. Turbo cars can run flat out.', cons: '+12 kg, and the big front opening adds drag.', coolM: 2.0, kg: 12, cdA: 0.03 },
         // v5: power for boosted engines, at the cost of response
         { id: 'ic', name: 'Front-Mount Intercooler', price: 1400, desc: 'Boosted engines: +7% boost power and 30% less boost heat. +25% cooling.', cons: 'Longer pipework: boost arrives 0.15 s later. +9 kg in the nose. Does little for a naturally aspirated car.', coolM: 1.25, kg: 9, cdA: 0.01, boostPow: 1.07, heatK: 0.7, lagAdd: 0.15 },
       ],
@@ -245,7 +296,7 @@
       options: [
         { id: 'none', name: 'No Nitrous', price: 0, desc: 'Nothing to manage.', cons: 'No push-to-pass button.', gain: 0, dur: 1, refill: 0, heat: 0, wear: 0, cost: 0, kg: 0 },
         { id: 'n1', name: 'Street Shot', price: 2200, desc: 'Hold NITROUS for +30% power. A 6 s bottle every race, topped up in other cars\' slipstream.', cons: '+12 kg. $120 per full bottle. Adds engine heat.', gain: 0.3, dur: 6, refill: 0.07, heat: 0.04, wear: 0.0004, cost: 120, kg: 12 },
-        { id: 'n2', name: 'Race Shot', price: 4400, desc: '+60% power for 5 s, and it refills faster while drafting.', cons: '+18 kg. $240 a bottle. Heavy heat and engine wear — it can cook a boosted engine.', gain: 0.6, dur: 5, refill: 0.1, heat: 0.09, wear: 0.0012, cost: 240, kg: 18 },
+        { id: 'n2', name: 'Race Shot', price: 5400, desc: '+60% power for 5 s, and it refills faster while drafting.', cons: '+18 kg. $240 a bottle. Heavy heat and engine wear — it can cook a boosted engine.', gain: 0.6, dur: 5, refill: 0.1, heat: 0.09, wear: 0.0012, cost: 240, kg: 18 },
       ],
     },
     // ---- v5 slots -------------------------------------------------------
@@ -256,14 +307,14 @@
       options: [
         { id: 'none', name: 'Standard ECU', price: 0, desc: 'No tricks.', cons: 'Starts and turbo lag are all yours to manage.' },
         { id: 'launch', name: 'Launch Control', price: 900, desc: 'Pre-spools the turbo on the grid, then for the first 3 s: perfect traction, +15% torque, half-time shifts. Rockets off the line.', cons: 'Nothing at all after the start. A little extra engine wear per launch.', launch: 1 },
-        { id: 'antilag', name: 'Anti-Lag', price: 2200, desc: 'Turbo cars: boost stays up when you lift and spools 45% faster. Bangs and flames on the overrun.', cons: 'Heat builds even off the throttle, fuel +25%, engine wear +40%. Useless without a turbo.', antilag: 1 },
+        { id: 'antilag', name: 'Anti-Lag', price: 2600, desc: 'Turbo cars: boost stays up when you lift and spools 45% faster. Bangs and flames on the overrun.', cons: 'Heat builds even off the throttle, fuel +25%, engine wear +40%. Useless without a turbo.', antilag: 1 },
       ],
     },
     {
       id: 'wheels', name: 'Wheels', icon: '◉',
       options: [
         { id: 'alloy', name: 'Cast Alloys', price: 0, desc: 'Tough and cheap.', cons: 'Heavy unsprung weight.' },
-        { id: 'mag', name: 'Magnesium Wheels', price: 1900, desc: '−14 kg of unsprung weight: +8% steering response, rides bumps and kerbs better, a touch quicker everywhere.', cons: 'Brittle: wall and obstacle hits do 40% more body damage.', kg: 14, steerM: 1.08, bumpM: 0.88, wallDmg: 1.4 },
+        { id: 'mag', name: 'Magnesium Wheels', price: 2200, desc: '−14 kg of unsprung weight: +8% steering response, rides bumps and kerbs better, a touch quicker everywhere.', cons: 'Brittle: wall and obstacle hits do 40% more body damage.', kg: 14, steerM: 1.08, bumpM: 0.88, wallDmg: 1.4 },
       ],
     },
     // Endurance only (does nothing in a normal race): bigger tank OR faster
@@ -282,8 +333,21 @@
     SLOT_MAP[s.id] = s;
     s.options.forEach((o) => (o.slot = s.id));
   });
-  const STOCK = { induction: 'na', weight: 'stock', aero: 'none', compound: 'hard', width: 'std', gearing: 'stock', suspension: 'stock', brakes: 'stock', exhaust: 'stock', ecu: 'stock', cooling: 'stock', diff: 'stock', nitrous: 'none', aids: 'none', wheels: 'alloy', pitkit: 'none' };
+  const STOCK = { induction: 'na', weight: 'stock', aero: 'none', compound: 'hard', width: 'std', gearing: 'stock', suspension: 'stock', brakes: 'stock', exhaust: 'stock', ecu: 'stock', cooling: 'stock', diff: 'stock', nitrous: 'none', aids: 'none', wheels: 'alloy', pitkit: 'none', gbturbo: 'factory', motor: 'stockm' };
   const opt = (slot, id) => SLOT_MAP[slot].options.find((o) => o.id === id) || SLOT_MAP[slot].options[0];
+  // v5.1: one option can read differently on different cars — a strip-out takes
+  // less out of a small car, because there is less in it. The shop asks for
+  // the text per car so the number on the card is the number you get.
+  function optText(carId, o) {
+    const c = CARS[carId] || CARS.vandal;
+    if (o.slot === 'weight' && o.kg) {
+      const real = Math.round(Math.min(o.kg, c.mass * STRIP_MAX));
+      const desc = o.desc.replace(/−\d+ kg/, '−' + real + ' kg');
+      const cons = real < o.kg - 1 ? o.cons + ' There is only so much to take out of a car this small — ' + real + ' kg is all it has to give.' : o.cons;
+      return [desc, cons];
+    }
+    return [o.desc, o.cons];
+  }
 
   // ------------------------------------------------------------------------
   // SETUP (tuning). Free to change whenever the shop is open, like a real
@@ -398,7 +462,9 @@
   // Stock parts give exactly torqueShape(r).
   function torqueAt(s, r) {
     if (s.ev) return r <= EV_KNEE ? 1 : EV_KNEE / r; // v5: electric motor
-    const lo = s.tqLow == null ? 1 : s.tqLow, hi = s.tqHigh == null ? 1 : s.tqHigh;
+    // (v5.1 carLo/carHi: the engine's own character before any parts — the
+    // Mule's V8 makes its torque low down and runs out of breath at the top)
+    const lo = (s.tqLow == null ? 1 : s.tqLow) * (s.carLo || 1), hi = (s.tqHigh == null ? 1 : s.tqHigh) * (s.carHi || 1);
     let f = 1;
     if (r <= 0.45) f = lo;
     else if (r < 0.62) f = U.lerp(lo, 1, (r - 0.45) / 0.17);
@@ -419,12 +485,14 @@
   function computeSpec(carId, installed, wear, tune) {
     const c = CARS[carId] || CARS.vandal;
     const p = Object.assign({}, STOCK, installed || {});
-    // (v5: a part this car can't take counts as stock)
-    for (const slot of c.noParts || []) p[slot] = STOCK[slot];
+    // (v5: a part this car can't take counts as stock — that covers both the
+    // slots it lacks and the v5.1 slots that belong to another car)
+    for (const sl of SLOTS) if (!partAllowed(c.id, sl.id)) p[sl.id] = STOCK[sl.id];
     const w = Object.assign({ tyre: 0, engine: 0, body: 0 }, wear || {});
     let ind = opt('induction', p.induction);
-    // v5 Stormer: its turbo is part of the car; a fitted induction part replaces it
-    if (c.turbo && ind.id === 'na') ind = Object.assign({}, ind, c.turbo, { kind: 'turbo' });
+    // v5.1 Stormer: the turbo is part of the car, chosen in its own slot
+    if (c.turbo) ind = Object.assign({}, opt('gbturbo', p.gbturbo), { kind: 'turbo' });
+    const mo = opt('motor', p.motor); // v5.1 Volt: motor + inverter
     const wt = opt('weight', p.weight), ae = opt('aero', p.aero);
     const cp = opt('compound', p.compound), wd = opt('width', p.width), su = opt('suspension', p.suspension);
     let gr = opt('gearing', p.gearing);
@@ -438,13 +506,19 @@
     if (ai.antilag && ind.kind === 'turbo') ind = Object.assign({}, ind, { boostLag: ind.boostLag * 0.55, fuelMult: ind.fuelMult * 1.25 });
     const T = effTune(p, tune);
 
-    const mass = c.mass - wt.kg + (ae.kg || 0) + br.kg + ex.kg + co.kg + no.kg - (wh.kg || 0) + (pk.kg || 0);
+    // v5.1: a strip-out can only take so much out of a small car — there is
+    // less interior, glass and steel in a kei car than in a muscle coupe. The
+    // saving is capped at a quarter of the car's own weight. (Flat kilos made
+    // the 760 kg Pip a 423 kg go-kart: with a full build it was quickest on 7
+    // of 13 tracks, and the whole field converged on "buy the lightest car".)
+    const stripKg = Math.min(wt.kg || 0, c.mass * STRIP_MAX);
+    const mass = c.mass - stripKg + (ae.kg || 0) + br.kg + ex.kg + co.kg + no.kg - (wh.kg || 0) + (pk.kg || 0) + (c.ev ? mo.kg || 0 : 0);
     const cgF = c.wheelbase * (1 - c.weightFront); // distance CG -> front axle
     const cgR = c.wheelbase - cgF;
     // Yaw inertia via the "dynamic index" k: Iz = m * a * b * k (k≈1 for road
     // cars). Weight comes off high and wide (panels, glass), so a stripped car
     // loses inertia faster than mass — it rotates (and spins) quicker.
-    const inertiaScale = 1 - (wt.kg / c.mass) * 0.6;
+    const inertiaScale = 1 - (stripKg / c.mass) * 0.6;
     const Iz = mass * cgF * cgR * c.inertiaK * inertiaScale;
 
     const redlineW = (c.redline * 2 * Math.PI) / 60;
@@ -454,7 +528,7 @@
     const finalDrive = baseFD * gr.fd * (1 + T.fd / 100);
     const engineHealth = 1 - 0.38 * Math.pow(U.clamp(w.engine, 0, 1), 1.3);
     // (EV: flat torque to 35% revs, then constant power — see torqueAt)
-    const peakTorque = ((c.powerKW * 1000) / ((c.ev ? EV_KNEE : POWER_SHAPE_PEAK) * redlineW)) * ec.pMul;
+    const peakTorque = ((c.powerKW * 1000) / ((c.ev ? EV_KNEE : POWER_SHAPE_PEAK) * redlineW)) * ec.pMul * (c.ev ? mo.pMul : 1);
 
     const tyreHealth = 1 - 0.32 * Math.pow(U.clamp(w.tyre, 0, 1), 1.6);
     const mu = 1.12 * cp.mu * tyreHealth;
@@ -499,14 +573,14 @@
       len: c.len, wid: c.wid,
       rearBias: c.rearBias, drive: c.drive,
       redline: c.redline, redlineW, idle: 0.14, peakTorque, gears, finalDrive, revRatio: 3.4,
-      tqLow: ex.tqLow, tqHigh: ex.tqHigh, pops: ex.pops, ev: c.ev ? 1 : 0,
+      tqLow: ex.tqLow, tqHigh: ex.tqHigh, carLo: (c.tq && c.tq.lo) || 1, carHi: (c.tq && c.tq.hi) || 1, pops: ex.pops, ev: c.ev ? 1 : 0,
       shiftTime: gr.shift, shiftKick: gr.kick, upR: 0.97, downR: 0.55,
       boostKind: ind.kind, boostGain: ind.boostGain * boostM * (boosted ? co.boostPow || 1 : 1), boostLag: ind.boostLag, boostOn: ind.boostOn,
       heatRate: ind.heatRate * ec.heatM * boostM * boostM * (co.heatK || 1),
       // v5 electronics / wheels / pit kit
-      launch: ai.launch ? 1 : 0, antilag: ai.antilag && ind.kind === 'turbo' ? 1 : 0, wallDmg: wh.wallDmg || 1, qr: pk.qr || 1, coolRate: 0.035 * co.coolM, fuelRate: 0.85 * ind.fuelMult * ec.fuelM * (c.fuelK || 1),
+      launch: ai.launch ? 1 : 0, antilag: (ind.antilag || (ai.antilag && ind.kind === 'turbo')) ? 1 : 0, wallDmg: wh.wallDmg || 1, qr: pk.qr || 1, coolRate: 0.035 * co.coolM, fuelRate: 0.85 * ind.fuelMult * ec.fuelM * (c.fuelK || 1) * (c.ev ? mo.drainM : 1),
       // v5: EV motor heat under load, regen, battery size + charging speed
-      evHeat: (c.evHeat || 0) * ec.heatM, regen: c.regen || 0, tankM: (c.tankM || 1) * (pk.tankM || 1), chargeK: (c.chargeK || 1) * (pk.tankM ? 1.2 : 1),
+      evHeat: (c.evHeat || 0) * ec.heatM * (c.ev ? mo.heatM : 1), regen: c.regen || 0, tankM: (c.tankM || 1) * (pk.tankM || 1), chargeK: (c.chargeK || 1) * (pk.tankM ? 1.2 : 1),
       engineHealth,
       clA: aeroCl * (1 - 0.035 * rideCm), cdA: c.cdA + aeroCd + wd.cdA + co.cdA + w.body * 0.12, aeroFront: 0.42,
       mu, rearGrip: 1.0, peakSlip: cp.peak, slideRatio: 0.8, surfMul, aqua: wd.aqua && !cp.noAqua ? 1 : 0, dryWear: cp.dryWear || 0,
@@ -770,6 +844,10 @@
     if (p.suspension === 'race') out.push(['warn', 'Race dampers skip over kerbs and dirt ruts.']);
     if (p.aero === 'a2' || p.aero === 'a3') out.push(['warn', 'Wing drag costs top speed; downforce does nothing in slow corners.']);
     if (p.compound === 'soft') out.push(['warn', 'Soft tyres wear ~3× faster — expect grip to fade within a race or two.']);
+    // v5.1: any circuit with a pit lane can come up as an endurance race
+    if (next && next.def && (next.def.endurance || next.def.enduChance) && s.fuelRate > 1.45) {
+      out.push(['warn', 'Thirsty build. If this one is run as an endurance race you will be stopping at least twice — a Fuel Cell would pay for itself.']);
+    }
     if (p.gearing === 'short') out.push(['warn', 'Short gears: limiter at ' + Math.round(topSpeed(s) * 3.6) + ' km/h.']);
     if (p.gearing === 'seq') out.push(['warn', 'Sequential shifts kick the rear — careful mid-corner.']);
     if (s.heatRate > 0) {
@@ -788,6 +866,9 @@
     if (s.carId === 'pip') out.push(['warn', 'Pip K1: front-drive — too much throttle mid-corner washes the nose wide. Lift or brake into a corner to swing the tail round. Light: bigger cars push it around.']);
     if (s.carId === 'volt') out.push(['warn', 'Volt E: one gear and instant torque. Flat out for long, the motor gets hot and power drops — ease off a moment to cool it.']);
     if (s.carId === 'storm') out.push(['warn', 'Stormer B: the turbo arrives late and all at once. On tarmac, get it straight before the boost hits or the tail comes round.']);
+    if (p.gbturbo === 'small') out.push(['good', 'Small Rally Turbo: half a second to spool instead of a second. Much easier to place on tarmac — and slower on the stages it was built for.']);
+    if (p.gbturbo === 'big') out.push(['warn', 'Group B Turbo: nothing below two-thirds revs, then everything. On a tight track you will be waiting for it at every exit.']);
+    if (p.motor === 'racem') out.push(['warn', 'Race Motor Pack: it heats fast. On a long straight the power is already fading — lift early and let it cool.']);
     if (p.compound === 'rain') out.push(['warn', 'Rain tyres: great when it rains, slow on a dry road, and they wear 4× as fast whenever it is dry.']);
     if (p.aids === 'antilag' && s.boostKind !== 'turbo') out.push(['bad', 'Anti-lag does nothing without a turbo.']);
     if (s.antilag) out.push(['warn', 'Anti-lag: the turbo stays hot off the throttle — watch the heat gauge.']);
@@ -848,7 +929,7 @@
   const CAR_SWAP = 800;
 
   G.Parts = {
-    rearExcess, CARS, CAR_ORDER, BASE_CARS, partAllowed, SLOTS, SLOT_MAP, STOCK, opt, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,
+    rearExcess, CARS, CAR_ORDER, BASE_CARS, partAllowed, SLOTS, SLOT_MAP, STOCK, opt, optText, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,
     topSpeed, zeroTo100, repairQuote, tyreSetPrice, engineRebuildPrice, BASIC_REPAIR, BODY_REPAIR, newGarage, fixGarage, partsValue,
     TUNES, TUNE_MAP, defaultTune, effTune, tuneAvailable, LOOK, GLOW_COL, defaultLook, cleanLook, brakeDist, CAR_SWAP,
     WHEEL_R, RHO, G_ACC,

@@ -283,6 +283,9 @@
           curMs: s.finished ? s.finishMs : s.curMs + since, lastLap: s.lastLap, bestLap: s.bestLap,
           rs: cars[this.meIdx].rs, hasBoost: this.spec.boostKind !== 'none', hasNos: !!this.spec.nosGain, coldBrakes: (this.spec.bCold || 1) < 0.9, wrong: s.wrong, finished: s.finished,
           carId: this.entrants[this.meIdx].carId, parts: this.entrants[this.meIdx].parts,
+          // v5.1 cluster: the rev scale, and the boost dial's own numbers
+          ev: !!this.spec.ev, boostGain: this.spec.boostGain, redline: this.spec.redline,
+          boostAvail: G.Parts.boostAvail(this.spec, cars[this.meIdx].rs.rpm),
         };
       }
       const lead = order[0] ? L(order[0].i).lapCount : 1;

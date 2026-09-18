@@ -384,6 +384,13 @@
     drag: { cars: ['mule'], premium: ['volt'], buys: [['aids', 'launch'], ['gearing', 'short'], ['induction', 't1'], ['cooling', 'race'], ['nitrous', 'n1'], ['exhaust', 'straight'], ['weight', 'w1'], ['ecu', 'stage1']] },
     allround: { cars: ['vandal', 'brick', 'sting', 'mule', 'pip'], premium: ['dune', 'volt'], buys: [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator']] },
   };
+  // v5.1: the cars with a slot of their own. A bot that bought a supercharger
+  // for an electric car was throwing its money away; these are what it buys
+  // instead, hardest-to-drive option first for the styles that want power.
+  const CAR_BUYS = {
+    volt: [['motor', 'sport'], ['motor', 'racem']],
+    storm: [['gbturbo', 'small'], ['gbturbo', 'big']],
+  };
   const STYLE_KEYS = Object.keys(STYLES);
   const pick = (list, rnd) => list[Math.floor(rnd() * list.length)];
   const BotKit = {
@@ -437,11 +444,15 @@
       });
     },
     // Parts off the style's shopping list that fit `budget` (some bots stop early).
-    parts(style, budget, rnd) {
+    parts(style, budget, rnd, carId) {
       rnd = rnd || Math.random;
       const out = {};
       let spent = 0;
-      for (const [slot, id] of (STYLES[style] || STYLES.allround).buys) {
+      const list = (STYLES[style] || STYLES.allround).buys.slice();
+      const own = CAR_BUYS[carId];
+      if (own) list.unshift.apply(list, ['rally', 'drag', 'power'].includes(style) ? own.slice().reverse() : own);
+      for (const [slot, id] of list) {
+        if (carId && !G.Parts.partAllowed(carId, slot)) continue;
         const o = G.Parts.opt(slot, id);
         if (out[slot] || spent + o.price > budget) continue;
         out[slot] = id;
@@ -471,7 +482,7 @@
         const prem = S.premium ? (S.premium.filter(suits).length ? S.premium.filter(suits) : S.premium) : [];
         const carId = prem.length && rnd() < Lv.premium ? pick(prem, rnd) : this.car(style, rnd);
         const budget = Lv.budget * (0.6 + 0.4 * rnd());
-        return { name, style, carId, look: this.look(rnd), parts: this.parts(style, budget, rnd).parts };
+        return { name, style, carId, look: this.look(rnd), parts: this.parts(style, budget, rnd, carId).parts };
       });
     },
   };

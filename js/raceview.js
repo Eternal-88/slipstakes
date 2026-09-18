@@ -23,6 +23,9 @@
         me = {
           id: mc.id, pos, lapCount: mc.lapCount, curMs, lastLap: mc.lastLap, bestLap: mc.bestLap, carId: mc.carId, parts: mc.parts,
           rs: cars.find((c) => c.id === meId).rs, hasBoost: mc.spec.boostKind !== 'none', hasNos: !!mc.spec.nosGain, coldBrakes: (mc.spec.bCold || 1) < 0.9, wrong: mc.wrongT > 1.2, finished: mc.finished,
+          // v5.1 cluster: the rev scale, and the boost dial's own numbers
+          ev: !!mc.spec.ev, boostGain: mc.spec.boostGain, redline: mc.spec.redline,
+          boostAvail: G.Parts.boostAvail(mc.spec, mc.st.rpm),
         };
       }
       return {

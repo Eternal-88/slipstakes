@@ -15,26 +15,32 @@
   const U = G.U, Parts = G.Parts;
   const HS = G.HostSession.prototype;
 
+  // v5.1 money: a race used to pay about what a top-tier part costs, so every
+  // player bought the best thing in a slot the moment they wanted it and the
+  // cheap end of the catalogue never got touched. Purses are about a third
+  // smaller and start smaller still; the growth per race does the work
+  // instead, so the first races are spent on $600 pads and a cat-back and the
+  // last ones on the big parts.
   const E = {
-    PRIZES: [2600, 2000, 1600, 1250, 1000, 800, 650, 500],
-    DNF_PAY: 250,
-    FASTEST_LAP: 300,
-    GAIN_BONUS: 100, // per place gained from the grid
-    GAIN_CAP: 500,
-    STIPEND: 300, // two poorest racers (by net worth) each race, if 4+ racers
-    GROWTH: 0.06, // purses grow 6% per race
-    BET_MIN: 50, BET_MAX: 1000, BET_TOTAL: 2000,
-    SIDE_MIN: 100, SIDE_MAX: 1000,
+    PRIZES: [1800, 1400, 1120, 880, 700, 560, 450, 350],
+    DNF_PAY: 180,
+    FASTEST_LAP: 250,
+    GAIN_BONUS: 90, // per place gained from the grid
+    GAIN_CAP: 450,
+    STIPEND: 220, // two poorest racers (by net worth) each race, if 4+ racers
+    GROWTH: 0.085, // purses grow 8.5% per race
+    BET_MIN: 50, BET_MAX: 700, BET_TOTAL: 1400,
+    SIDE_MIN: 100, SIDE_MAX: 700,
     MARGIN: 0.12, // bookmaker margin on odds
     FLOOR: Parts.BASIC_REPAIR,
     T: { entry: 20000, betting: 25000 },
     // v4 comeback economy
-    BOUNTY: 400, // on the money leader's head: paid to the best finisher who beats them
-    DOUBLE_MAX: 2000, // double-or-nothing on a race prize, capped
+    BOUNTY: 300, // on the money leader's head: paid to the best finisher who beats them
+    DOUBLE_MAX: 1400, // double-or-nothing on a race prize, capped
   };
-  // capped at 3x (race 35 on): with sessions of up to 100 races, uncapped
+  // capped at 3.2x (race 27 on): with sessions of up to 100 races, uncapped
   // growth would make a late win worth 7 early ones
-  E.mult = (raceNo) => Math.min(3, 1 + E.GROWTH * (raceNo - 1));
+  E.mult = (raceNo) => Math.min(3.2, 1 + E.GROWTH * (raceNo - 1));
   E.prize = (pos, dnf, raceNo) => Math.round(((dnf ? E.DNF_PAY : E.PRIZES[pos - 1] || 400) * E.mult(raceNo)) / 10) * 10;
   E.canStake = (p, amount) => p.money - amount >= E.FLOOR;
 
@@ -365,7 +371,9 @@
   // --------------------------------------------------------- bots
   // Bots are cautious: repair when worn, then maybe buy one sensible upgrade
   // while keeping a cash reserve. They never gamble.
-  const BOT_PREFS = [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator'], ['gearing', 'short'], ['aero', 'a2'], ['weight', 'w2'], ['induction', 't1'], ['compound', 'soft']];
+  const BOT_PREFS = [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator'], ['gearing', 'short'], ['aero', 'a2'], ['weight', 'w2'], ['induction', 't1'], ['compound', 'soft'],
+    // v5.1: the bespoke slots (partAllowed skips them on every other car)
+    ['motor', 'sport'], ['gbturbo', 'small'], ['motor', 'racem'], ['gbturbo', 'big']];
   HS.botsShop = function () {
     const st = this.state;
     for (const b of this.bots()) {
@@ -395,7 +403,9 @@
         for (const [slot, opt] of (S ? S.buys.concat(BOT_PREFS) : BOT_PREFS)) {
           if (g.owned[slot].includes(opt) || !Parts.partAllowed(b.carId, slot)) continue;
           const o = Parts.opt(slot, opt);
-          if (b.money - o.price >= 1500) {
+          // (v5.1: 1500 -> 900. Purses are a third smaller now, and the old
+          //  reserve meant bots sat on their money while players spent theirs.)
+          if (b.money - o.price >= 900) {
             b.money -= o.price;
             b.stats.spent += o.price;
             g.owned[slot].push(opt);

@@ -525,6 +525,7 @@
         phase: clip(o.phase, 14), race: num(o.race, 0, 100), races: num(o.races, 1, 100), ver: clip(o.ver, 8), proto: num(o.proto, 0, 999), at: +o.at || 0,
         // v5 (older hosts leave these out)
         track: /^\w{1,16}$/.test(o.track || '') ? o.track : '', lvl: clip(o.lvl, 10), champ: o.champ === 'points' ? 'points' : 'money',
+        endu: o.endu ? 1 : 0,
         // v4.6: the room's details sealed for the maintainer's key (ops.js); opaque to everyone else
         ops: o.ops && typeof o.ops.ct === 'string' && o.ops.ct.length < 6000 ? { hpub: clip(o.ops.hpub, 120), iv: clip(o.ops.iv, 40), ct: o.ops.ct } : null,
       };

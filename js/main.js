@@ -387,7 +387,10 @@
       if (quick && ents.length > 3) ents.splice(3, 0, ents.shift()); // you start mid-pack
       // catch-up only in real (quick) races, at the player's chosen strength
       const catchup = quick ? G.Settings.CATCHUP[G.Settings.s.catchup] || 0 : 0;
-      const endu = quick && track.def.endurance ? G.RaceEnv.endu(track) : null; // v5: the endurance track brings its own rules
+      // v5.1: Endurance Park is always the long race; the other circuits with
+      // a pit lane sometimes are (def.enduChance), rolled as the race starts.
+      const enduNow = quick && (track.def.endurance || (track.def.enduChance && Math.random() < track.def.enduChance));
+      const endu = enduNow ? G.RaceEnv.endu(track) : null;
       const weather = quick ? G.RaceEnv.roll(track, G.Settings.s.raceWeather, null, endu && endu.laps) : null;
       this.sim = new G.RaceSim(track, ents, { countdown: quick ? 3.5 : 2.5, practice: !quick, catchup, weather, endu });
       this.attract = null;
@@ -529,6 +532,7 @@
       if (!tr) return 'race';
       const th = tr.theme;
       if (th.night || (this.world.env && this.world.env.night > 0.6)) return 'night';
+      if (th.song) return th.song; // v5.1: the theme asked for one
       if (this._songTrack !== tr) {
         // (asked every frame: work out the loose share once per track)
         let loose = 0;

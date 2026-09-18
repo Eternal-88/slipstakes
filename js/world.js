@@ -435,6 +435,24 @@
           fx.emit('streak', px, py, pz, rs.vx * 0.35, 0, rs.vz * 0.35, 1);
         }
       }
+      // v5.1 crosswind: grit and spray blowing across the road, so the push
+      // you can feel has something to look at. Spawned upwind of the camera
+      // car and blown across it at the gust's own strength.
+      if (m.id === this.focusId && Math.abs(rs.gust || 0) > 0.4) {
+        const g = rs.gust, dir = g > 0 ? 1 : -1, str = Math.min(1, Math.abs(g) / 6);
+        const wx = rs.gnx * dir, wz = rs.gnz * dir;
+        const n = dt * (26 + 34 * str) * this.fx.budget;
+        for (let k = 0; k < n; k++) {
+          const along = (Math.random() - 0.5) * 34, across = -14 - Math.random() * 12;
+          const px = rs.x + wx * across - wz * along;
+          const pz = rs.z + wz * across + wx * along;
+          const sp = 13 + 3.2 * Math.abs(g) + Math.random() * 6;
+          const gy = this.groundAt ? this.groundAt(px, pz) : y;
+          // small and quick: grit skating across the road, not smoke
+          if (Math.random() < 0.45) fx.emit('sand', px, gy + 0.2 + Math.random() * 1.1, pz, wx * sp, 0.15, wz * sp, 0.22 + str * 0.2);
+          else fx.emit('streak', px, gy + 0.3 + Math.random() * 2.4, pz, wx * sp * 1.7, 0, wz * sp * 1.7, 1.3);
+        }
+      }
       // exhaust: flames on backfire, puffs on gear changes and hard launches
       const gearUp = rs.gear > m.lastGear && m.lastGear > 0;
       m.lastGear = rs.gear;

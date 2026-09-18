@@ -16,7 +16,7 @@
     showFps: false,
     // audio
     sound: true, // v4.4: on by default (browsers still wait for your first click or key)
-    vMaster: 80, vEngine: 80, vOthers: 70, vSfx: 85, vUi: 60, vMusic: 45,
+    vMaster: 80, vEngine: 80, vOthers: 70, vSfx: 85, vUi: 60, vMusic: 58,
     raceMusic: true, // v5: proper race songs now (race / night / rally / endurance)
     // camera / HUD
     cam: 'follow', // follow | near | far | fixed
@@ -52,6 +52,16 @@
   if (!saved.sound44) {
     s.sound = true;
     s.sound44 = true;
+    U.store.set('ss.settings', s);
+  }
+
+  // v5.1: the music was mixed too low to hear under the engines (and the
+  // saved settings of anyone who had played before pinned it there). Lift a
+  // level that is still the old default to the new one, once. Anyone who
+  // chose a different number keeps their choice.
+  if (!saved.music51) {
+    if (s.vMusic === 45) s.vMusic = DEF.vMusic;
+    s.music51 = true;
     U.store.set('ss.settings', s);
   }
 

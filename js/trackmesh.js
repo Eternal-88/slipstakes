@@ -1499,14 +1499,22 @@
         });
       }
     }
-    // crosswind: a sock at each end of the zone, streaming the way it blows
+    // crosswind: a line of socks down the zone, all streaming the way it
+    // blows. (v5.1: two socks at the ends of a 200 m zone were easy to miss —
+    // the push arrived with nothing on screen to explain it.)
     if (track.winds.length) {
       const socks = [];
       for (const W of track.winds) {
-        for (const e of [-1, 1]) {
-          const d = W.at + e * W.hl * 0.8, pq = track.pointAt(d, 0);
-          const lat = -W.dir * (track.wallD[pq.i] + 2), pt = track.pointAt(d, lat);
-          socks.push({ x: pt.x, z: pt.z, r: Math.atan2(-track.NX[pt.i] * W.dir, -track.NZ[pt.i] * W.dir) });
+        const n = Math.max(2, Math.round((W.hl * 2) / 30));
+        for (let k = 0; k <= n; k++) {
+          const d = W.at + (k / n - 0.5) * W.hl * 1.9, pq = track.pointAt(d, 0);
+          const r = Math.atan2(-track.NX[pq.i] * W.dir, -track.NZ[pq.i] * W.dir);
+          // upwind side gets them all; downwind side every other one, so the
+          // road is framed without a forest of poles
+          for (const side of k % 2 ? [-1] : [-1, 1]) {
+            const lat = side * W.dir * (track.wallD[pq.i] + 2.5), pt = track.pointAt(d, lat);
+            socks.push({ x: pt.x, z: pt.z, r });
+          }
         }
       }
       instanced('sock', socks, group, false);
@@ -1515,30 +1523,38 @@
     if (track.pit) {
       const pt = track.pit, pos = [], col = [];
       const white = C(0xf2f2f2), yel = C(0xffc400), grey = C(0x6f757d);
-      const Qp = (d, l) => {
+      // v5.1: every painted layer gets its own height, and they follow the
+      // road surface (heightAt) the way the road mesh does. They all used to
+      // sit on one flat plane 3 cm up, so the white lines fought the box
+      // paint, the box paint fought the run-off strip under it, and the whole
+      // pit lane flickered as the camera moved.
+      const Qp = (d, l, dy) => {
         const a = track.pointAt(d, l);
-        return [a.x, track.Y[a.i] + 0.03, a.z];
+        return [a.x, track.heightAt(a.i, l) + 0.06 + (dy || 0), a.z];
       };
-      const strip = (d0, d1, l0, l1, c) => {
+      const strip = (d0, d1, l0, l1, c, dy) => {
         for (let d = d0; d < d1 - 0.01; d += 2) {
           const e = Math.min(d1, d + 2);
-          pushQuad(pos, col, Qp(d, l1), Qp(d, l0), Qp(e, l0), Qp(e, l1), c);
+          pushQuad(pos, col, Qp(d, l1, dy), Qp(d, l0, dy), Qp(e, l0, dy), Qp(e, l1, dy), c);
         }
       };
+      const LINE = 0.014, PIT = 0.028; // paint on top of the box, stripe on top of the paint
       const l = pt.lat, hw = pt.hw, d0 = pt.at - pt.hl, d1 = pt.at + pt.hl;
-      strip(d0, d1, l - hw, l + hw, grey);
-      strip(d0, d1, l - hw, l - hw + 0.3, white);
-      strip(d0, d1, l + hw - 0.3, l + hw, white);
-      strip(d0, d0 + 0.4, l - hw, l + hw, white);
-      strip(d1 - 0.4, d1, l - hw, l + hw, white);
-      for (let d = d0 + 4; d < d1 - 4; d += 8) strip(d, d + 3, l - 0.25, l + 0.25, yel);
-      // the entry and exit lanes across the grass/concrete, dashed
-      const side = pt.side;
+      strip(d0, d1, l - hw, l + hw, grey, 0);
+      strip(d0, d1, l - hw, l - hw + 0.3, white, LINE);
+      strip(d0, d1, l + hw - 0.3, l + hw, white, LINE);
+      strip(d0, d0 + 0.4, l - hw, l + hw, white, LINE);
+      strip(d1 - 0.4, d1, l - hw, l + hw, white, LINE);
+      for (let d = d0 + 4; d < d1 - 4; d += 8) strip(d, d + 3, l - 0.25, l + 0.25, yel, PIT);
+      // the entry and exit lanes across the concrete apron, dashed
+      // (v5.1: 30 m, not 40 — the last dashes used to run off the apron and
+      //  stripe the grass)
+      const side = pt.side, LANE = 30;
       for (let k = 0; k < 12; k++) {
         const f = k / 12, g = (k + 0.5) / 12;
         const la = side * (track.W[pt.ic] + 0.5) + (l - side * (track.W[pt.ic] + 0.5)) * f;
         const lb = side * (track.W[pt.ic] + 0.5) + (l - side * (track.W[pt.ic] + 0.5)) * g;
-        strip(d0 - 40 + 40 * f, d0 - 40 + 40 * g, Math.min(la, lb) - 0.12, Math.max(la, lb) + 0.12, white);
+        strip(d0 - LANE + LANE * f, d0 - LANE + LANE * g, Math.min(la, lb) - 0.12, Math.max(la, lb) + 0.12, white, LINE);
       }
       const m = meshFrom(pos, col, new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       m.name = 'pitbox';
@@ -1554,8 +1570,11 @@
         const gy = track.Y[a.i];
         const bw = (d1 - d0) / 6 - 0.4;
         gb.box(a.x, gy + 2.2, a.z, bw, 4.4, 9, wallC, r);
-        gb.box(a.x, gy + 4.6, a.z, bw + 0.4, 0.4, 9.6, teal, r);
-        const f = track.pointAt(d, back - side * 4.52);
+        // (v5.1: the band overlaps the bay instead of sitting exactly on top
+        //  of it, and the door stands proud of the wall — touching faces were
+        //  z-fighting all down the pit lane)
+        gb.box(a.x, gy + 4.5, a.z, bw + 0.4, 0.4, 9.6, teal, r);
+        const f = track.pointAt(d, back - side * 4.58);
         gb.box(f.x, gy + 1.7, f.z, bw - 1.2, 3.2, 0.1, dark, r); // open door
       }
       const pm = new THREE.Mesh(gb.geometry(), G.CarModel.material());

@@ -154,7 +154,9 @@
       this.bus.others.gain.setTargetAtTime(vol(s.vOthers == null ? 70 : s.vOthers), t, 0.05);
       this.bus.sfx.gain.setTargetAtTime(vol(s.vSfx), t, 0.05);
       this.bus.ui.gain.setTargetAtTime(vol(s.vUi), t, 0.05);
-      this.bus.music.gain.setTargetAtTime(vol(s.vMusic) * 0.55, t, 0.05);
+      // (v5.1: 0.55 -> 0.7. With the default slider at 45% the songs sat so far
+      //  under the engine note that players asked where the music was.)
+      this.bus.music.gain.setTargetAtTime(vol(s.vMusic) * 0.7, t, 0.05);
     },
 
     setEnabled(v) {
@@ -1310,12 +1312,19 @@
   // lap (open filters, 16th hats, the hook an octave up).
   // ======================================================================
   const SONGS = {
-    // A minor, i–VI–III–VII: driving synth-pop for the menu
-    menu: { bpm: 112, prog: [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62]], drums: 'four', arp: 1, lead: 1, bassPat: [1, 0, 0, 1, 0, 0, 1, 0, 1, 0, 0, 1, 0, 0, 1, 0] },
-    // Dm7–G7–Cmaj7–Am7: laid-back garage / intermission groove
-    garage: { bpm: 92, prog: [[50, 53, 57, 60], [55, 59, 62, 65], [48, 52, 55, 59], [45, 48, 52, 55]], drums: 'soft', arp: 0, keys: 1, lead: 0, bassPat: [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0] },
-    // C–G–Am–F: triumphant final standings
-    final: { bpm: 124, prog: [[48, 52, 55], [55, 59, 62], [57, 60, 64], [53, 57, 60]], drums: 'four', arp: 1, lead: 1, bright: 1, bassPat: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1] },
+    // v5.1: the menu, garage and results themes were the only music left from
+    // v4 — four bars on a loop with no sections, no echo and no pump, next to
+    // race songs that had all three. They are rewritten here on eight-chord
+    // progressions with the same machinery the race songs use, so the game
+    // sounds like one record from the title screen on.
+    //
+    // A minor over eight bars, i–VI–III–VII then i–iv–VI–V: the title theme
+    menu: { bpm: 118, prog: [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62], [57, 60, 64], [50, 53, 57], [53, 57, 60], [52, 56, 59]], drums: 'drive', arp: 1, lead: 1, sections: 1, pump: 1, wide: 1, bright: 1, scale: [0, 2, 3, 7, 10], bassPat: [1, 0, 1, 1, 0, 0, 1, 0, 1, 0, 1, 1, 0, 0, 1, 0], octBass: 1 },
+    // Dm7–G7–Cmaj7–Am7 then Fmaj7–Em7–A7–Dm7: the garage, eight bars of
+    // shop-floor jazz-house with wide pads and a hook that comes and goes
+    garage: { bpm: 94, prog: [[50, 53, 57, 60], [55, 59, 62, 65], [48, 52, 55, 59], [45, 48, 52, 55], [53, 57, 60, 64], [52, 55, 59, 62], [57, 61, 64, 67], [50, 53, 57, 60]], drums: 'soft', arp: 0, keys: 1, lead: 1, sections: 1, wide: 1, scale: [0, 2, 5, 7, 9], bassPat: [1, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0] },
+    // C–G–Am–F twice, the second time round through iv and V: the champion
+    final: { bpm: 126, prog: [[48, 52, 55], [55, 59, 62], [57, 60, 64], [53, 57, 60], [48, 52, 55], [53, 57, 60], [50, 53, 57], [55, 59, 62]], drums: 'four', arp: 1, lead: 1, bright: 1, sections: 1, pump: 1, wide: 1, scale: [0, 2, 4, 7, 9], bassPat: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 1] },
     // v5 race songs (Settings: Music during races)
     // E minor, i–VI–III–VII at 128: four-on-the-floor, octave-pumping bass
     race: { bpm: 128, prog: [[52, 55, 59], [48, 52, 55], [55, 59, 62], [50, 54, 57]], drums: 'drive', arp: 1, lead: 1, bright: 1, sections: 1, pump: 1, scale: [0, 3, 5, 7, 10], bassPat: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], octBass: 1 },
@@ -1323,6 +1332,9 @@
     night: { bpm: 100, prog: [[54, 57, 61, 64], [50, 54, 57, 61], [57, 61, 64, 68], [52, 56, 59, 63]], drums: 'wave', arp: 1, lead: 1, sections: 1, pump: 1, wide: 1, scale: [0, 3, 5, 7, 10], bassPat: [1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0], octBass: 1 },
     // D dorian breakbeat at 140 for dirt, gravel and snow
     rally: { bpm: 140, prog: [[50, 53, 57], [55, 59, 62], [50, 53, 57], [48, 52, 55]], drums: 'break', arp: 1, lead: 1, sections: 1, scale: [0, 2, 3, 7, 9], bassPat: [1, 0, 0, 1, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0, 0, 1] },
+    // v5.1 street circuits: D minor at 134, half-time kick, snarling saw bass —
+    // walls close either side and no room to breathe
+    street: { bpm: 134, prog: [[50, 53, 57], [57, 60, 64], [48, 52, 55], [55, 58, 62]], drums: 'wave', arp: 1, lead: 1, sections: 1, pump: 1, bright: 1, scale: [0, 3, 5, 6, 10], bassPat: [1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0], octBass: 1 },
     // A minor at 116, steady and long-breathed for endurance races
     endurance: { bpm: 116, prog: [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62], [57, 60, 64], [50, 53, 57], [53, 57, 60], [52, 56, 59]], drums: 'drive', arp: 1, lead: 1, sections: 1, pump: 1, scale: [0, 2, 3, 7, 8], bassPat: [1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0] },
   };

@@ -24,8 +24,8 @@
   const HS = G.HostSession.prototype;
 
   const C = {
-    BJ: { decks: 6, seats: 5, min: 25, max: 500, betWindow: 12000, turnTime: 15000, insTime: 8000, settleTime: 5500, dealerStep: 750, penetration: 0.75 },
-    RL: { min: 10, max: 500, maxTotal: 1500, betWindow: 20000, spinTime: 5500, resultTime: 5000 },
+    BJ: { decks: 6, seats: 5, min: 25, max: 350, betWindow: 12000, turnTime: 15000, insTime: 8000, settleTime: 5500, dealerStep: 750, penetration: 0.75 },
+    RL: { min: 10, max: 350, maxTotal: 1000, betWindow: 20000, spinTime: 5500, resultTime: 5000 },
     RED: [1, 3, 5, 7, 9, 12, 14, 16, 18, 19, 21, 23, 25, 27, 30, 32, 34, 36],
     WHEEL: [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26],
   };

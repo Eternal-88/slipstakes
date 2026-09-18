@@ -521,12 +521,31 @@
     // lap 2 but never the flag), tyres are finished at ~70%. CAL = [fuel, tyre
     // wear] a Normal-level field uses per metre on that track (measured with
     // headless races; they differ a lot: flat-out ovals vs stop-start loops).
-    CAL: { endu: [0.0187, 7.5e-5] },
+    // (v5.1: measured for a Normal field AND a Legend one — top-level bots
+    //  turn up with turbos and drink much more — and set halfway between, so
+    //  either field stops exactly once.)
+    CAL: {
+      endu: [0.019, 8.1e-5],
+      harbour: [0.0248, 8.8e-5],
+      dustbowl: [0.0172, 6.8e-5],
+      tour: [0.0209, 7.2e-5],
+      rainline: [0.0241, 9.3e-5],
+    },
     endu(track) {
       const laps = track.def.enduLaps || Math.max(3, track.laps * 2);
       const dist = track.length * laps;
       const [fm, wm] = this.CAL[track.id] || [0.02, 7e-5];
       return { laps, fuelK: 1 / (fm * dist * 0.8), tyreK: 1 / (wm * dist * 0.7) };
+    },
+    // v5.1: is race `i` of this session an endurance race? Endurance Park
+    // always is; the other circuits with a pit lane were rolled for when the
+    // schedule was drawn (session.makeEnduPlan), and the answer travels with
+    // the session state so every peer shows the same thing.
+    planned(st, i) {
+      const id = st && st.schedule && st.schedule[i];
+      if (!id) return false;
+      const d = G.getTrack(id).def;
+      return !!(d.endurance || (st.enduPlan && st.enduPlan[i]));
     },
     // metres from `along` forward to the pit box centre (-L/2 .. L/2 on circuits)
     pitAhead(track, along) {
@@ -545,9 +564,14 @@
     shouldPit(st, need, lapsLeft) {
       if (lapsLeft < 0.35) return false;
       const perLap = need / Math.max(0.2, lapsLeft);
-      if (st.tank >= need) return st.tw > 0.85 && lapsLeft > 1.3; // fuel's fine: only for dead tyres
-      if (st.tank < perLap * 1.35 + 0.03) return true;
-      return need - st.tank <= 1 - st.tank && need <= 0.97 && st.tw > 0.55 && st.tank < perLap * 2.2;
+      // (v5.1: judge against the estimate plus 8%. `need` is worked out from
+      //  the laps already done and the closing laps are always the thirstiest,
+      //  so cars were talking themselves out of the one stop they were going
+      //  to get and creeping home on an empty tank.)
+      const want = need * 1.08;
+      if (st.tank >= want) return st.tw > 0.85 && lapsLeft > 1.3; // fuel's fine: only for dead tyres
+      if (st.tank < perLap * 1.5 + 0.03) return true;
+      return want <= 0.97 && st.tw > 0.55 && st.tank < perLap * 2.2;
     },
     // the least time a crew could do that service in (s)
     pitTime(plan, spec) {
@@ -557,7 +581,7 @@
     },
     // what a sensible crew does: fuel to the flag (+8%), tyres if worn
     autoPlan(st, need) {
-      const fuel = U.clamp(need * 1.2 - st.tank, 0, 1 - st.tank);
+      const fuel = U.clamp(need * 1.28 - st.tank, 0, 1 - st.tank);
       return { fuel: Math.max(fuel, Math.min(0.15, 1 - st.tank)), tyres: st.tw > 0.45 ? 1 : 0 };
     },
   };
