@@ -173,7 +173,10 @@
     // ---------------------------------------------------------------- parts
     partsHtml(me) {
       const g = me.garage;
-      return Parts.SLOTS.map((slot) => {
+      // v5.1: slots this car can't take sink to the bottom of the list, so a
+      // Stormer opens on its Rally Turbo rather than on a greyed-out Induction.
+      const order = Parts.SLOTS.slice().sort((x, y) => (Parts.partAllowed(me.carId, x.id) ? 0 : 1) - (Parts.partAllowed(me.carId, y.id) ? 0 : 1));
+      return order.map((slot) => {
         const inst = Parts.opt(slot.id, g.installed[slot.id]);
         // v5: slots this car can't use (the Volt has no engine to turbo or pipe)
         if (!Parts.partAllowed(me.carId, slot.id)) {
@@ -188,10 +191,11 @@
             const installed = g.installed[slot.id] === o.id;
             const picked = this.pick && this.pick.slot === slot.id && this.pick.opt === o.id;
             const tag = installed ? '<em class="t-inst">FITTED</em>' : owned ? '<em class="t-own">OWNED</em>' : `<em class="t-price">${U.fmtMoney(o.price)}</em>`;
+            const [odesc, ocons] = Parts.optText(me.carId, o); // v5.1: the real numbers for THIS car
             h += `<div class="opt ${installed ? 'inst' : ''} ${picked ? 'picked' : ''}" data-act="pick" data-hover="1" data-slot="${slot.id}" data-opt="${o.id}">
               <div class="on">${U.esc(o.name)} ${tag}</div>
-              <div class="od">＋ ${U.esc(o.desc)}</div>
-              <div class="oc">－ ${U.esc(o.cons)}</div>
+              <div class="od">＋ ${U.esc(odesc)}</div>
+              <div class="oc">－ ${U.esc(ocons)}</div>
             </div>`;
           }
           h += '</div>' + this.actionHtml(me, slot);

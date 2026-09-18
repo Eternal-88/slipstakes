@@ -53,11 +53,13 @@
       if (!st || !me) return;
       const nid = st.schedule[st.raceNo];
       const nt = nid ? G.getTrack(nid) : null;
-      UI.patch(this.el.head, `${UI.interTabs()}<div class="in-next">${nt ? `Next: <b>${U.esc(nt.name)}</b> <em class="fmt fmt-${nt.format}">${nt.format.toUpperCase()}</em>` : ''}</div><span class="muted">${G.Game.readyLine()}</span><button class="btn ${me.ready ? 'green' : 'primary'}" data-act="ready">${me.ready ? '✓ Ready' : 'Ready'}</button>`);
+      const nEndu = G.RaceEnv.planned(st, st.raceNo); // v5.1: the next one is an endurance race
+      UI.patch(this.el.head, `${UI.interTabs()}<div class="in-next">${nt ? `Next: <b>${U.esc(nt.name)}</b> <em class="fmt fmt-${nt.format}">${nt.format.toUpperCase()}</em>${nEndu ? '<em class="t-endu">ENDURANCE</em>' : ''}` : ''}</div><span class="muted">${G.Game.readyLine()}</span><button class="btn ${me.ready ? 'green' : 'primary'}" data-act="ready">${me.ready ? '✓ Ready' : 'Ready'}</button>`);
       const sched = st.schedule
         .map((id, i) => {
           const t = G.getTrack(id);
-          return `<span class="sch ${i < st.raceNo ? 'done' : i === st.raceNo ? 'next' : ''}"><em class="fmt fmt-${t.format}">${t.format[0].toUpperCase()}</em>${U.esc(t.name)}</span>`;
+          const e = G.RaceEnv.planned(st, i);
+          return `<span class="sch ${i < st.raceNo ? 'done' : i === st.raceNo ? 'next' : ''}"><em class="fmt fmt-${t.format}">${t.format[0].toUpperCase()}</em>${U.esc(t.name)}${e ? ' <em class="t-endu">ENDURANCE</em>' : ''}</span>`;
         })
         .join('');
       UI.patch(

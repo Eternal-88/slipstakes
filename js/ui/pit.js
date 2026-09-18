@@ -24,7 +24,7 @@
       this.open = true;
       this.ctx = ctx;
       this.t0 = performance.now();
-      const suggest = U.clamp(ctx.need * 1.15, ctx.tank, 1);
+      const suggest = U.clamp(ctx.need * 1.25, ctx.tank, 1);
       this.plan = { tyres: ctx.tw > 0.45 ? 1 : 0, target: suggest, preset: 'flag' };
       this.stage = 'plan';
       this.stageT = 0;
@@ -136,7 +136,7 @@
     _preset(k) {
       const ctx = this.ctx;
       this.plan.preset = k;
-      this.plan.target = k === 'full' ? 1 : k === 'splash' ? Math.min(1, ctx.tank + 0.25) : U.clamp(ctx.need * 1.15, ctx.tank, 1);
+      this.plan.target = k === 'full' ? 1 : k === 'splash' ? Math.min(1, ctx.tank + 0.25) : U.clamp(ctx.need * 1.25, ctx.tank, 1);
       if (G.Audio) G.Audio.click();
     },
 
@@ -244,7 +244,7 @@
             <button data-p="tyres" class="pg-opt${p.tyres ? ' on' : ''}"><kbd>T</kbd> Tyres<b>${p.tyres ? 'CHANGE' : 'KEEP'}</b><small>worn ${pct(U.clamp(ctx.tw, 0, 1))}</small></button>
           </div>
           <div class="pg-row pg-fuelopts">
-            <button data-p="flag" class="pg-opt${p.preset === 'flag' ? ' on' : ''}"><kbd>2</kbd> To the flag<small>${pct(U.clamp(ctx.need * 1.15, ctx.tank, 1))}</small></button>
+            <button data-p="flag" class="pg-opt${p.preset === 'flag' ? ' on' : ''}"><kbd>2</kbd> To the flag<small>${pct(U.clamp(ctx.need * 1.25, ctx.tank, 1))}</small></button>
             <button data-p="full" class="pg-opt${p.preset === 'full' ? ' on' : ''}"><kbd>3</kbd> Full tank<small>100%</small></button>
             <button data-p="splash" class="pg-opt${p.preset === 'splash' ? ' on' : ''}"><kbd>4</kbd> Splash<small>+25%</small></button>
           </div>

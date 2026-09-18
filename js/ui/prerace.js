@@ -11,8 +11,9 @@
     const id = st.schedule[st.raceNo];
     const tr = id ? G.getTrack(id) : null;
     if (!tr) return '';
-    // (v5: the endurance track is a long race with pit stops)
-    const endu = tr.def.endurance;
+    // (v5.1: this race is an endurance race — always on Endurance Park,
+    // sometimes on another circuit with a pit lane)
+    const endu = G.RaceEnv.planned(st, st.raceNo);
     const laps = endu ? `${tr.def.enduLaps || tr.laps * 2} laps · endurance, pit stops` : tr.format === 'circuit' ? `${tr.laps} laps` : tr.format === 'drag' ? `${tr.def.dragLength} m` : `${Math.round(tr.raceDistance)} m`;
     return `<div class="pr-track"><div><span class="muted">RACE ${st.raceNo + 1}/${st.settings.races}</span><h1>${U.esc(tr.name)}</h1></div><em class="fmt fmt-${tr.format}">${tr.format.toUpperCase()}</em>${tr.def.isNew ? '<em class="t-new">NEW</em>' : ''}<span class="muted">${laps}</span><div class="pr-timer">${label} <b>${left(st)} s</b></div></div><p class="muted pr-blurb">${U.esc(tr.blurb)}</p>`;
   }

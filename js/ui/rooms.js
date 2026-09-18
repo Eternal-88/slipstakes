@@ -67,6 +67,7 @@
       const tags = [
         `<span class="rm-tag ${r.vis}">${r.vis === 'public' ? 'Public' : 'Private'}</span>`,
         r.champ === 'points' ? '<span class="rm-tag">Championship</span>' : '',
+        r.endu ? '<span class="rm-tag endu">Endurance</span>' : '',
       ].join('');
       const detail = [tr ? `${racing ? 'on' : 'next'} ${U.esc(tr.name)}` : '', r.bots ? `${r.bots} ${lvl ? lvl.toLowerCase() + ' ' : ''}bot${r.bots === 1 ? '' : 's'}` : '', `host ${U.esc(r.host)}`].filter(Boolean).join(' · ');
       return `<div class="rm-main"><div class="rm-line1"><b class="rm-name">${U.esc(r.name)}</b>${tags}</div><div class="rm-line2 muted small">${detail}</div></div>
