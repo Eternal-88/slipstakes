@@ -173,3 +173,24 @@
 .rm-foot { padding-top: 4px; }
 .lb-side .lb-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .lb-side .lb-btns .btn.primary { grid-column: 1 / -1; }
+
+/* ---------------------------------------------------------------- v5.1 */
+/* An endurance race can now turn up on any circuit with a pit lane, so the
+   schedule says which one it is. */
+.t-endu { background: #14b8a6; color: #04231f; font-style: normal; font-family: var(--body); font-size: 10px; font-weight: 900; padding: 2px 6px; border-radius: 6px; margin-left: 6px; letter-spacing: .5px; vertical-align: middle; }
+
+/* Instrument cluster. The dark panel behind it was taller than the instruments
+   needed: an always-reserved empty line for the CATCH-UP / CROSSWIND chip, a
+   two-row block of bar gauges, and generous padding. The chip's line now
+   collapses when there is nothing in it, the gauges fit four to a row and are
+   thinner, and the instruments themselves lost the row of shift LEDs (they
+   ring the dial now) and stand side by side instead of stacked. */
+.hud-br { width: 284px; padding: 6px 14px 9px; }
+.hud-br .speedo { width: 256px; height: 116px; margin: 0 auto -3px; }
+.hud-assist { min-height: 0; margin-bottom: 0; line-height: 15px; }
+.gauges { grid-template-columns: repeat(4, 1fr); gap: 4px 8px; }
+.gauge span { font-size: 9px; letter-spacing: .6px; }
+.gauge div { height: 6px; }
+/* Crosswind: the gust pushes you sideways, so the HUD says which way. */
+.as-wind { color: #7fe0ff; }
+.as-wind.hard { color: #ffcc00; animation: blink .5s steps(2) infinite; }
