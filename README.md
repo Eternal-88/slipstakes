@@ -1,6 +1,67 @@
-# SLIPSTAKES v5.1 — "Know Your Car"
+# SLIPSTAKES v5.2 — "Same Road"
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
+
+## v5.2 — Same Road
+
+The netcode release. Everything here is about what a JOINING player sees;
+the host was always fine, which is exactly the shape of the bug.
+
+- **The other cars were in the past** (`clientrace.js`, rewritten): a client
+  predicts its OWN car forward to where the host will have it once it hears
+  the input, but it drew every OTHER car from the newest snapshot — which
+  describes the host a downlink ago — and then deliberately held them a
+  further `INTERP_MS` (100 ms) in the past so it could interpolate between two
+  snapshots for smooth motion. So own car and other cars were drawn a full
+  round trip plus 100 ms apart. `tools/netlag.js` (new, dev only) runs the real
+  `HostRace` against the real `ClientRace` over a simulated link in virtual
+  time and measures the gap between where a car was drawn relative to you and
+  where the host really had it: **2.74 m on a LAN, 3.63 m on Wi-Fi, 5.34 m on a
+  poor link, 8.94 m through the backup relay** — a car is 4.3 m long. Remote
+  cars are now dead-reckoned forward by (snapshot age + RTT) onto the client's
+  own clock, integrating a constant yaw rate exactly (a cornering car holds its
+  rate of turn far better than its heading, so plain velocity extrapolation
+  fires cars off on the tangent), with half the reported longitudinal
+  acceleration for braking, the projection clamped inside the barriers, and the
+  leftover model error absorbed by an eased offset rather than a twitch.
+  Same measurement after: **1.06 / 1.45 / 1.59 / 3.12 m** (60–70% better).
+  Both arms are five runs in one session with the host at 30 Hz, so the old
+  code is measured at the NEW snapshot rate — which flatters it, and
+  understates the change rather than overstating it. Confirmed over the real
+  WebRTC transport between two browser tabs at 187 ms RTT by recording the
+  host's truth and the joiner's drawn positions against the shared wall clock:
+  **4.71 m -> 1.88 m mean, p95 7.26 -> 3.08 m**.
+- **Contact prediction** (`physics.js` `P.contact`, `race.js`, `clientrace.js`):
+  the pair-resolution maths moved out of `RaceSim.collideCars` into
+  `P.contact(A, B, opts)` so a client can predict its own half of a shunt with
+  the host's own numbers. A client passes `onlyA` (it does not own the other
+  car), `noPush` (skip the positional push-out — that is a POSITION claim
+  based on a guess, and nose-to-tail running had the client shoving itself off
+  a guessed overlap every tick, which reconciliation then undid: 0.4–0.7 m of
+  average correction, an invisible bumper) and `minVn: 1.2` (predict a real
+  bump, leave resting rub to the host). It is gated on `lead < 0.26 s`: under a
+  quarter-second guess every predicted bang matched a real one; past ~0.28 s
+  more than a third were phantom bangs the host never had, so a relayed player
+  gets the projection and hears shunts from the host only. `filterEv` drops the
+  host's duplicate when its copy arrives a round trip later.
+- **30 Hz snapshots** (`hostrace.js`, `net.js`): `SNAP_EVERY` 6 -> 4. The
+  snapshot rate no longer buys or costs delay (nothing is buffered in the past
+  any more) — it only sets how often the client's guess is corrected. A
+  relayed link is held near 22 Hz, because the public MQTT brokers rate-limit,
+  and a snapshot carrying SLOW data is never the one skipped. `NetHost.route()`
+  is new. Effective rate measured at 29.8 / 28.8 / 23.5 / 20.6 Hz across the
+  four links — at or above the old 20 Hz everywhere.
+- **Link readout** (`ui/hud.js`, `css/v5.css`): a `RELAY 420ms` / `SLOW LINK
+  210ms` chip on the assist line, shown only when the link is bad enough to be
+  the reason the cars feel wrong (relayed, or ping over 160 ms; red past 320).
+  The line still collapses to nothing when there is nothing to say, so the
+  panel stays 117 px.
+- **Host-clock estimate** (`clientrace.js`): was an all-time maximum that
+  leaked 1% per snapshot, so one unusually quick packet skewed it for about
+  five seconds and every remote car stuttered until it bled off. Now the
+  maximum over a 4 s moving window, with a fast attack and a bounded release.
+- No protocol change: `PROTO` stays 9, so a v5.1 client can still play in a
+  v5.2 room — it just doesn't get the fix until it reloads.
 
 ## v5.1 — Know Your Car
 
