@@ -27,7 +27,7 @@
         <div class="hud-prog"><div class="pg-bar"></div><div class="pg-dots"></div></div>
         <div class="hud-draft"><span class="dr-c">›››</span><div><b class="dr-t">SLIPSTREAM</b><em class="dr-v"></em><i class="dr-m"><u></u></i></div><span class="dr-c">‹‹‹</span></div>
         <div class="hud-br">
-          <div class="hud-assist"><span class="as-wind"></span><span class="as-cu"></span></div>
+          <div class="hud-assist"><span class="as-net"></span><span class="as-wind"></span><span class="as-cu"></span></div>
           <canvas class="speedo" width="256" height="116"></canvas>
           <div class="gauges">
             <div class="gauge nos"><span>N2O</span><div><i></i></div></div>
@@ -52,7 +52,7 @@
         cd: $('.cd'), banner: $('.banner'), sub: $('.sub'), tags: $('.hud-tags'), br: $('.hud-br'), tl: $('.hud-tl'), debug: $('.hud-debug'), help: $('.hud-help'),
         lights: root.querySelectorAll('.hud-lights i'), lightsBox: $('.hud-lights'), prog: $('.hud-prog'), pgDots: $('.pg-dots'), vig: $('.hud-vig'), flash: $('.hud-flash'),
         fuel: $('.fuel i'), fuelBox: $('.gauge.fuel'), engBox: $('.gauge.eng'), tyreLbl: $('.gauge.tyre span'), pit: $('.hud-pit'), pitT: $('.hp-t'), pitS: $('.hp-s'),
-        nos: $('.nos i'), nosBox: $('.gauge.nos'), dr: $('.hud-draft'), drBar: $('.dr-m u'), drV: $('.dr-v'), drGlow: $('.hud-draftglow'), asCu: $('.as-cu'), asWind: $('.as-wind'),
+        nos: $('.nos i'), nosBox: $('.gauge.nos'), dr: $('.hud-draft'), drBar: $('.dr-m u'), drV: $('.dr-v'), drGlow: $('.hud-draftglow'), asCu: $('.as-cu'), asWind: $('.as-wind'), asNet: $('.as-net'),
       };
       this.ctx = this.el.map.getContext('2d');
       this.sctx = this.el.speedo.getContext('2d');
@@ -509,6 +509,14 @@
         else if (dr < 0.1) this._drIn = false;
         const cu = rs.cu || 0;
         this.set('cu', el.asCu, cu > 0.012 ? 'CATCH-UP +' + Math.round(cu * 100) + '%' : '');
+        // v5.2 link: a slow or relayed connection is the one thing that makes
+        // the other cars feel wrong however good the netcode is, so say so
+        // instead of leaving the player to guess. Host/practice: no chip.
+        const lk = v.link;
+        const bad = lk && (lk.relay || lk.rtt > 160);
+        this.set('net', el.asNet, bad ? (lk.relay ? 'RELAY ' : 'SLOW LINK ') + lk.rtt + 'ms' : '');
+        const netCls = 'as-net' + (bad && lk.rtt > 320 ? ' hard' : '');
+        if (el.asNet.className !== netCls) el.asNet.className = netCls;
         // v5.1 crosswind: the gust pushes you sideways, so say so, and say
         // which way. (You could feel it before but nothing told you why.)
         const gust = rs.gust || 0, gAbs = Math.abs(gust);
