@@ -191,6 +191,10 @@
 .gauges { grid-template-columns: repeat(4, 1fr); gap: 4px 8px; }
 .gauge span { font-size: 9px; letter-spacing: .6px; }
 .gauge div { height: 6px; }
+/* v5.2: the link, when it is bad enough to be the reason the other cars
+   feel off. Quiet amber, and it only appears when there is something to say. */
+.as-net { color: #ffb347; }
+.as-net.hard { color: #ff6b5e; }
 /* Crosswind: the gust pushes you sideways, so the HUD says which way. */
 .as-wind { color: #7fe0ff; }
 .as-wind.hard { color: #ffcc00; animation: blink .5s steps(2) infinite; }
