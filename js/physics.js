@@ -750,5 +750,86 @@
     car.body = Math.min(1, car.body + Math.max(0, j - 2500) * 0.000012 * soft * (s.wallDmg || 1));
   }
 
-  G.Physics = { DT, createCar, step, copyCore, CORE, tyreCurve, TUNE };
+  // ------------------------------------------------------------------ contact
+  // ONE car-vs-car contact pair. Each car is three circles along its length;
+  // we resolve the deepest overlap with a positional split by mass and an
+  // impulse (restitution + friction) at the contact point — so a light car
+  // genuinely gets shoved and spun by a heavy one.
+  //
+  // A and B are {st, spec}. The host calls this with no options. A CLIENT
+  // predicting its own half of a shunt passes:
+  //   onlyA  move A alone — it does not own B, and the host's half of the
+  //          answer arrives with the next snapshot.
+  //   noPush skip the positional push-out and apply the impulse only. The
+  //          push-out is a POSITION claim, and a client's idea of where the
+  //          other car is, is a guess: two cars running nose-to-tail would
+  //          have it shoving itself off a guessed overlap every tick while the
+  //          host did nothing, which reconciliation then had to undo (measured
+  //          at 0.4-0.7 m of average correction — an invisible bumper).
+  //   minVn  only predict a real bump: ignore contact closing slower than this
+  //          (m/s), which is the resting rub the host can settle by itself.
+  //
+  // Returns the normal impulse (0 = no contact, or the pair was already
+  // separating); the contact point is left in P.HIT for callers that want to
+  // spark or bang there. Damage and events are the caller's business.
+  const HIT = { x: 0, z: 0 };
+  function contact(A, B, o) {
+    const onlyA = !!(o && o.onlyA);
+    const a = A.st, b = B.st;
+    if (a.ghost > 0 || b.ghost > 0) return 0;
+    const dx0 = b.x - a.x, dz0 = b.z - a.z;
+    const reach = (A.spec.len + B.spec.len) * 0.5 + 0.5;
+    if (dx0 * dx0 + dz0 * dz0 > reach * reach) return 0;
+    let best = 0, bn = null;
+    const ra = A.spec.wid * 0.5, rb = B.spec.wid * 0.5;
+    const sa = Math.sin(a.h), ca = Math.cos(a.h), sb = Math.sin(b.h), cb = Math.cos(b.h);
+    for (let ka = -1; ka <= 1; ka++) {
+      const ua = ka * A.spec.len * 0.3;
+      const ax = a.x + sa * ua, az = a.z + ca * ua;
+      for (let kb = -1; kb <= 1; kb++) {
+        const ub = kb * B.spec.len * 0.3;
+        const bx = b.x + sb * ub, bz = b.z + cb * ub;
+        const dx = bx - ax, dz = bz - az;
+        const d = Math.hypot(dx, dz);
+        const pen = ra + rb - d;
+        if (pen > best && d > 1e-4) {
+          best = pen;
+          bn = [dx / d, dz / d, (ax + bx) / 2, (az + bz) / 2];
+        }
+      }
+    }
+    if (!bn) return 0;
+    const [nx, nz, px, pz] = bn;
+    HIT.x = px;
+    HIT.z = pz;
+    const ma = A.spec.mass, mb = B.spec.mass;
+    // positional correction split by inverse mass
+    const wa = mb / (ma + mb), wb = ma / (ma + mb);
+    if (!(o && o.noPush)) {
+      a.x -= nx * best * wa; a.z -= nz * best * wa;
+      if (!onlyA) { b.x += nx * best * wb; b.z += nz * best * wb; }
+    }
+    // contact-point velocities: v + w * (rz, -rx)
+    const rax = px - a.x, raz = pz - a.z, rbx = px - b.x, rbz = pz - b.z;
+    const vax = a.vx + a.w * raz, vaz = a.vz - a.w * rax;
+    const vbx = b.vx + b.w * rbz, vbz = b.vz - b.w * rbx;
+    const rvx = vbx - vax, rvz = vbz - vaz;
+    const vn = rvx * nx + rvz * nz;
+    if (vn >= 0 || (o && o.minVn && vn > -o.minVn)) return 0;
+    const ka2 = nx * raz - nz * rax, kb2 = nx * rbz - nz * rbx;
+    const Ia = A.spec.Iz, Ib = B.spec.Iz;
+    const e = 0.3;
+    const jn = (-(1 + e) * vn) / (1 / ma + 1 / mb + (ka2 * ka2) / Ia + (kb2 * kb2) / Ib);
+    a.vx -= (jn * nx) / ma; a.vz -= (jn * nz) / ma; a.w -= (jn * ka2) / Ia;
+    if (!onlyA) { b.vx += (jn * nx) / mb; b.vz += (jn * nz) / mb; b.w += (jn * kb2) / Ib; }
+    // tangential friction (rubbing)
+    const tx = -nz, tz = nx;
+    const vt = rvx * tx + rvz * tz;
+    const jt = U.clamp(-vt / (1 / ma + 1 / mb), -jn * 0.25, jn * 0.25);
+    a.vx -= (jt * tx) / ma; a.vz -= (jt * tz) / ma;
+    if (!onlyA) { b.vx += (jt * tx) / mb; b.vz += (jt * tz) / mb; }
+    return jn;
+  }
+
+  G.Physics = { DT, createCar, step, copyCore, CORE, tyreCurve, TUNE, contact, HIT };
 })(window.G);

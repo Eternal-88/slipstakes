@@ -518,7 +518,8 @@
       }
       if (m.t === 'state') G.Client._state(m.s);
       else if (m.t === 'ev') {
-        if (this.clientRace && m.no === this.clientRace.no) G.RaceView.events(m.e, G.Client.meId, G.App.hud, G.App.world, G.Audio);
+        // filterEv drops the host's copy of a shunt we already predicted
+        if (this.clientRace && m.no === this.clientRace.no) G.RaceView.events(this.clientRace.filterEv(m.e), G.Client.meId, G.App.hud, G.App.world, G.Audio);
       } else G.Client._msg(m);
     },
 
@@ -622,6 +623,10 @@
           const inp = G.Input.read();
           if (G.Input.hitAction('reset')) inp.rs = 1;
           this.clientRace.update(dt, inp);
+          // v5.2: contacts we predicted ourselves, so the bang and the sparks
+          // land when you can see what caused them (clientrace.js note 3)
+          const lev = this.clientRace.popEvents();
+          if (lev.length) G.RaceView.events(lev, G.Client.meId, G.App.hud, G.App.world, G.Audio);
         }
       }
       this._syncRace();

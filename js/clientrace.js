@@ -1,14 +1,26 @@
 // clientrace.js — what a REMOTE client runs during a race. It never decides
-// anything: the host's snapshots are the truth. Two techniques hide latency:
+// anything: the host's snapshots are the truth. Three techniques hide latency:
 //
-// 1. INTERPOLATION (other cars)
-//    Snapshots are buffered and drawn INTERP_MS in the past, blended between
-//    the two snapshots that bracket that time. We estimate the host clock from
-//    snapshot timestamps: sample = hostTs - localArrival = clockOffset - latency.
-//    We keep (roughly) the MAX sample, i.e. the least-delayed packet, and let
-//    it drift down slowly for clock skew. renderTime = localNow + offset - INTERP.
-//    If snapshots stop arriving we extrapolate on velocity for EXTRAP_MS, then
-//    freeze rather than fling cars into walls.
+// 1. PROJECTION (other cars)   [v5.2 — this used to be interpolation]
+//    A snapshot describes the host a latency AGO, while our own car is
+//    predicted a latency into the host's FUTURE — that is what prediction is.
+//    So drawing the other cars straight out of the newest snapshot already put
+//    them a whole round trip behind our own car, and buffering them a further
+//    100 ms in the past to get smooth motion made it worse. Measured with
+//    tools/netlag.js, the gap between where a car was DRAWN relative to us and
+//    where the host really had it was 2.7 m on a LAN, 3.6 m on Wi-Fi, 5.3 m on
+//    a poor link and 8.9 m through the backup relay — against a car 4.3 m
+//    long. (Both ways round, five runs each, one session.) That is the whole
+//    "the cars are further ahead than they seem" complaint: you cannot aim at
+//    anyone, you drive through cars that are really in front of you, and you
+//    get shoved by a car your screen has not caught up with yet.
+//    Every remote car is therefore dead-reckoned forward onto OUR clock by
+//    (snapshot age + RTT). A constant yaw rate integrates exactly, so a
+//    cornering car projects properly instead of flying off on a tangent, and
+//    the leftover model error goes into an eased offset rather than a visible
+//    twitch. Projections are clamped to the road, so a guess never puts a car
+//    through a barrier, and once the host has been quiet for STALE_MS we stop
+//    guessing and hold.
 //
 // 2. PREDICTION + RECONCILIATION (own car)
 //    Our car runs the SAME physics locally so steering is instant. Inputs are
@@ -22,15 +34,37 @@
 //      c) compute where that puts the car vs. where we were DRAWING it, and
 //         hide the difference in a visual offset that decays over ~100 ms.
 //    Errors > SNAP_DIST (a big shunt we couldn't predict, a respawn) snap.
-//    Car-vs-car contact is never predicted — the host resolves it and the
-//    correction arrives with the next snapshot. That's deliberate: clients
-//    predicting contacts is how desyncs start.
+//
+// 3. CONTACT PREDICTION (our car only)   [v5.2]
+//    Our own HALF of a car-vs-car contact is resolved locally against the
+//    other cars as we are drawing them, with the host's own maths (P.contact,
+//    onlyA). The host still decides: its answer overwrites ours with the next
+//    snapshot, exactly like a wall hit. The point is timing — leaning on
+//    somebody stops you now instead of letting you slide through and be
+//    yanked back a round trip later, and the bang happens while you can see
+//    what caused it. This is only safe BECAUSE of (1): predicting contacts
+//    against cars drawn in the past is how phantom collisions start.
 'use strict';
 (function (G) {
   const U = G.U, P = G.Physics, NP = G.NetPack;
   const TPI = 4;
-  const INTERP_MS = 100;
-  const EXTRAP_MS = 250;
+  const LEAD_MAX = 320; // ms of dead reckoning we are willing to do at all
+  const STALE_MS = 300; // newest snapshot older than this: stop guessing, hold
+  const LEAD_TOTAL = 380; // ms; a stalled link must not slide cars across the map
+  const EASE_TAU = 0.07; // s, how fast a projection correction is absorbed
+  const EASE_MAX = 4; // m; a bigger step than this is a respawn, so snap to it
+  const OFF_WIN = 4000; // ms window for the host-clock estimate
+  // How a client resolves its own half of a contact: the impulse of a real
+  // bump, no position claim, nothing below a 1.2 m/s closing speed. See the
+  // note on P.contact for why each of those matters.
+  const MY_HALF = { onlyA: 1, noPush: 1, minVn: 1.2 };
+  // ...and only while the guess about where the other cars are is good enough
+  // to claim a bang at all. Measured (tools/netlag.js, deliberate ramming):
+  // guessing under a quarter of a second ahead, every predicted bang was a
+  // real one; past ~0.28 s more than a third of them were phantom bangs the
+  // host never had. Through the backup relay we are always past that, so a
+  // relayed player gets the projection but hears shunts from the host only.
+  const GUESS_MAX = 0.26; // s
   const KEEP_MS = 1500;
   const SNAP_DIST = 6;
   const VIS_TAU = 0.1;
@@ -62,6 +96,19 @@
         return Object.assign(blankRs(), { x: g.x, z: g.z, h: g.h });
       });
       this.stats = { snaps: 0, corrections: 0, snapsDropped: 0, lastErr: 0 };
+      this.osamp = []; // host-clock samples, a moving window
+      this.lead = 0; // s we are currently projecting the other cars forward by
+      this.fresh = false; // are we hearing from the host often enough to guess?
+      // Every entrant's spec, so we can predict our own half of a contact.
+      // Mass, size and yaw inertia don't change during a race, so once is enough.
+      this.specs = race.entrants.map((e) => G.Parts.computeSpec(e.carId, e.parts, e.wear, e.tune));
+      // Per remote car: the eased offset that hides each projection correction.
+      this.ease = race.entrants.map(() => ({ x: 0, z: 0, h: 0, ox: 0, oz: 0, oh: 0, k: -1, hint: -1, has: false }));
+      this.evs = []; // hits we predicted ourselves, so a shunt sparks on time
+      this._hitAt = {}; // other car id -> when we last predicted hitting it
+      this._rem = [];
+      this._remN = 0;
+      this._q = {};
       // v5 race environment for our own car's prediction (same as the host's)
       this.weather = race.weather || null;
       this.endu = race.endu || null;
@@ -69,7 +116,7 @@
       this.env = { t: 0, wet: 0, endu: this.endu };
       if (this.meIdx >= 0) {
         const e = race.entrants[this.meIdx];
-        this.spec = G.Parts.computeSpec(e.carId, e.parts, e.wear, e.tune); // identical to the host's: same entrant data
+        this.spec = this.specs[this.meIdx]; // identical to the host's: same entrant data
         const g = this.track.gridSlot(this.meIdx);
         this.pred = P.createCar(g.x, g.z, g.h);
         this.pred.hint = g.i;
@@ -83,6 +130,7 @@
         this.acc = 0;
         this.px = g.x; this.pz = g.z; this.ph = g.h;
         this.vis = { x: 0, z: 0, h: 0 };
+        this._me = { st: this.pred, spec: this.spec };
       }
     }
 
@@ -106,10 +154,20 @@
       }
       this.lastK = m.k;
       this.stats.snaps++;
-      const sample = m.ts - performance.now();
-      if (this.offset == null || sample > this.offset) this.offset = sample;
-      else this.offset += (sample - this.offset) * 0.01;
-      this.snaps.push({ ts: m.ts, c: m.c });
+      const now = performance.now();
+      // Host-clock estimate, for the countdown and the race clock only — the
+      // other cars no longer depend on it. The least-delayed packet in a
+      // moving window: an all-time maximum that leaked only 1% per snapshot
+      // meant one lucky early packet skewed the clock for five seconds, and
+      // every remote car stuttered for as long as it took to bleed off.
+      const sample = m.ts - now;
+      this.osamp.push({ s: sample, t: now });
+      while (this.osamp.length > 1 && this.osamp[0].t < now - OFF_WIN) this.osamp.shift();
+      let mx = -Infinity;
+      for (const q of this.osamp) if (q.s > mx) mx = q.s;
+      if (this.offset == null || mx > this.offset) this.offset = mx;
+      else this.offset += (mx - this.offset) * 0.08;
+      this.snaps.push({ ts: m.ts, c: m.c, rt: now, k: m.k });
       while (this.snaps.length > 3 && this.snaps[0].ts < m.ts - KEEP_MS) this.snaps.shift();
       if (m.sl) {
         this.slow = m.sl.map(NP.unpackSlow);
@@ -149,6 +207,7 @@
         if (b.seq === m.ack) n = Math.max(0, n - m.at); // host already applied `at` ticks of it
         for (let k = 0; k < n; k++) {
           P.step(st, this.spec, b.inp, this.track, P.DT, { frozen: frozenTicks > 0, env });
+          this._contact(true); // the same contacts, so leaning on somebody doesn't fight the replay
           frozenTicks--;
         }
       }
@@ -171,6 +230,8 @@
     update(dt, input) {
       if (!this.pred) return;
       const st = this.pred;
+      this._project(performance.now());
+      this._remote();
       this.acc += dt;
       const env = this._env();
       let n = 0;
@@ -195,6 +256,7 @@
         }
         this.px = st.x; this.pz = st.z; this.ph = st.h;
         P.step(st, this.spec, this.cur, this.track, P.DT, { frozen: this.predFrozen(), env });
+        this._contact();
         this.blockT++;
         this.acc -= P.DT;
         n++;
@@ -206,44 +268,136 @@
       this.vis.h *= k;
     }
 
-    // Interpolated remote car states for the current render time.
-    _interp() {
+    // The other cars, dead-reckoned onto OUR clock. See note (1) at the top.
+    _project(now) {
       const S = this.snaps;
       if (!S.length) return;
-      const rt = this.hostNow() - INTERP_MS;
-      let a = S[0], b = null;
-      for (let i = S.length - 1; i >= 0; i--) {
-        if (S[i].ts <= rt) {
-          a = S[i];
-          b = S[i + 1] || null;
-          break;
-        }
-      }
+      const A = S[S.length - 1];
+      const dt = Math.min(0.1, Math.max(0, (now - (this._pt == null ? now : this._pt)) / 1000));
+      this._pt = now;
+      const k = Math.exp(-dt / EASE_TAU);
+      const age = now - A.rt;
+      // How far ahead of the snapshot we have to guess to land on our own
+      // car's clock: the snapshot's own age plus the round trip. Past STALE_MS
+      // the link has gone quiet and guessing further only flings cars about.
+      this.fresh = age < STALE_MS;
+      const lead = Math.min(Math.min(age, STALE_MS) + Math.min(U.clamp((this.net && this.net.rtt) || 0, 0, 3000), LEAD_MAX), LEAD_TOTAL) / 1000;
+      this.lead = lead;
+      const tr = this.track, t = lead;
       for (let j = 0; j < this.rs.length; j++) {
         if (j === this.meIdx) continue;
         const o = this.rs[j];
-        if (b) {
-          const t = U.clamp((rt - a.ts) / (b.ts - a.ts || 1), 0, 1);
-          NP.unpackFast(t < 0.5 ? a.c[j] : b.c[j], o); // discrete fields from the nearer snapshot
-          const A = a.c[j], B = b.c[j];
-          o.x = U.lerp(A[0], B[0], t); o.z = U.lerp(A[1], B[1], t); o.h = U.lerpAngle(A[2], B[2], t);
-          o.vx = U.lerp(A[3], B[3], t); o.vz = U.lerp(A[4], B[4], t);
-          o.steer = U.lerp(A[6], B[6], t); o.ax = U.lerp(A[7], B[7], t); o.ay = U.lerp(A[8], B[8], t);
-          o.raceDist = U.lerp(A[16], B[16], t);
+        NP.unpackFast(A.c[j], o);
+        const E = this.ease[j];
+        const vx = o.vx, vz = o.vz, w = o.w;
+        let tx, tz;
+        if (Math.abs(w) > 0.02) {
+          // Constant yaw rate. A car in a corner holds its rate of turn far
+          // better than it holds a straight line, so integrating the rotating
+          // velocity exactly is what makes guessing this far ahead work at all
+          // - plain velocity dead reckoning fires cars off on the tangent.
+          const s1 = Math.sin(w * t), c1 = 1 - Math.cos(w * t);
+          tx = o.x + (vx * s1 + vz * c1) / w;
+          tz = o.z + (vz * s1 - vx * c1) / w;
         } else {
-          // starved: extrapolate on velocity for a short while, then hold
-          NP.unpackFast(a.c[j], o);
-          const ex = U.clamp(rt - a.ts, 0, EXTRAP_MS) / 1000;
-          o.x += o.vx * ex;
-          o.z += o.vz * ex;
-          o.h += o.w * ex;
+          tx = o.x + vx * t;
+          tz = o.z + vz * t;
+        }
+        // Braking and accelerating, along the car's own axis at mid-guess. ax
+        // is already a smoothed number and this is a guess, so take half of it.
+        const th = U.wrapAngle(o.h + w * t);
+        const hm = o.h + w * t * 0.5;
+        const al = U.clamp(o.ax, -12, 12) * t * t * 0.25;
+        tx += Math.sin(hm) * al;
+        tz += Math.cos(hm) * al;
+        // Turn the velocity with it, so wheel spin, engine note, body roll and
+        // the skid marks all match the direction the car is actually pointing.
+        const cw = Math.cos(w * t), sw = Math.sin(w * t);
+        o.vx = vx * cw + vz * sw;
+        o.vz = vz * cw - vx * sw;
+        // Never guess a car through a barrier.
+        const q = tr.query(tx, tz, E.hint, this._q);
+        E.hint = q.i;
+        if (Math.abs(q.lat) > q.wall) {
+          const d = U.clamp(q.lat, -q.wall, q.wall) - q.lat;
+          tx += q.nx * d;
+          tz += q.nz * d;
+        }
+        // A new snapshot moves the target by whatever the guess got wrong.
+        // Absorb that step in an offset that decays, so the car doesn't twitch
+        // every time one lands. Too big a step is a respawn: snap to it.
+        if (E.k !== A.k) {
+          E.k = A.k;
+          const ex = E.x - tx, ez = E.z - tz;
+          if (E.has && !o.ghost && Math.hypot(ex, ez) < EASE_MAX) {
+            E.ox = ex;
+            E.oz = ez;
+            E.oh = U.wrapAngle(E.h - th);
+          } else E.ox = E.oz = E.oh = 0;
+        }
+        E.ox *= k; E.oz *= k; E.oh *= k;
+        o.x = E.x = tx + E.ox;
+        o.z = E.z = tz + E.oz;
+        o.h = E.h = U.wrapAngle(th + E.oh);
+        o.hint = E.hint;
+        E.has = true;
+      }
+    }
+
+    // The other cars as we are DRAWING them, ready for a contact test.
+    _remote() {
+      this._remN = 0;
+      if (!this.fresh || this.phase !== 'race' || this.lead > GUESS_MAX) return;
+      for (let j = 0; j < this.rs.length; j++) {
+        if (j === this.meIdx) continue;
+        const R = this._rem[this._remN] || (this._rem[this._remN] = { st: null, spec: null, id: null });
+        R.st = this.rs[j];
+        R.spec = this.specs[j];
+        R.id = this.entrants[j].id;
+        this._remN++;
+      }
+    }
+
+    // Our own half of a contact - note (3) at the top of the file. `quiet`
+    // during a replay, where the bang has already been made once.
+    _contact(quiet) {
+      const A = this._me;
+      for (let i = 0; i < this._remN; i++) {
+        const B = this._rem[i];
+        const jn = P.contact(A, B, MY_HALF);
+        if (jn > 1500 && !quiet) {
+          const now = performance.now();
+          const last = this._hitAt[B.id];
+          if (!last || now - last > 350) {
+            this._hitAt[B.id] = now;
+            this.evs.push({ type: 'hit', a: this.meId, b: B.id, x: P.HIT.x, z: P.HIT.z, j: jn });
+          }
         }
       }
     }
 
+    // Hits we predicted ourselves: sparks and a bang at the moment of contact.
+    popEvents() {
+      const e = this.evs;
+      if (e.length) this.evs = [];
+      return e;
+    }
+
+    // ...and so the host's own 'hit' for the same contact doesn't spark twice
+    // when it arrives a round trip later.
+    filterEv(evs) {
+      if (!evs || !evs.length) return evs || [];
+      const now = performance.now();
+      return evs.filter((e) => {
+        if (e.type !== 'hit' || (e.a !== this.meId && e.b !== this.meId)) return true;
+        const t = this._hitAt[e.a === this.meId ? e.b : e.a];
+        return !(t && now - t < 700);
+      });
+    }
+
     // Build a RaceView-compatible view.
     view() {
-      this._interp();
+      this._project(performance.now());
       const tr = this.track;
       const hostNow = this.hostNow();
       const cars = this.entrants.map((e, i) => {
@@ -294,7 +448,8 @@
         leaderLap: Math.max(1, Math.min(lead, this.laps)), me,
         order: order.map((o) => ({ id: o.e.id, name: o.e.name, color: o.e.color, finished: o.s.finished, dnf: o.s.dnf, stops: o.s.stops || 0, pit: this.rs[o.i] && this.rs[o.i].pit })),
         cars,
-        net: `rtt ${Math.round((this.net && this.net.rtt) || 0)}ms · err ${this.stats.lastErr.toFixed(2)}m · drops ${this.stats.snapsDropped}`,
+        link: { relay: !!(this.net && this.net.via === 'relay'), rtt: Math.round((this.net && this.net.rtt) || 0) },
+        net: `${(this.net && this.net.via) || '?'} ${Math.round((this.net && this.net.rtt) || 0)}ms · lead ${Math.round(this.lead * 1000)}ms · err ${this.stats.lastErr.toFixed(2)}m · drops ${this.stats.snapsDropped}`,
       };
     }
   }

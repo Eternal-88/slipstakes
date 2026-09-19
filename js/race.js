@@ -208,68 +208,23 @@
       this.events.push({ type: 'respawn', id: c.id });
     }
 
-    // Car-vs-car contact (host only). Each car is three circles along its length.
-    // We resolve the deepest overlapping pair per car pair with a positional
-    // split by mass and an impulse (restitution + friction) at the contact point
-    // — so a light car genuinely gets shoved and spun by a heavy one.
+    // Car-vs-car contact (host only). The geometry and the impulse live in
+    // P.contact so a client can predict its own half of a shunt with exactly
+    // the same maths (clientrace.js); the host adds the damage and the events,
+    // because only the host decides those.
     collideCars() {
       const cs = this.cars;
       for (let i = 0; i < cs.length; i++) {
-        const A = cs[i], a = A.st;
-        if (a.ghost > 0) continue;
+        const A = cs[i];
+        if (A.st.ghost > 0) continue;
         for (let j = i + 1; j < cs.length; j++) {
-          const B = cs[j], b = B.st;
-          if (b.ghost > 0) continue;
-          const dx0 = b.x - a.x, dz0 = b.z - a.z;
-          const reach = (A.spec.len + B.spec.len) * 0.5 + 0.5;
-          if (dx0 * dx0 + dz0 * dz0 > reach * reach) continue;
-          let best = 0, bn = null;
-          const ra = A.spec.wid * 0.5, rb = B.spec.wid * 0.5;
-          const sa = Math.sin(a.h), ca = Math.cos(a.h), sb = Math.sin(b.h), cb = Math.cos(b.h);
-          for (let ka = -1; ka <= 1; ka++) {
-            const ua = ka * A.spec.len * 0.3;
-            const ax = a.x + sa * ua, az = a.z + ca * ua;
-            for (let kb = -1; kb <= 1; kb++) {
-              const ub = kb * B.spec.len * 0.3;
-              const bx = b.x + sb * ub, bz = b.z + cb * ub;
-              const dx = bx - ax, dz = bz - az;
-              const d = Math.hypot(dx, dz);
-              const pen = ra + rb - d;
-              if (pen > best && d > 1e-4) {
-                best = pen;
-                bn = [dx / d, dz / d, (ax + bx) / 2, (az + bz) / 2];
-              }
-            }
-          }
-          if (!bn) continue;
-          const [nx, nz, px, pz] = bn;
+          const B = cs[j];
+          const jn = P.contact(A, B);
+          if (!jn) continue;
           const ma = A.spec.mass, mb = B.spec.mass;
-          // positional correction split by inverse mass
-          const wa = mb / (ma + mb), wb = ma / (ma + mb);
-          a.x -= nx * best * wa; a.z -= nz * best * wa;
-          b.x += nx * best * wb; b.z += nz * best * wb;
-          // contact-point velocities: v + w * (rz, -rx)
-          const rax = px - a.x, raz = pz - a.z, rbx = px - b.x, rbz = pz - b.z;
-          const vax = a.vx + a.w * raz, vaz = a.vz - a.w * rax;
-          const vbx = b.vx + b.w * rbz, vbz = b.vz - b.w * rbx;
-          const rvx = vbx - vax, rvz = vbz - vaz;
-          const vn = rvx * nx + rvz * nz;
-          if (vn >= 0) continue;
-          const ka2 = nx * raz - nz * rax, kb2 = nx * rbz - nz * rbx;
-          const Ia = A.spec.Iz, Ib = B.spec.Iz;
-          const e = 0.3;
-          const jn = (-(1 + e) * vn) / (1 / ma + 1 / mb + (ka2 * ka2) / Ia + (kb2 * kb2) / Ib);
-          a.vx -= (jn * nx) / ma; a.vz -= (jn * nz) / ma; a.w -= (jn * ka2) / Ia;
-          b.vx += (jn * nx) / mb; b.vz += (jn * nz) / mb; b.w += (jn * kb2) / Ib;
-          // tangential friction (rubbing)
-          const tx = -nz, tz = nx;
-          const vt = rvx * tx + rvz * tz;
-          const jt = U.clamp(-vt / (1 / ma + 1 / mb), -jn * 0.25, jn * 0.25);
-          a.vx -= (jt * tx) / ma; a.vz -= (jt * tz) / ma;
-          b.vx += (jt * tx) / mb; b.vz += (jt * tz) / mb;
           const dmg = Math.max(0, jn - 3000) * 0.000009;
-          a.body = Math.min(1, a.body + dmg * (mb / ma));
-          b.body = Math.min(1, b.body + dmg * (ma / mb));
+          A.st.body = Math.min(1, A.st.body + dmg * (mb / ma));
+          B.st.body = Math.min(1, B.st.body + dmg * (ma / mb));
           // One 'hit' EVENT per contact, not one per physics tick. Two cars
           // leaning on each other used to fire 120 events a second per pair,
           // and each one made sparks, a dozen sound nodes and a network
@@ -281,7 +236,7 @@
             const last = this._hits.get(key);
             if (!last || this.t - last.t > 0.35 || (jn > last.j * 2.5 && this.t - last.t > 0.08)) {
               this._hits.set(key, { t: this.t, j: jn });
-              this.events.push({ type: 'hit', a: A.id, b: B.id, x: px, z: pz, j: jn });
+              this.events.push({ type: 'hit', a: A.id, b: B.id, x: P.HIT.x, z: P.HIT.z, j: jn });
             }
           }
         }

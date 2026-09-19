@@ -287,6 +287,12 @@
       const L = this.byPid.get(pid);
       return L ? L.rtt : 0;
     }
+    // Which way this player's traffic goes. A relayed link crosses a public
+    // MQTT broker that rate-limits, so the race sends it fewer snapshots.
+    route(pid) {
+      const L = this.byPid.get(pid);
+      return L && L.fast && L.fast.relay ? 'relay' : 'direct';
+    }
 
     _drop(L, why) {
       if (L.dead) return;

@@ -3,8 +3,16 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.1';
+  G.VERSION = '5.2';
   G.CHANGELOG = [
+    {
+      v: '5.2', name: 'Same Road', items: [
+        ['🛰', 'Everyone is on the same road now', 'If you were the one who JOINED a room, every other car on your screen was in the past. Your own car is drawn where it will be once the host has heard from you, but the other cars could only be drawn where the host said they were a round trip ago — and then they were held back another tenth of a second on top of that, to keep them moving smoothly. Measured end to end, a car sat 2.7 m out of place on a home network, 3.6 m on Wi-Fi and 8.9 m through the backup relay — against a car 4.3 m long. That is why you could be shoved by a car that was not next to you yet, why hitting somebody back felt like driving through them, and why the whole thing looked out of sync. Every other car is now carried forward onto your own clock instead, following how fast each one is turning rather than just where it was pointing, so a car in a corner stays in the corner. The same measurement now reads 1.1 m, 1.5 m and 3.1 m. Nothing about the racing changed — the host still decides everything — you are simply being shown it on time.'],
+        ['💥', 'Contact happens when you see it', 'A joiner used to slide into somebody, keep going, and then get snatched back when the host’s version of the crash finally arrived. Your own half of a bang is now worked out on your own machine as it happens, using the host’s collision maths, so you stop against the car you can actually see and the bang and the sparks land at the moment of contact. The host still has the final say and still settles who pushed whom. On a link too slow to be sure where the other cars are — the backup relay — this stays off rather than invent a crash that never happened.'],
+        ['📶', 'Thirty updates a second, and a link you can read', 'The host sends the race out half again as often as it used to (a relayed room stays lower, because the public relay limits how much it will carry). And when your connection really is the problem, the HUD now says so — RELAY or SLOW LINK, with the ping — instead of leaving you to wonder why the cars feel wrong.'],
+        ['🔧', 'Fixes', 'One unusually quick packet used to skew a joiner’s idea of the host clock for about five seconds, and every car on screen stuttered until it bled off; that estimate now uses a moving window. Cars are also no longer carried through a barrier while the game is working out where they went.'],
+      ],
+    },
     {
       v: '5.1', name: 'Know Your Car', items: [
         ['⚖', 'Every car is somebody', 'A full balance pass with one rule throughout: no car is made average. Each one is quickest somewhere and beaten somewhere else, and they are deliberately not equally easy — the Brick R and the Dune Runner are forgiving cars with a lower ceiling, the Apex MR and the Sting S ask for real skill and pay for it, and the rest sit between. Stripping weight is now capped at about a quarter of a car’s own weight, so a tiny car can no longer be turned into a 400 kg go-kart that beats everything.'],

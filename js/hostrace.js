@@ -32,7 +32,12 @@
 //    If a client DISCONNECTS the car gets "park" input and stops — it is never
 //    simulated by anyone else.
 //
-//  SNAPSHOTS (host -> client, 'fast', every 6th tick = 20 Hz)
+//  SNAPSHOTS (host -> client, 'fast', every 4th tick = 30 Hz)
+//    v5.2: was 20 Hz. The client no longer buffers the other cars in the past
+//    (clientrace.js projects them forward instead), so the snapshot rate now
+//    sets how often its guess gets corrected rather than how much delay it
+//    adds. 30 Hz halves the error it has to absorb. A RELAYED client stays at
+//    about 22 Hz, because the public brokers rate-limit.
 //    Everyone gets every car's FAST array; every 4th snapshot adds SLOW data
 //    (laps, times, wear). A racing client additionally gets its own car's
 //    FULL core state plus `ack` (last input seq applied) and `at` (how many
@@ -42,7 +47,7 @@
 'use strict';
 (function (G) {
   const U = G.U, P = G.Physics, NP = G.NetPack;
-  const SNAP_EVERY = 6; // ticks (120 Hz / 6 = 20 Hz)
+  const SNAP_EVERY = 4; // ticks (120 Hz / 4 = 30 Hz; a relayed link gets ~22, see broadcast)
   const TPI = 4; // ticks per input block (must match clientrace.js)
   const MAX_Q = 3; // jitter-buffer depth cap, in blocks
   const CATCHUP = 1.0; // s of host hitch simulated afterwards instead of dropped (six cars ≈ 3 ms per simulated second on a desktop, ~10x that on a Chromebook)
@@ -208,7 +213,12 @@
       };
       if (this.snapN % 4 === 0) base.sl = sim.cars.map((c) => NP.packSlow(c, sim));
       if (sim.holdN) base.hw = sim.holdN; // countdown held: this many racers still loading
+      const relay = this.net.route ? this.net : null;
       for (const pid of this.net.connectedPids()) {
+        // Relayed links go through a public broker that rate-limits: give them
+        // two snapshots in three. Never skip one carrying SLOW data, or lap
+        // times and wear would arrive in fits.
+        if (!base.sl && this.snapN % 3 === 0 && relay && relay.route(pid) === 'relay') continue;
         const c = sim.byId[pid];
         let msg = base;
         if (c) {
