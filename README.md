@@ -1,6 +1,48 @@
-# SLIPSTAKES v5.2 — "Same Road"
+# SLIPSTAKES v5.3 — "Know Your Car II"
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
+
+## v5.3 — Know Your Car II
+
+Verification-led: `tools/audit.js` (new, dev only) measures every part on every
+car against its own card and went from **109 faults to 0** over 280 fits.
+
+- **Top speed** (`parts.js`): `baseFD` put the limiter exactly at `c.vTop`, so top
+  speed was a property of the gearbox alone — a Big Turbo added 0 km/h and longer
+  gearing won everywhere. Each car's drag area is now DERIVED (`baseDragArea`) by
+  solving drag power = stock wheel power at `c.vTop`, with `GEAR_HEAD = 1.1` of
+  gearbox headroom above it. Power buys +18–26 km/h, short gears cost 14–32, long
+  gears only pay once the power is there. Stock speeds moved <2%. The EV opts out
+  (`cdA` + `gearHead: 1`): it is rev-limited like a real one, and `motor.revM`
+  raises its ceiling. The rally car's drag is sized WITH its factory turbo.
+- **Fitment**: weight is a share of the car scaled by size (a kei Race Shell was
+  byte-identical to Carbon Panels); `optAllowed` blocks the sequential box,
+  intercooler and anti-lag on an EV; `tuneAvailable` takes a carId so the boost
+  slider reaches the rally car's bespoke turbo slot without leaking to NA cars.
+- **Brakes**: capacity 1.3 g → 1.12 g so a grippy car can run out of brake (2.8 m
+  cold, 23 m hot between stock and carbon); cards rewritten — they sell fade
+  resistance, which is what they actually deliver.
+- **Economy**: odds 30x → 9x (4.5x self-backed), `P_FLOOR` stops pricing off
+  Monte-Carlo noise, stakes 700/1400 → 400/800. `lateJoinMoney` is 85% of the
+  MEDIAN with parts at replacement cost (was 80% of the poorest at half price).
+- **Netcode** (`net.js`): a blocked main thread is no longer read as silence
+  (`STALL_MS`), and `SILENT_MS` 10 s → 20 s. Reproduced the race-start
+  disconnect loop with a 7 s freeze; 24 s of freezing now survives.
+- **Bots** (`bot.js`): `SIDE_ROOM` — they could see cars ahead and behind but not
+  alongside. Contacts −17%, spins −73%, laps slightly quicker.
+- **Sound** (`audio.js`): `modSound(parts, carId, look)` — the exhaust amplifies
+  the engine's own profile (`prof.sub` vs `prof.grit`) instead of a flat
+  multiplier. Anti-lag holds `backfire` HIGH, so the rising-edge test gave a whole
+  overrun one pop; now it cracks repeatedly. Five cosmetic sound knobs in `LOOK`,
+  gated by `soundAllowed` and enforced in `modSound` so the gate cannot be spoofed.
+- **Feel**: engines free-rev on the grid against their own inertia with a limiter
+  bounce (`revCut`, now in `P.CORE` — hence **PROTO 10**); Low chase camera; TV
+  cameras work during sit-out and betting; exhaust VFX anchor to the fitted tips.
+- **Bodywork** (`carmodel.js`): spoilers sit on the body surface (a hatch wore one
+  43 cm in the air, the kei 58 cm) and take their width from the car; the widebody
+  is a swept arch with a sill instead of two boxes per wheel.
+- **Balance**: Sting S was 3.75 avg rank / 3 wins fully built → 5.08 / 2; the EV
+  was strongest stock (4 wins) → in line.
 
 ## v5.2 — Same Road
 
