@@ -22,7 +22,7 @@
     if (t.unit === '%') return v + '%';
     return v + ' / 9';
   }
-  const tuneEq = (inst, a, b) => JSON.stringify(Parts.effTune(inst, a)) === JSON.stringify(Parts.effTune(inst, b));
+  const tuneEq = (inst, a, b, carId) => JSON.stringify(Parts.effTune(inst, a, carId)) === JSON.stringify(Parts.effTune(inst, b, carId));
   // What switching to a car costs this player now (mirrors session.on_setCar).
   function carFee(me, id, free) {
     const owned = ((me.garage && me.garage.cars) || Parts.BASE_CARS).includes(id);
@@ -98,7 +98,7 @@
     },
 
     stats(carId, installed, wear, tune) {
-      const k = carId + JSON.stringify(installed) + JSON.stringify(wear) + JSON.stringify(Parts.effTune(installed, tune));
+      const k = carId + JSON.stringify(installed) + JSON.stringify(wear) + JSON.stringify(Parts.effTune(installed, tune, carId));
       if (!this._statsCache[k]) {
         const spec = Parts.computeSpec(carId, installed, wear, tune);
         this._statsCache[k] = { spec, st: Parts.computeStats(spec) };
@@ -111,7 +111,7 @@
       if (!me) return;
       const g = me.garage;
       const car = Parts.CARS[me.carId];
-      if (this.pending && tuneEq(g.installed, this.pending, g.tune)) this.pending = null;
+      if (this.pending && tuneEq(g.installed, this.pending, g.tune, g.carId)) this.pending = null;
       const cand = this.candidate();
       G.Preview.setBuild(cand);
       G.Preview.setShowroom(this.tab === 'paint');
@@ -146,7 +146,7 @@
       // stat bars: current vs candidate
       const cur = this.stats(me.carId, g.installed, g.wear, g.tune).st;
       const cs = this.stats(cand.carId, cand.installed, cand.wear, cand.tune);
-      const same = cand.carId === me.carId && JSON.stringify(cand.installed) === JSON.stringify(g.installed) && JSON.stringify(cand.wear) === JSON.stringify(g.wear) && tuneEq(cand.installed, cand.tune, g.tune);
+      const same = cand.carId === me.carId && JSON.stringify(cand.installed) === JSON.stringify(g.installed) && JSON.stringify(cand.wear) === JSON.stringify(g.wear) && tuneEq(cand.installed, cand.tune, g.tune, cand.carId);
       const bars = cur.bars
         .map((b, i) => {
           const c = cs.st.bars[i];
@@ -187,6 +187,7 @@
         if (open) {
           h += '<div class="opts">';
           for (const o of slot.options) {
+            if (!Parts.optAllowed(me.carId, slot.id, o.id)) continue; // doesn't fit this car
             const owned = g.owned[slot.id].includes(o.id);
             const installed = g.installed[slot.id] === o.id;
             const picked = this.pick && this.pick.slot === slot.id && this.pick.opt === o.id;
@@ -237,7 +238,7 @@
           grp = t.grp;
           h += `<div class="tn-grp"><h4>${t.grp}</h4>`;
         }
-        const avail = Parts.tuneAvailable(t, g.installed);
+        const avail = Parts.tuneAvailable(t, g.installed, g.carId);
         const v = avail ? (d[t.id] != null ? d[t.id] : t.def) : t.def;
         const applied = g.tune[t.id] != null ? g.tune[t.id] : t.def;
         const chg = avail && Math.abs(v - applied) > 1e-6;
@@ -247,7 +248,7 @@
           <div class="tn-lh"><span>◀ ${U.esc(t.lo)}</span><span>${U.esc(t.hi)} ▶</span></div>${avail ? '' : `<div class="tn-need">🔒 ${U.esc(t.needTxt)}</div>`}</div>`;
       }
       h += '</div>';
-      const dirty = !!this.draft && !tuneEq(g.installed, this.draft, g.tune);
+      const dirty = !!this.draft && !tuneEq(g.installed, this.draft, g.tune, g.carId);
       h += `<div class="act-row sticky"><button class="btn primary" data-act="tapply" ${dirty ? '' : 'disabled'}>Apply setup</button><button class="btn ghost" data-act="trevert" ${dirty ? '' : 'disabled'}>Revert</button><button class="btn ghost" data-act="treset">All defaults</button>${this.pending ? '<span class="muted small">saving…</span>' : ''}</div>`;
       return h;
     },
@@ -255,7 +256,7 @@
     _syncTuneButtons() {
       const me = G.Client.me;
       if (!me) return;
-      const dirty = !!this.draft && !tuneEq(me.garage.installed, this.draft, me.garage.tune);
+      const dirty = !!this.draft && !tuneEq(me.garage.installed, this.draft, me.garage.tune, me.garage.carId || me.carId);
       this.el.body.querySelectorAll('[data-act="tapply"],[data-act="trevert"]').forEach((b) => (b.disabled = !dirty));
     },
 
@@ -281,9 +282,47 @@
         <div class="pt-sec"><h4>Body kit</h4><div class="chips2">${LK.kits.map(([v, l]) => chip('kit', v, l, L.kit === v)).join('')}</div></div>
         <div class="pt-sec"><h4>Spoiler <span class="muted small">looks only · an aero part replaces it</span></h4><div class="chips2">${LK.spoilers.map(([v, l]) => chip('spoiler', v, l, L.spoiler === v)).join('')}</div></div>
         <div class="pt-sec"><h4>Exhaust tips</h4><div class="chips2">${LK.tips.map(([v, l]) => chip('tips', v, l, L.tips === v)).join('')}</div></div>
+        ${this.skinHtml(me, L)}
+        ${this.soundHtml(me, L, LK)}
         <div class="pt-sec"><h4>Underglow</h4><div class="chips2">${LK.glows.map(([v, l]) => chip('glow', v, l, L.glow === v)).join('')}</div>${L.glow !== 'none' ? `<div class="chips2">${LK.glowFx.map(([v, l]) => chip('glowfx', v, l, L.glowFx === v)).join('')}</div>` : ''}</div>
         <p class="muted small">Paint is free and cosmetic only. Your team colour still marks you on the minimap, name tags and standings.</p>`;
     },
+    // A skin the maintainer has given this driver, for the car they are in.
+    // Nothing renders at all unless they have one, so it cannot be found by
+    // looking for it.
+    skinHtml(me, L) {
+      const mine = Parts.skinsFor(me.carId, me.garage.skins);
+      if (!mine.length) return '';
+      const chip = (v, label, sub, on) => `<button class="chipb ${on ? 'on' : ''}" data-act="skin" data-v="${v}"><b>${label}</b>${sub ? `<em>${sub}</em>` : ''}</button>`;
+      return `<div class="pt-sec pt-skin"><h4>Skin <span class="muted small">a different body for the ${U.esc(Parts.CARS[me.carId].name)}</span></h4><div class="chips2">`
+        + chip('none', 'Standard', '', L.skin === 'none' || !L.skin)
+        + mine.map((s) => chip(s.id, s.name, s.blurb, L.skin === s.id)).join('')
+        + '</div></div>';
+    },
+
+    // ---------------------------------------------------------------- sound
+    // Sound tuning: free, cosmetic, and gated on the hardware that would make
+    // each noise possible - you cannot bang and pop through a stock silencer,
+    // and a blow-off valve needs something to blow off.
+    soundHtml(me, L, LK) {
+      const inst = me.garage.installed;
+      const row = (key, title, note) => {
+        const chips = LK[key].map(([v, l]) => {
+          const ok = Parts.soundAllowed(key, v, me.carId, inst);
+          return `<button class="chipb ${L[key] === v ? 'on' : ''} ${ok ? '' : 'off'}" data-act="${ok ? 'snd' : 'sndno'}" data-k="${key}" data-v="${v}"${ok ? '' : ' title="Needs a freer-flowing exhaust or forced induction"'}>${l}</button>`;
+        }).join('');
+        return `<div class="pt-sec"><h4>${title}${note ? ` <span class="muted small">${note}</span>` : ''}</h4><div class="chips2">${chips}</div></div>`;
+      };
+      const boosted = Parts.soundAllowed('bov', 'atmo', me.carId, inst);
+      return `<div class="pt-sound"><h3>Sound</h3>
+        ${row('tone', 'Exhaust tone')}
+        ${row('over', 'Overrun', 'what it does when you lift')}
+        ${boosted ? row('bov', 'Blow-off valve') : ''}
+        ${row('idle', 'Idle')}
+        ${row('lim', 'Rev limiter')}
+        <div class="pt-sec"><button class="btn small" data-act="listen">▶ Listen</button> <span class="muted small">Free and cosmetic — sound only, never speed.</span></div></div>`;
+    },
+
     look(patch) {
       G.Client.act({ t: 'look', look: patch });
       if (G.Audio) G.Audio.tab();
@@ -452,7 +491,7 @@
       tapply() {
         const me = G.Client.me;
         if (!this.draft || !me) return;
-        this.pending = Parts.effTune(me.garage.installed, this.draft);
+        this.pending = Parts.effTune(me.garage.installed, this.draft, me.garage.carId || me.carId);
         G.Client.act({ t: 'tune', tune: this.draft });
         this.draft = null;
         this._tuneRev++;
@@ -513,6 +552,21 @@
       },
       tips(el) {
         this.look({ tips: el.dataset.v });
+      },
+      skin(el) {
+        this.look({ skin: el.dataset.v });
+      },
+      snd(el) {
+        this.look({ [el.dataset.k]: el.dataset.v });
+        const me = G.Client.me;
+        if (G.Audio && me) setTimeout(() => G.Audio.revDemo(me.carId, me.garage.installed, Object.assign({}, me.garage.look, { [el.dataset.k]: el.dataset.v })), 60);
+      },
+      sndno() {
+        UI.toast('That one needs a freer-flowing exhaust (or a turbo) fitted first.', 'bad');
+      },
+      listen() {
+        const me = G.Client.me;
+        if (G.Audio && me) G.Audio.revDemo(me.carId, me.garage.installed, me.garage.look);
       },
       glowfx(el) {
         this.look({ glowFx: el.dataset.v });

@@ -15,7 +15,21 @@
     // sometimes on another circuit with a pit lane)
     const endu = G.RaceEnv.planned(st, st.raceNo);
     const laps = endu ? `${tr.def.enduLaps || tr.laps * 2} laps · endurance, pit stops` : tr.format === 'circuit' ? `${tr.laps} laps` : tr.format === 'drag' ? `${tr.def.dragLength} m` : `${Math.round(tr.raceDistance)} m`;
-    return `<div class="pr-track"><div><span class="muted">RACE ${st.raceNo + 1}/${st.settings.races}</span><h1>${U.esc(tr.name)}</h1></div><em class="fmt fmt-${tr.format}">${tr.format.toUpperCase()}</em>${tr.def.isNew ? '<em class="t-new">NEW</em>' : ''}<span class="muted">${laps}</span><div class="pr-timer">${label} <b>${left(st)} s</b></div></div><p class="muted pr-blurb">${U.esc(tr.blurb)}</p>`;
+    return `<div class="pr-track"><div><span class="muted">RACE ${st.raceNo + 1}/${st.settings.races}</span><h1>${U.esc(tr.name)}</h1></div><em class="fmt fmt-${tr.format}">${tr.format.toUpperCase()}</em>${tr.def.isNew ? '<em class="t-new">NEW</em>' : ''}<span class="muted">${laps}</span><div class="pr-timer">${label} <b>${left(st)} s</b></div></div>
+      <div class="pr-layout"><canvas class="pr-map"></canvas><div class="pr-legend"><span class="lg-start">Start</span>${tr.def.pit ? '<span class="lg-pit">Pit lane</span>' : ''}${hasSurf(tr, 'loose') ? '<span class="lg-loose">Loose</span>' : ''}${hasSurf(tr, 'wet') ? '<span class="lg-wet">Water</span>' : ''}</div></div>
+      <p class="muted pr-blurb">${U.esc(tr.blurb)}</p>`;
+  }
+
+  const hasSurf = (tr, kind) => {
+    for (let i = 0; i < tr.N; i++) if (G.SURF[tr.S[i]][kind]) return true;
+    return false;
+  };
+
+  // The canvas is replaced whenever the panel re-renders, so paint it after.
+  function paintLayout(root, st) {
+    const cv = root.querySelector('.pr-map');
+    const id = st.schedule[st.raceNo];
+    if (cv && id && G.drawLayout) G.drawLayout(cv, G.getTrack(id), { thick: 12 });
   }
 
   // ------------------------------------------------------------ entry
@@ -28,6 +42,7 @@
       const st = G.Client.state, me = G.Client.me;
       if (!st || !me) return;
       UI.patch(this.el.head, trackHead(st, 'Decide in'));
+      paintLayout(this.el.head, st);
       const tr = G.getTrack(st.schedule[st.raceNo]);
       // computeStats runs the real physics (~8 ms): cache it — this screen
       // re-renders twice a second and that was a visible hitch on Chromebooks.
@@ -86,6 +101,7 @@
       if (!st || !me) return;
       const sitting = me.entry === 'sit';
       UI.patch(this.el.head, trackHead(st, 'Lights out in'));
+      paintLayout(this.el.head, st);
       const racers = Object.keys(st.odds).map((id) => st.players[id]).filter(Boolean).sort((a, b) => st.odds[a.id].win - st.odds[b.id].win);
       const stip = new Set(st.stipend || []);
       const rows = racers

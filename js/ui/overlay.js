@@ -157,7 +157,7 @@
       }
       if (sess) btns += b('leaveSession', G.Game.role === 'host' ? '✖ Leave room' : '✖ Leave session', 'red');
       if (!sess && mode !== 'menu') btns += b('mainMenu', '⌂ Main menu', 'ghost');
-      return `<div class="ov-card pause"><h1>${title}</h1>${sub ? `<p class="muted">${U.esc(sub)}</p>` : ''}<div class="ov-btns">${btns}</div><p class="muted small ov-foot">Esc closes · M sound · F3 frame-rate</p></div>`;
+      return `<div class="ov-card pause"><h1>${title}</h1>${sub ? `<p class="muted">${U.esc(sub)}</p>` : ''}<div class="ov-btns">${btns}</div><p class="muted small ov-foot">Esc closes · M sound · F3 frame-rate · <span class="ver">v${G.VERSION}</span></p></div>`;
     },
 
     settingsHtml() {
