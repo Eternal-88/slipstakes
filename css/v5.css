@@ -198,3 +198,15 @@
 /* Crosswind: the gust pushes you sideways, so the HUD says which way. */
 .as-wind { color: #7fe0ff; }
 .as-wind.hard { color: #ffcc00; animation: blink .5s steps(2) infinite; }
+
+/* v5.3: the next circuit, before you commit to it. */
+.pr-layout { display: flex; align-items: center; gap: 14px; margin: 10px 0 4px; }
+.pr-map { width: 260px; height: 170px; flex: none; background: rgba(0, 0, 0, .18); border-radius: 10px; }
+.pr-legend { display: flex; flex-direction: column; gap: 6px; font-size: 11px; font-weight: 800; letter-spacing: .6px; }
+.pr-legend span { display: flex; align-items: center; gap: 7px; color: var(--dim); }
+.pr-legend span::before { content: ''; width: 14px; height: 4px; border-radius: 2px; background: currentColor; }
+.lg-start { color: #d8dee9; }
+.lg-pit { color: #ffc400; }
+.lg-loose { color: #d6b06a; }
+.lg-wet { color: #50aaff; }
+@media (max-width: 720px) { .pr-layout { flex-direction: column; align-items: flex-start; } .pr-map { width: 100%; max-width: 320px; } }
