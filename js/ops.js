@@ -30,6 +30,9 @@
   const subtle = () => (window.crypto && crypto.subtle) || null; // https / localhost only
   const signed = (code, pid, n, seq, c) => `ss-ops1|${code}|${pid}|${n}|${seq}|${c}`;
   const signedMq = (o) => `ss-opsmq1|${o.id}|${o.at}|${o.lid}|${o.k}|${o.a}`;
+  // A skin grant, signed for a named driver. Checked by whichever host they
+  // race with next (checkGrant), so it is theirs wherever they go.
+  const signedSkin = (t) => `ss-skin1|${t.id}|${t.who}|${t.at}`;
 
   async function openKey(K, pass) {
     const S = subtle();
@@ -94,6 +97,29 @@
       X.s.on_start(hostOf(X)); // the host's big button: skips this phase's timer
       return 'Moved on from ' + ph + '.';
     },
+    // Give or take a skin. It lands on the driver's session garage now, and
+    // their own device remembers it so it is still theirs next time.
+    skin(c, X) {
+      const P = G.Parts, id = String(c.id || '');
+      if (!P.SKINS[id]) return 'Unknown skin.';
+      const p = X.s.player(String(c.pid || ''));
+      if (!p) return 'No such driver.';
+      const g = p.garage;
+      g.skins = Array.isArray(g.skins) ? g.skins : [];
+      const car = P.CARS[P.SKINS[id].car].name;
+      if (c.take) {
+        g.skins = g.skins.filter((x) => x !== id);
+        if (g.look.skin === id) g.look.skin = 'none';
+        X.s.emit('toPlayer', p.id, { t: 'skin', id, take: 1 });
+        return `Took ${P.SKINS[id].name} from ${p.name}.`;
+      }
+      if (!g.skins.includes(id)) g.skins.push(id);
+      // ...and send them a signed copy so it is still theirs tomorrow.
+      Ops.signGrant(id, p.name).then((tok) => X.s.emit('toPlayer', p.id, { t: 'skin', id, tok }));
+      X.s.toast(p.id, `Unlocked: ${P.SKINS[id].name} for the ${car}. Fit it in Tune & paint.`, 'money');
+      return `Gave ${P.SKINS[id].name} to ${p.name}.`;
+    },
+
     nextTrack(c, X) {
       const st = X.s.state, def = G.TrackDefs.byId(String(c.id));
       if (!def || def.id === 'proving') return 'Unknown track.';
@@ -671,7 +697,8 @@
       act = `<h4>${U.esc(t.name)}</h4><p class="note">${carName(t.car)} · ${t.w} win${t.w === 1 ? '' : 's'}, ${t.pod} podium${t.pod === 1 ? '' : 's'} in ${t.r} race${t.r === 1 ? '' : 's'}</p>
         <div class="row">${btn('money', '+$1k', 'ghost', { pid: t.id, v: 1000 })}${btn('money', '+$10k', 'ghost', { pid: t.id, v: 10000 })}${btn('money', '−$1k', 'ghost', { pid: t.id, v: -1000 })}<input data-f="money" type="number" min="0" step="100" placeholder="$" class="w72">${btn('moneySet', 'Set', 'ghost', a)}</div>
         <div class="row"><select data-f="car">${G.Parts.CAR_ORDER.map((id) => `<option value="${id}">${U.esc(G.Parts.CARS[id].name)}</option>`).join('')}</select>${btn('giveCar', 'Give', 'ghost', a)}${btn('giveParts', 'All parts', 'ghost', a)}${btn('repair', 'Repair', 'ghost', a)}</div>
-        <div class="row">${btn('respawn', 'Respawn', 'ghost', a)}${t.bot ? '' : btn('mute', t.muted ? 'Unmute' : 'Mute', 'ghost', a) + (t.host ? '' : btn('kick', 'Kick & ban', 'red', a))}</div>`;
+        <div class="row">${btn('respawn', 'Respawn', 'ghost', a)}${t.bot ? '' : btn('mute', t.muted ? 'Unmute' : 'Mute', 'ghost', a) + (t.host ? '' : btn('kick', 'Kick & ban', 'red', a))}</div>
+        <div class="row">Skin <select data-f="skin">${Object.values(G.Parts.SKINS).map((k) => `<option value="${k.id}">${U.esc(k.name)} · ${U.esc(G.Parts.CARS[k.car].name)}</option>`).join('')}</select>${btn('skin', 'Give', 'ghost', a)}${btn('skinTake', 'Take', 'ghost', a)}</div>`;
     }
     return `<div class="pls">${rows}</div>${act}`;
   }
@@ -960,7 +987,7 @@
       // no keyboard (touch): hold the version badge on the main menu for 3 s
       let holdT = null;
       document.addEventListener('pointerdown', (e) => {
-        if (!e.target.closest || !e.target.closest('.logo .ver')) return;
+        if (!e.target.closest || !e.target.closest('.logo .ver, .ov-foot .ver')) return;
         clearTimeout(holdT);
         holdT = setTimeout(() => {
           this._held = true;
@@ -971,7 +998,7 @@
       document.addEventListener('pointerup', cancel, true);
       document.addEventListener('pointercancel', cancel, true);
       document.addEventListener('click', (e) => {
-        if (!this._held || !e.target.closest || !e.target.closest('.logo .ver')) return;
+        if (!this._held || !e.target.closest || !e.target.closest('.logo .ver, .ov-foot .ver')) return;
         this._held = false; // (that long press isn't also a "What's new" click)
         e.stopImmediatePropagation();
         e.preventDefault();
@@ -1231,6 +1258,19 @@
       });
     },
 
+    // Sign a skin grant for this driver. Needs the console unlocked.
+    async signGrant(id, who) {
+      if (!this.key || !subtle() || !G.Parts.SKINS[id]) return null;
+      const t = { id, who: String(who || '').slice(0, 24), at: Date.now() };
+      t.sig = b64(await subtle().sign(SIG, this.key, enc.encode(signedSkin(t))));
+      return t;
+    },
+    // Anyone can check one: it is the public key that ships with the game.
+    async checkGrant(t) {
+      if (!t || !G.Parts.SKINS[t.id] || typeof t.sig !== 'string' || t.sig.length > 200 || typeof t.at !== 'number') return false;
+      return verify(signedSkin(t), t.sig);
+    },
+
     // -------------------------------------------------------- display
     _tick() {
       if (!this.key) return;
@@ -1366,6 +1406,7 @@
       if (k === 'announce') c.text = f('ann').value;
       if (k === 'giveCar') c.car = f('car').value;
       if (k === 'moneySet') Object.assign(c, { k: 'money', set: 1, v: +f('money').value });
+      if (k === 'skin' || k === 'skinTake') Object.assign(c, { k: 'skin', id: f('skin').value, take: k === 'skinTake' ? 1 : 0 });
       if (k === 'close' && !(await G.UI.confirm('Close this room?', 'Everyone goes back to the main menu.', 'Close room', true))) return;
       if (k === 'kick' && !(await G.UI.confirm('Kick and ban?', "They can't come back into this room.", 'Kick', true))) return;
       b.disabled = true;

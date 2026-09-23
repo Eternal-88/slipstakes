@@ -70,7 +70,7 @@
     return {
       x, z, h, vx: 0, vz: 0, w: 0,
       steer: 0, rpm: 0.14, gear: 1, shiftT: 0, kickT: 0,
-      boost: 0, heat: 0, overheat: 0, ax: 0, ay: 0,
+      boost: 0, heat: 0, overheat: 0, ax: 0, ay: 0, revCut: 0,
       fy: [0, 0, 0, 0], slip: [0, 0, 0, 0], surf: [0, 0, 0, 0], fz: [0, 0, 0, 0],
       hint: -1, spin: 0, lock: 0, offT: 0, wallHit: 0, backfire: 0,
       tyreWear: 0, engineWear: 0, body: 0, fuel: 0, odo: 0, thr: 0, brk: 0, hb: 0,
@@ -94,7 +94,7 @@
   }
 
   // Core state that must round-trip for prediction/reconciliation.
-  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit'];
+  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit', 'revCut'];
   function copyCore(dst, src) {
     for (let i = 0; i < CORE.length; i++) dst[CORE[i]] = src[CORE[i]];
     for (let i = 0; i < 4; i++) dst.fy[i] = src.fy[i];
@@ -376,7 +376,31 @@
     if (car.gear === -1) Fdrive = -Math.min(Fdrive, vLong < -8 ? 0 : Fdrive);
     // Sequential box "shift shock": a brief torque spike right after an upshift.
     if (car.kickT > 0 && car.shiftT <= 0 && s.shiftKick > 1) Fdrive *= s.shiftKick;
-    car.rpm = rClamped;
+    // ---- 6b. Free revving on the grid ------------------------------------
+    // Off the clutch and going nowhere, the engine answers the throttle with
+    // its OWN inertia: it takes a moment to wind up, falls back on its own
+    // when you lift, and bounces off the limiter if you pin it. A small
+    // engine spins up faster than a big one, so this sounds different car to
+    // car for free (revUp scales with how much the flywheel has to turn).
+    if (frozen && s.gears) {
+      const revUp = s.ev ? 9 : U.clamp(26 / Math.max(1, s.redline / 1000), 2.2, 5.2);
+      const tgt = driveThr > 0.02 ? s.idle + driveThr * (1.02 - s.idle) : s.idle;
+      const up = driveThr > 0.02;
+      car.rpm += (tgt - car.rpm) * Math.min(1, dt * (up ? revUp : revUp * 0.62));
+      if (car.rpm >= 1.0) {
+        // fuel cut: it drops off the limiter and catches again, over and over
+        car.revCut = 0.055;
+        car.rpm = 1.0;
+      }
+      if (car.revCut > 0) {
+        car.revCut -= dt;
+        car.rpm = Math.max(s.idle, car.rpm - dt * 5.5);
+      }
+      car.rpm = U.clamp(car.rpm, s.idle, 1.02);
+    } else {
+      car.revCut = 0;
+      car.rpm = rClamped;
+    }
     // Wear + fuel bookkeeping (money is settled from these after the race).
     const load = driveThr * rClamped;
     car.engineWear += dt * s.engineWearRate * load * (1 + car.boost);

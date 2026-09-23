@@ -218,13 +218,20 @@
       return true;
     }
 
-    // Late joiners get 80% of the POOREST connected driver's net worth (cash
-    // plus half their parts' value). They can buy their way back into it,
-    // but never start ahead of anyone. Never less than normal starting money.
+    // What a late joiner starts with. This used to be 80% of the POOREST
+    // driver's net worth, counting their parts at half price - which on both
+    // counts left a joiner unable to race anyone: it anchored to whoever was
+    // having the worst session, and then handed over less cash than the parts
+    // they would have to buy at full price actually cost. Now it is 85% of
+    // the MEDIAN driver, with parts counted at what they would have to pay for
+    // them. That lands a joiner just inside the pack - behind on prize money
+    // they were not there to win, but able to buy a car that can race.
     lateJoinMoney() {
-      const w = this.humans().filter((p) => p.connected).map((p) => this.netWorth(p));
-      if (!w.length) return START_MONEY;
-      return Math.max(START_MONEY, Math.round((Math.min(...w) * 0.8) / 100) * 100);
+      const field = this.humans().filter((p) => p.connected);
+      if (!field.length) return START_MONEY;
+      const w = field.map((p) => p.money + Parts.partsValue(p.garage)).sort((a, b) => a - b);
+      const mid = w.length % 2 ? w[(w.length - 1) / 2] : (w[w.length / 2 - 1] + w[w.length / 2]) / 2;
+      return Math.max(START_MONEY, Math.round((mid * 0.85) / 100) * 100);
     }
 
     // Who takes over if the host drops: connected humans in the order they
@@ -476,7 +483,7 @@
           parts: Object.assign({}, p.garage.installed), wear: Object.assign({}, p.garage.wear),
           // setup + looks travel with the entrant so every peer builds the
           // same spec (prediction) and the same model
-          tune: Parts.effTune(p.garage.installed, p.garage.tune), look: Object.assign({}, p.garage.look),
+          tune: Parts.effTune(p.garage.installed, p.garage.tune, p.carId), look: Object.assign({}, p.garage.look),
           bot: p.isBot ? { skill: p.botSkill, level: st.settings.botLevel || 'normal' } : null,
         })),
       };
@@ -570,6 +577,7 @@
       const o = slot && slot.options.find((x) => x.id === m.opt);
       if (!o) return;
       if (!Parts.partAllowed(p.carId, m.slot)) return this.toast(p.id, `The ${Parts.CARS[p.carId].name} can't take ${slot.name.toLowerCase()} parts.`, 'bad');
+      if (!Parts.optAllowed(p.carId, m.slot, o.id)) return this.toast(p.id, `${o.name} doesn't fit the ${Parts.CARS[p.carId].name}.`, 'bad');
       const g = p.garage;
       if (g.owned[m.slot].includes(o.id)) return this.on_install(p, m);
       if (p.money < o.price) return this.toast(p.id, `Can't afford ${o.name} (${U.fmtMoney(o.price)}).`, 'bad');
@@ -585,6 +593,7 @@
       if (!this.shopOpen()) return this.toast(p.id, 'The shop is closed right now.', 'bad');
       const g = p.garage;
       if (!g.owned[m.slot] || !g.owned[m.slot].includes(m.opt)) return this.toast(p.id, 'You don\'t own that part.', 'bad');
+      if (!Parts.optAllowed(p.carId, m.slot, m.opt)) return this.toast(p.id, `${Parts.opt(m.slot, m.opt).name} doesn't fit the ${Parts.CARS[p.carId].name}.`, 'bad');
       if (this._fit(p, m.slot, m.opt, false)) {
         this.toast(p.id, `Fitted ${Parts.opt(m.slot, m.opt).name}.`, 'good');
         this.touch();
@@ -675,6 +684,9 @@
       if (buy) p.garage.cars.push(m.carId);
       p.carId = m.carId;
       p.garage.carId = m.carId;
+      // A skin belongs to one car: take it off when they get out of that car
+      // (they keep the grant - it comes back when they get back in).
+      if (p.garage.look.skin && p.garage.look.skin !== 'none' && !Parts.skinFor(m.carId, p.garage.look.skin)) p.garage.look.skin = 'none';
       if (buy) {
         this.toast(p.id, `Bought the ${car.name} (${U.fmtMoney(fee)}). It's yours for the session.`, 'good');
         this.sys(`${p.name} bought a ${car.name}!`);
@@ -693,15 +705,30 @@
       else if (m.tune && typeof m.tune === 'object') {
         const next = Object.assign({}, g.tune);
         for (const k in m.tune) if (Parts.TUNE_MAP[k]) next[k] = +m.tune[k];
-        g.tune = Parts.effTune(g.installed, next);
+        g.tune = Parts.effTune(g.installed, next, g.carId || p.carId);
       }
       this.touch();
+    }
+
+    // A driver bringing skins granted somewhere else. Each is a signed
+    // token, and the public key that checks it ships with the game, so a host
+    // can trust one without being the maintainer - and cannot be talked into
+    // one by a driver who simply edited their browser storage.
+    on_skins(p, m) {
+      if (!Array.isArray(m.toks) || !G.Ops || !G.Ops.checkGrant) return;
+      Promise.all(m.toks.slice(0, 8).map((t) => G.Ops.checkGrant(t).then((ok) => (ok ? t.id : null)).catch(() => null))).then((ids) => {
+        const good = ids.filter(Boolean);
+        if (!good.length) return;
+        const g = p.garage;
+        g.skins = Array.from(new Set((g.skins || []).concat(good)));
+        this.touch();
+      });
     }
 
     // Paint, livery, rims… cosmetic only, so allowed any time.
     on_look(p, m) {
       if (!m.look || typeof m.look !== 'object') return;
-      p.garage.look = Parts.cleanLook(p.garage.look, m.look);
+      p.garage.look = Parts.cleanLook(p.garage.look, m.look, p.carId, p.garage.skins);
       this.touch();
     }
 

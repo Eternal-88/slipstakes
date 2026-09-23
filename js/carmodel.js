@@ -267,6 +267,56 @@
       ],
       cockpit: true, hood: [0.7, 1.8, 0.74], trunkZ: -1.6, trunkY: 0.77, wheelZ: [1.2, -1.2], doors: [0.3, -0.85],
     },
+    // ---- v5.3 SKIN BODIES. Same Z span and wheelZ as the car they dress, so
+    // the wheels and the physics still line up; everything between changes.
+    //
+    // gtd: modern fastback. A very long bonnet, the cabin pushed right back
+    // over the rear axle, a roof that runs down into a high short deck rather
+    // than a notch, and haunches that swell over the rear wheels and are the
+    // widest part of the car. (Dresses the muscle chassis.)
+    gtd: {
+      body: [
+        { z: -2.38, yb: 0.32, ym: 0.6, yt: 0.9, wb: 0.86, wm: 0.99, wt: 0.92 },
+        { z: -2.15, yb: 0.26, ym: 0.62, yt: 0.95, wb: 0.9, wm: 1.04, wt: 0.96 },
+        { z: -1.45, yb: 0.24, ym: 0.66, yt: 0.99, wb: 0.93, wm: 1.09, wt: 0.97 },
+        { z: -0.6, yb: 0.23, ym: 0.64, yt: 1.0, wb: 0.91, wm: 1.06, wt: 0.96 },
+        { z: 0.5, yb: 0.23, ym: 0.6, yt: 0.95, wb: 0.88, wm: 1.01, wt: 0.92 },
+        { z: 1.45, yb: 0.24, ym: 0.58, yt: 0.93, wb: 0.88, wm: 1.0, wt: 0.9 },
+        { z: 2.12, yb: 0.25, ym: 0.56, yt: 0.9, wb: 0.87, wm: 0.99, wt: 0.88 },
+        { z: 2.38, yb: 0.28, ym: 0.5, yt: 0.82, wb: 0.84, wm: 0.94, wt: 0.82 },
+      ],
+      cabin: [
+        { z: -2.02, yb: 0.96, yt: 1.0, wb: 0.9, wt: 0.88 },
+        { z: -1.55, yb: 0.99, yt: 1.18, wb: 0.9, wt: 0.82 },
+        { z: -0.95, yb: 1.0, yt: 1.31, wb: 0.9, wt: 0.75 },
+        { z: -0.25, yb: 1.0, yt: 1.37, wb: 0.9, wt: 0.72 },
+        { z: 0.4, yb: 0.98, yt: 1.33, wb: 0.88, wt: 0.74 },
+        { z: 1.0, yb: 0.94, yt: 0.99, wb: 0.86, wt: 0.83 },
+      ],
+      roof: [-0.25, 0.4, 1.37], hood: [1.05, 2.25, 0.93], trunkZ: -2.1, trunkY: 0.98, wheelZ: [1.5, -1.4], doors: [0.88, -0.6],
+    },
+    // miata: a very small, very round drop-top. Low everywhere, short
+    // overhangs, a blunt oval nose, hips over the rear wheels and a shallow
+    // upright screen. The pop-up lamps are drawn by the skin itself.
+    // (Dresses the roadster chassis.)
+    miata: {
+      body: [
+        { z: -1.95, yb: 0.3, ym: 0.52, yt: 0.68, wb: 0.64, wm: 0.74, wt: 0.6 },
+        { z: -1.72, yb: 0.24, ym: 0.56, yt: 0.81, wb: 0.72, wm: 0.84, wt: 0.73 },
+        { z: -1.2, yb: 0.21, ym: 0.58, yt: 0.87, wb: 0.78, wm: 0.9, wt: 0.79 },
+        { z: -0.5, yb: 0.2, ym: 0.58, yt: 0.88, wb: 0.79, wm: 0.91, wt: 0.8 },
+        { z: 0.35, yb: 0.2, ym: 0.56, yt: 0.84, wb: 0.78, wm: 0.89, wt: 0.77 },
+        { z: 1.15, yb: 0.21, ym: 0.54, yt: 0.8, wb: 0.77, wm: 0.87, wt: 0.73 },
+        { z: 1.72, yb: 0.23, ym: 0.5, yt: 0.74, wb: 0.74, wm: 0.84, wt: 0.68 },
+        { z: 1.95, yb: 0.28, ym: 0.44, yt: 0.6, wb: 0.66, wm: 0.75, wt: 0.58 },
+      ],
+      cabin: [
+        { z: -0.66, yb: 0.86, yt: 0.9, wb: 0.72, wt: 0.72 },
+        { z: -0.12, yb: 0.86, yt: 1.14, wb: 0.72, wt: 0.63 },
+        { z: -0.04, yb: 0.86, yt: 1.14, wb: 0.72, wt: 0.63 },
+      ],
+      cockpit: true, hood: [0.38, 1.84, 0.8], trunkZ: -1.68, trunkY: 0.86, wheelZ: [1.2, -1.2], doors: [0.05, -1.0],
+    },
     muscle: {
       body: [
         { z: -2.38, yb: 0.3, ym: 0.56, yt: 0.8, wb: 0.84, wm: 0.94, wt: 0.86 },
@@ -443,8 +493,11 @@
     const car = G.Parts.CARS[carId] || G.Parts.CARS.vandal;
     const P = Object.assign({}, G.Parts.STOCK, parts || {});
     const L = Object.assign(G.Parts.defaultLook(), look || {});
-    const T = G.Parts.effTune(P, tune);
-    const B = BODIES[car.body];
+    const T = G.Parts.effTune(P, tune, carId);
+    // A skin brings its own body: the silhouette IS the car, so dressing the
+    // stock shape in details was never going to read as a different one.
+    const _sk = G.Parts.skinFor(carId, (look || {}).skin);
+    const B = BODIES[(_sk && _sk.body) || car.body];
     const paint = L.paint != null ? L.paint : colorHex;
     const body = C(paint), bodyTop = lighten(paint, 0.05);
     const acc = C(L.accent);
@@ -731,16 +784,35 @@
     const exR = (P.induction === 't2' ? 0.075 : P.induction === 'na' ? 0.045 : 0.06) + (exKind === 'straight' ? 0.03 : exKind === 'sport' ? 0.012 : 0);
     const exY = rS.yb + 0.08;
     const exXs = car.body === 'muscle' || P.induction !== 'na' || exKind !== 'stock' ? [0.45, -0.45] : [car.body === 'kei' ? 0.35 : 0.45];
-    if (exKind === 'straight' && car.body !== 'muscle') exXs.splice(0, exXs.length, 0.12, -0.12); // centre-exit
+    if (exKind === 'straight' && car.body !== 'muscle' && L.tips !== 'quad') exXs.splice(0, exXs.length, 0.12, -0.12); // centre-exit (a quad needs the width, below)
     if (car.ev) exXs.length = 0; // (v5: nothing to exhaust)
     // v5 exhaust tips (looks): quad, burnt titanium, or out of the sides
     const tipCol = L.tips === 'burnt' ? C(0x6a62c8) : chrome;
-    if (L.tips === 'quad' && exXs.length) exXs.splice(0, exXs.length, ...exXs.flatMap((x) => [x + 0.09, x - 0.09]));
-    if (L.tips !== 'side') for (const x of exXs) gb.cylZ(x, exY, rz - 0.06, exR, 0.2, 8, tipCol, black);
-    else if (!car.ev) for (const sx of [-1, 1]) {
-      const zc = (B.wheelZ[0] + B.wheelZ[1]) / 2 - 0.2, sS = secAt(B, zc);
-      gb.box(sx * (surfX(sS, sS.yb + 0.05) + 0.06), sS.yb + 0.02, zc, 0.12, 0.12, 0.7, black);
-      gb.box(sx * (surfX(sS, sS.yb + 0.05) + 0.13), sS.yb + 0.02, zc + 0.36, 0.1, 0.1, 0.04, C(0x6a62c8));
+    // Quad tips: four SMALLER pipes spread across the back, which is how a
+    // real quad system works and the only way four of them fit. A fixed 0.09
+    // split at full pipe size had them growing through each other - worst on
+    // a straight-piped big-turbo car, where the exits move to the centreline
+    // and the pipes are at their fattest.
+    let tipR = exR;
+    if (L.tips === 'quad' && exXs.length) {
+      tipR = exR * 0.74;
+      const spread = Math.max(0.075, tipR * 1.18);
+      exXs.splice(0, exXs.length, ...exXs.flatMap((x) => [x + spread, x - spread]));
+    }
+    // Where the pipes actually END, in body space - this is what the flames,
+    // shift puffs and nitrous come out of. It used to be derived from the rear
+    // tip positions no matter what was fitted, so side exits breathed fire out
+    // of a bumper that had no pipes in it.
+    let exOut = null;
+    if (L.tips !== 'side') for (const x of exXs) gb.cylZ(x, exY, rz - 0.06, tipR, 0.2, 8, tipCol, black);
+    else if (!car.ev) {
+      exOut = [];
+      for (const sx of [-1, 1]) {
+        const zc = (B.wheelZ[0] + B.wheelZ[1]) / 2 - 0.2, sS = secAt(B, zc);
+        gb.box(sx * (surfX(sS, sS.yb + 0.05) + 0.06), sS.yb + 0.02, zc, 0.12, 0.12, 0.7, black);
+        gb.box(sx * (surfX(sS, sS.yb + 0.05) + 0.13), sS.yb + 0.02, zc + 0.36, 0.1, 0.1, 0.04, C(0x6a62c8));
+        exOut.push([sx * (surfX(sS, sS.yb + 0.05) + 0.2), sS.yb + 0.02, zc + 0.4]);
+      }
     }
     if (B.flush) gb.box(0, ry + 0.06, rz - 0.01, rS.wm * 2 - 0.25, 0.03, 0.03, C(0x8a1010)); // light bar
     const tailStart = gb.n;
@@ -858,9 +930,42 @@
       sideBand(midS.yb - 0.03, midS.yb + 0.08, L.kit === 'wide' ? body : carbon, rz + 0.3, fz - 0.35, 0.05); // skirts
     }
     if (L.kit === 'wide') {
-      for (const wz of B.wheelZ) for (const sx of [-1, 1]) {
-        gb.box(sx * (wheelX + 0.07), wheelY + 0.27 * wk, wz, 0.2, 0.14, 1.0 * wk, body);
-        gb.box(sx * (wheelX + 0.11), wheelY + 0.12 * wk, wz, 0.12, 0.2, 0.9 * wk, body);
+      // A real flare is an ARCH over the wheel that blends back into the body
+      // at each end. This used to be two plain boxes per wheel, which read as
+      // exactly that: a rectangle stuck on near the wheel. Now it is a strip
+      // of segments swept over the top of the tyre, standing proudest at the
+      // crown and tapering to nothing front and back, with a sill joining the
+      // front and rear arches so the car reads as one wide body.
+      const R = WR * wk + 0.1; // arch radius, a little clear of the tyre
+      const SEG = 9, OUT = 0.17; // how far the widest point stands out
+      for (const wz of B.wheelZ) {
+        for (const sx of [-1, 1]) {
+          for (let i = 0; i < SEG; i++) {
+            const a0 = Math.PI * (0.06 + (0.88 * i) / SEG), a1 = Math.PI * (0.06 + (0.88 * (i + 1)) / SEG);
+            const am = (a0 + a1) / 2;
+            // taper: proud over the crown, flush where it meets the body
+            const t = Math.sin(am);
+            const out = OUT * (0.35 + 0.65 * t);
+            const y0 = wheelY + Math.sin(a0) * R, z0 = wz + Math.cos(a0) * R;
+            const y1 = wheelY + Math.sin(a1) * R, z1 = wz + Math.cos(a1) * R;
+            const xi = sx * (wheelX - 0.02), xo = sx * (wheelX - 0.02 + out);
+            // Outer skin, outer wall and the lip underneath. Every face is
+            // wound against the WHEEL CENTRE as the inside reference, so the
+            // mirrored side comes out facing the right way too - written by
+            // hand, the left flare was inside-out and you could see through it.
+            const ix = sx * wheelX, iy = wheelY, iz = wz;
+            gb.quad([xi, y0, z0], [xo, y0 - 0.03, z0], [xo, y1 - 0.03, z1], [xi, y1, z1], body, ix, iy, iz);
+            gb.quad([xo, y0 - 0.03, z0], [xo, y0 - 0.12, z0], [xo, y1 - 0.12, z1], [xo, y1 - 0.03, z1], body, ix, iy, iz);
+            gb.quad([xo, y0 - 0.12, z0], [xi, y0 - 0.13, z0], [xi, y1 - 0.13, z1], [xo, y1 - 0.12, z1], dark, ix, iy, iz);
+          }
+        }
+      }
+      // sill between the arches, so the widened track carries down the flank
+      const sillZ0 = Math.min(B.wheelZ[0], B.wheelZ[1]) + R * 0.75, sillZ1 = Math.max(B.wheelZ[0], B.wheelZ[1]) - R * 0.75;
+      for (const sx of [-1, 1]) {
+        const sS = secAt(B, (sillZ0 + sillZ1) / 2);
+        const y = sS.yb + 0.08, x = sx * (wheelX - 0.02 + OUT * 0.42);
+        gb.box(x, y, (sillZ0 + sillZ1) / 2, 0.1, 0.16, Math.abs(sillZ1 - sillZ0), body);
       }
     }
     if (L.kit === 'bash' || L.kit === 'drift') {
@@ -874,19 +979,123 @@
       for (const sx of [-1, 1]) gb.box(sx * (fS.wm - 0.02), fy - 0.12, fz - 0.2, 0.26, 0.025, 0.18, carbon, sx * 0.35); // canards
       if (B.roof) gb.box(0, B.roof[2] + 0.08, B.roof[1] - 0.25, 0.4, 0.08, 0.28, carbon); // roof vent
     }
-    if (L.spoiler !== 'none' && P.aero === 'none' && !B.rallyKit && !B.bed) {
+    const SK = G.Parts.skinFor(carId, L.skin);
+    if (L.spoiler !== 'none' && P.aero === 'none' && !B.rallyKit && !B.bed && !(SK && SK.wing)) {
+      // Sit it on the BODY, not on B.trunkY - that number is the top of the
+      // tailgate, which on a hatchback or a kei van is most of a metre above
+      // the bodywork at the very back, so the spoiler hung in mid-air (43 cm
+      // clear on the hatch, 58 cm on the kei). A hatchback's spoiler belongs
+      // at the trailing edge of the ROOF; a boot-lid car's on the deck. And
+      // take the width from the car it is bolted to rather than a constant.
+      const hatchy = !!B.roof && ty - secAt(B, tz).yt > 0.18;
+      const spZ = hatchy ? B.roof[0] + 0.05 : tz;
+      const spS = secAt(B, spZ);
+      const spY = hatchy ? B.roof[2] : spS.yt;
+      const spW = Math.max(0.45, spS.wt - 0.04); // half-width of the deck there
       if (L.spoiler === 'duck') {
-        gb.box(0, ty + 0.05, tz - 0.08, rS.wt * 2 - 0.1, 0.06, 0.2, body, 0);
-        gb.beam([-(rS.wt - 0.06), ty + 0.08, tz - 0.16], [rS.wt - 0.06, ty + 0.08, tz - 0.16], 0.05, 0.1, body);
+        gb.box(0, spY + 0.03, spZ - 0.06, spW * 2, 0.05, 0.19, body, 0);
+        gb.beam([-spW, spY + 0.07, spZ - 0.13], [spW, spY + 0.07, spZ - 0.13], 0.05, 0.11, body);
       } else if (L.spoiler === 'whale') {
-        gb.box(0, ty + 0.1, tz - 0.05, 1.5, 0.05, 0.5, body);
-        gb.box(0, ty + 0.16, tz - 0.3, 1.5, 0.12, 0.04, black);
-        for (const sx of [-0.75, 0.75]) gb.box(sx, ty + 0.12, tz - 0.05, 0.04, 0.1, 0.5, black);
+        gb.box(0, spY + 0.06, spZ - 0.04, spW * 2, 0.05, 0.46, body);
+        gb.box(0, spY + 0.13, spZ - 0.26, spW * 2, 0.12, 0.04, black);
+        for (const sx of [-1, 1]) gb.box(sx * (spW - 0.03), spY + 0.09, spZ - 0.04, 0.04, 0.1, 0.46, black);
       } else if (L.spoiler === 'roof' && B.roof) {
         const [rz0, , ryy] = B.roof;
         gb.box(0, ryy + 0.04, rz0 - 0.1, cab[1].wt * 2 + 0.05, 0.04, 0.34, L.livery === 'none' ? body : acc);
       }
     }
+    // ---- v5.3 SKINS -------------------------------------------------------
+    // Cosmetic alternate identities. They keep the car's silhouette (the
+    // muscle body IS a fastback, the roadster body IS a small drop-top) and
+    // add the things you actually recognise a car by.
+    if (SK && SK.id === 'gtd') {
+      const tS = secAt(B, tz);
+      // Swan-neck wing: two uprights off the deck, the blade hung UNDER their
+      // tops rather than sitting on posts - that is the detail that reads.
+      const wy = tS.yt + 0.62, wz = tz - 0.12, ww = Math.max(0.78, tS.wt + 0.1);
+      for (const sx of [-1, 1]) {
+        gb.beam([sx * (ww - 0.16), tS.yt - 0.02, wz + 0.3], [sx * (ww - 0.16), wy, wz + 0.04], 0.07, 0.11, black);
+        gb.box(sx * (ww - 0.16), wy - 0.03, wz - 0.04, 0.08, 0.06, 0.2, black); // swan neck, over the top
+      }
+      gb.box(0, wy - 0.07, wz - 0.06, ww * 2, 0.05, 0.42, carbon, 0);
+      gb.box(0, wy - 0.02, wz - 0.26, ww * 2, 0.1, 0.03, carbon); // gurney
+      for (const sx of [-1, 1]) gb.box(sx * ww, wy - 0.05, wz - 0.06, 0.03, 0.17, 0.42, black); // end plates
+      // Louvred bonnet: slats across the top, the GTD's clearest signature
+      // from any angle that matters in this game.
+      const [hz0, hz1v] = B.hood;
+      for (let i = 0; i < 4; i++) {
+        const z = hz0 + 0.34 + i * 0.19;
+        topBox(0, z, 0.86, 0.1, 0.035, black);
+      }
+      // front fender vents and rear quarter vents
+      for (const sx of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          const zc = B.wheelZ[0] - 0.42 - i * 0.12, fsS = secAt(B, zc);
+          gb.box(sx * (surfX(fsS, fsS.ym) + 0.01), fsS.ym + 0.06, zc, 0.03, 0.12, 0.1, black);
+        }
+        for (let i = 0; i < 3; i++) {
+          const zc = B.wheelZ[1] + 0.62 + i * 0.13, qS = secAt(B, zc);
+          gb.box(sx * (surfX(qS, qS.ym + 0.1) + 0.01), qS.ym + 0.14, zc, 0.03, 0.1, 0.09, black);
+        }
+      }
+      // Three-bar lamps at both ends. The stock tail block is already there
+      // and is what the brake lights animate, so the bars are cut into it with
+      // dark separators rather than replacing it - the lights still work.
+      for (const sx of [-1, 1]) {
+        for (const d of [-0.13, 0.13]) gb.box(sx * 0.56 + d, ry, rz + 0.035, 0.035, 0.14, 0.03, black);
+        gb.box(sx * 0.56, ry - 0.09, rz + 0.03, 0.44, 0.04, 0.03, black); // under-shadow
+      }
+      // and at the front: three slim bars set into a blunt, wide nose
+      for (const sx of [-1, 1]) {
+        for (let i = 0; i < 3; i++) gb.box(sx * 0.58, fS.ym + 0.16 + i * 0.055, fz - 0.02, 0.4, 0.028, 0.03, C(0xf2efe2));
+        gb.box(sx * 0.58, fS.ym + 0.215, fz - 0.045, 0.42, 0.2, 0.02, C(0x15171b)); // the lamp housing behind them
+      }
+      // the big lower grille
+      gb.box(0, fS.yb + 0.16, fz - 0.03, 1.12, 0.26, 0.05, C(0x101216));
+      for (let i = 0; i < 5; i++) gb.box(-0.44 + i * 0.22, fS.yb + 0.16, fz - 0.015, 0.04, 0.24, 0.02, black);
+
+      // splitter with end plates, and a proper diffuser
+      gb.box(0, fS.yb - 0.06, fz - 0.04, fS.wb * 2 + 0.22, 0.04, 0.34, carbon);
+      for (const sx of [-1, 1]) gb.box(sx * (fS.wb + 0.11), fS.yb + 0.02, fz - 0.04, 0.03, 0.14, 0.3, carbon);
+      gb.box(0, rS.yb + 0.01, rz + 0.14, rS.wb * 2 - 0.06, 0.09, 0.3, carbon);
+      for (const sx of [-0.42, -0.14, 0.14, 0.42]) gb.box(sx * (rS.wb * 2 - 0.1), rS.yb + 0.03, rz + 0.14, 0.03, 0.13, 0.3, black);
+    } else if (SK && SK.id === 'miata') {
+      // Pop-up headlamps, up. Nothing else about this car says it so loudly.
+      const hS = secAt(B, B.hood[1] - 0.34);
+      for (const sx of [-1, 1]) {
+        const x = sx * 0.42, z = B.hood[1] - 0.36, y = hS.yt + 0.07;
+        gb.box(x, y, z, 0.34, 0.13, 0.3, body); // the pod, flipped up
+        gb.box(x, y + 0.005, z - 0.15, 0.27, 0.1, 0.03, C(0xf6f4e8)); // lens, facing forward
+        gb.box(x, y - 0.075, z + 0.07, 0.33, 0.03, 0.26, dark); // the shut line it hinges on
+      }
+      // oval intake under the nose
+      gb.box(0, fS.yb + 0.09, fz - 0.03, 0.66, 0.15, 0.06, black);
+      gb.box(0, fS.yb + 0.09, fz - 0.05, 0.56, 0.11, 0.03, C(0x101216));
+      // twin roll hoops behind the seats
+      const cS = secAt(B, -0.5);
+      for (const sx of [-1, 1]) {
+        gb.beam([sx * 0.34, cS.yt + 0.02, -0.52], [sx * 0.34, cS.yt + 0.3, -0.52], 0.05, 0.05, C(0x9aa3ad));
+        gb.box(sx * 0.34, cS.yt + 0.3, -0.52, 0.16, 0.05, 0.06, C(0x9aa3ad));
+      }
+      // Small round lamps at the tail, and a chrome bumper strip - the stock
+      // tail block stays underneath so the brake lights still animate.
+      for (const sx of [-1, 1]) {
+        gb.box(sx * 0.5, ry + 0.01, rz + 0.035, 0.2, 0.16, 0.03, C(0xc0392b));
+        gb.box(sx * 0.5, ry + 0.06, rz + 0.045, 0.14, 0.05, 0.02, C(0xffb36b)); // indicator segment
+        gb.box(sx * 0.68, ry + 0.01, rz + 0.03, 0.1, 0.12, 0.03, C(0xf2efe2)); // reverse lamp
+      }
+      gb.box(0, rS.yb + 0.22, rz + 0.02, rS.wb * 2 - 0.1, 0.07, 0.04, C(0xb9c0c8)); // rear bumper strip
+      gb.box(0, fS.yb + 0.24, fz - 0.02, fS.wb * 2 - 0.12, 0.07, 0.04, C(0xb9c0c8)); // front bumper strip
+      // the little indicator pods either side of the grille
+      for (const sx of [-1, 1]) gb.box(sx * 0.46, fS.yb + 0.17, fz - 0.03, 0.18, 0.07, 0.04, C(0xffb36b));
+
+      // small round side repeaters, and a chrome strip along the flank
+      for (const sx of [-1, 1]) {
+        const mz = B.wheelZ[0] - 0.55, mS = secAt(B, mz);
+        gb.box(sx * (surfX(mS, mS.ym) + 0.012), mS.ym + 0.02, mz, 0.02, 0.07, 0.07, C(0xff9a3c));
+      }
+    }
+
     if (B.rallyKit) {
       // v5 Group B: roof scoop, a tall rear wing (unless an aero part replaces
       // it), mud flaps, a four-lamp pod and box flares over every wheel
@@ -958,7 +1167,7 @@
     for (let i = 0; i < 4; i++) cgb.box(xs[i] + Math.sign(xs[i]) * 0.02, WR + 0.12 * wk, zs[i] - 0.07 * wk, 0.07, 0.15 * wk, 0.13 * wk, bcol);
     const calMesh = new THREE.Mesh(cgb.geometry(), mat);
     tilt.add(calMesh);
-    const exhaust = exXs.map((x) => [x, exY + rideH, rz - 0.18]);
+    const exhaust = exOut ? exOut.map((e) => [e[0], e[1] + rideH, e[2]]) : exXs.map((x) => [x, exY + rideH, rz - 0.18]);
     return {
       root, tilt, pivot, body: bodyMesh, wheels, wheelMesh, wheelDummy, calMesh, carId, color: paint, wheelR: WR,
       exhaust,

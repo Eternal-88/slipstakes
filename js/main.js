@@ -7,6 +7,7 @@
 // Debug URL params: ?track=harbour&car=vandal&bots=3&auto=1&parts=aero:a3,induction:t2   ?garage=1
 'use strict';
 (function (G) {
+  const SKIN_KEY = 'ss.skins'; // granted skins: an entitlement, not session progress
   const U = G.U, P = G.Physics;
 
   const ATTRACT_BUILDS = [{}, { aero: 'a2', induction: 't1' }, { aero: 'a3', width: 'wide', suspension: 'race' }, { induction: 'sc', suspension: 'rally', width: 'narrow' }, { induction: 't2', weight: 'w2' }, {}];
@@ -150,6 +151,43 @@
       const me = this.host.player('me');
       return me ? me.carId : 'vandal';
     },
+    // Skins the maintainer has granted this device. Kept OUTSIDE the session
+    // (it is an entitlement, not progress - money and parts still start fresh
+    // every time) and never bought, shown or hinted at until there is one.
+    // The signed grants this device holds, and the plain ids for the UI.
+    myGrants() {
+      const v = U.store.get(SKIN_KEY, null);
+      return Array.isArray(v) ? v.filter((t) => t && G.Parts.SKINS[t.id]) : [];
+    },
+    mySkins() {
+      return this.myGrants().map((t) => t.id);
+    },
+    grantSkin(id, take, tok) {
+      if (!G.Parts.SKINS[id]) return false;
+      const have = this.myGrants().filter((t) => t.id !== id);
+      if (!take && tok) have.push(tok);
+      U.store.set(SKIN_KEY, have);
+      const apply = (g) => {
+        if (!g) return;
+        g.skins = have.map((t) => t.id);
+        if (take && g.look.skin === id) g.look.skin = 'none';
+      };
+      const me = this.host.player('me');
+      if (me) {
+        apply(me.garage);
+        this.host.touch();
+      }
+      // ...and on the live session, whether we host it or are a guest in it
+      const S = G.Game.session;
+      if (S && G.Game.myPid) {
+        const sp = S.player(G.Game.myPid);
+        if (sp) {
+          apply(sp.garage);
+          S.touch();
+        }
+      }
+      return true;
+    },
 
     // Extra menu buttons for multiplayer (rendered by menu.js).
     menuButtons() {
@@ -207,7 +245,13 @@
       }
       const a = this.acc / P.DT;
       for (const c of sim.cars) this.world.updateCar(c.id, sim.renderState(c, a), dt);
-      this.world.follow(sim.renderState(sim.cars[this.attractFocus], a), dt, { pitch: 44, dist: 24 });
+      // Pass no override when the player has picked the TV cameras (or the
+      // bonnet), or we would be overruling the camera they chose - that is
+      // why the TV cameras did nothing while you sat a race out or watched
+      // the betting board.
+      const cm = this.world.cam.mode;
+      const free = cm === 'tv' || cm === 'low';
+      this.world.follow(sim.renderState(sim.cars[this.attractFocus], a), dt, free ? null : { pitch: 44, dist: 24 });
     },
 
     // -------------------------------------------------------------- garage

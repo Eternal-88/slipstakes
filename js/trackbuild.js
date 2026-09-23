@@ -643,6 +643,99 @@
 
   G.SURF = SURF;
   G.SI = SI;
+  // Draw a track's layout into a canvas: the shape, the surfaces that are
+  // not tarmac, which way round it goes, the start line, and the pit lane.
+  // (The HUD's minimap keeps its own copy of this - it caches an offscreen
+  // bitmap and has to map car positions into it every frame, which this does
+  // not need to do.)
+  function drawLayout(cv, track, opt) {
+    if (!cv || !track) return;
+    const o = opt || {};
+    const ctx = cv.getContext('2d');
+    const k = Math.min(2, window.devicePixelRatio || 1);
+    const W = cv.clientWidth || cv.width, H = cv.clientHeight || cv.height;
+    cv.width = Math.round(W * k);
+    cv.height = Math.round(H * k);
+    ctx.setTransform(k, 0, 0, k, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const b = track.bounds, pad = o.pad == null ? 16 : o.pad;
+    const s = Math.min((W - pad * 2) / (b.x1 - b.x0 || 1), (H - pad * 2) / (b.z1 - b.z0 || 1));
+    // World +X is drawn to the LEFT, to match the camera and the minimap.
+    const px = (x) => W / 2 - (x - b.cx) * s;
+    const pz = (z) => H / 2 - (z - b.cz) * s;
+    const line = (w, col, cap) => {
+      ctx.beginPath();
+      for (let i = 0; i < track.N; i++) {
+        const x = px(track.X[i]), y = pz(track.Z[i]);
+        i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      if (track.closed) ctx.closePath();
+      ctx.lineWidth = w;
+      ctx.strokeStyle = col;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = cap || 'round';
+      ctx.stroke();
+    };
+    line(o.thick == null ? 11 : o.thick, 'rgba(0,0,0,0.45)');
+    line((o.thick == null ? 11 : o.thick) - 4, o.road || '#e9edf5');
+    // the bits that are not tarmac
+    for (let i = 0; i < track.N - 1; i++) {
+      const sf = G.SURF[track.S[i]];
+      if (!sf.loose && !sf.wet) continue;
+      ctx.beginPath();
+      ctx.moveTo(px(track.X[i]), pz(track.Z[i]));
+      ctx.lineTo(px(track.X[i + 1]), pz(track.Z[i + 1]));
+      ctx.lineWidth = (o.thick == null ? 11 : o.thick) - 4;
+      ctx.strokeStyle = sf.wet ? 'rgba(80,170,255,0.85)' : 'rgba(214,176,106,0.95)';
+      ctx.lineCap = 'butt';
+      ctx.stroke();
+    }
+    // pit lane, if this circuit has one
+    const pit = track.def && track.def.pit;
+    if (pit) {
+      const i = track.idx(Math.round((pit.at || 0) / track.sp));
+      const hl = ((pit.len || 60) / 2) / track.sp;
+      const side = pit.side || -1;
+      ctx.beginPath();
+      for (let d = -hl; d <= hl; d++) {
+        const j = track.idx(i + Math.round(d));
+        const lat = side * (track.W[j] + 5);
+        const x = px(track.X[j] + track.NX[j] * lat), y = pz(track.Z[j] + track.NZ[j] * lat);
+        d === -hl ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.lineWidth = 3.5;
+      ctx.strokeStyle = 'rgba(255,196,0,0.95)';
+      ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+    // start line, and an arrow just past it for the direction of travel
+    const si = track.idx(Math.round((track.startDist || 0) / track.sp));
+    const sx = px(track.X[si]), sy = pz(track.Z[si]);
+    const nx = -track.NX[si], nz = track.NZ[si];
+    const hw = (track.W[si] + 1) * s;
+    ctx.beginPath();
+    ctx.moveTo(sx - nx * hw, sy - nz * hw);
+    ctx.lineTo(sx + nx * hw, sy + nz * hw);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#111';
+    ctx.stroke();
+    const ai = track.idx(si + Math.round(28 / track.sp));
+    const ax = px(track.X[ai]), ay = pz(track.Z[ai]);
+    const ang = Math.atan2(ay - sy, ax - sx);
+    ctx.save();
+    ctx.translate(ax, ay);
+    ctx.rotate(ang);
+    ctx.beginPath();
+    ctx.moveTo(7, 0);
+    ctx.lineTo(-4, 4.5);
+    ctx.lineTo(-4, -4.5);
+    ctx.closePath();
+    ctx.fillStyle = '#e8322b';
+    ctx.fill();
+    ctx.restore();
+  }
+  G.drawLayout = drawLayout;
+
   G.Track = Track;
   G.trackCache = {};
   G.getTrack = (id) => G.trackCache[id] || (G.trackCache[id] = new Track(G.TrackDefs.byId(id)));

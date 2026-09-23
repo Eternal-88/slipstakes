@@ -29,7 +29,13 @@
     GAIN_CAP: 450,
     STIPEND: 220, // two poorest racers (by net worth) each race, if 4+ racers
     GROWTH: 0.085, // purses grow 8.5% per race
-    BET_MIN: 50, BET_MAX: 700, BET_TOTAL: 1400,
+    // v5.3: stakes and odds both come down. What matters is the PAYOUT next
+    // to what a race pays: a win is 1,800 early on, so a best-case betting
+    // race is now about 3,600 instead of 42,000.
+    BET_MIN: 50, BET_MAX: 400, BET_TOTAL: 800,
+    ODDS_MAX: 9, ODDS_MAX_POD: 4, // was 30x and 12x
+    ODDS_SELF: 4.5, // backing yourself: you know things the book does not
+    P_FLOOR: 0.05, P_FLOOR_POD: 0.09, // never price off Monte-Carlo noise
     SIDE_MIN: 100, SIDE_MAX: 700,
     MARGIN: 0.12, // bookmaker margin on odds
     FLOOR: Parts.BASIC_REPAIR,
@@ -106,11 +112,11 @@
     }
     const out = {};
     racers.forEach((p, i) => {
-      const pw = Math.max(win[i] / N, 0.01), pp = Math.max(pod[i] / N, 0.02);
+      const pw = Math.max(win[i] / N, E.P_FLOOR), pp = Math.max(pod[i] / N, E.P_FLOOR_POD);
       out[p.id] = {
         pWin: +pw.toFixed(3), pPod: +pp.toFixed(3),
-        win: +U.clamp((1 - E.MARGIN) / pw, 1.1, 30).toFixed(2),
-        podium: k > 3 ? +U.clamp((1 - E.MARGIN) / pp, 1.05, 12).toFixed(2) : null,
+        win: +U.clamp((1 - E.MARGIN) / pw, 1.1, E.ODDS_MAX).toFixed(2),
+        podium: k > 3 ? +U.clamp((1 - E.MARGIN) / pp, 1.05, E.ODDS_MAX_POD).toFixed(2) : null,
         score: +perfScore(p.carId, p.garage.installed, p.garage.wear, track, p.garage.tune).toFixed(1),
         form: p.stats.form.slice(),
       };
@@ -180,8 +186,11 @@
     const r = this.player(m.racer);
     if (!o || !r) return;
     const type = m.type === 'podium' ? 'podium' : 'win';
-    const odds = type === 'win' ? o.win : o.podium;
+    let odds = type === 'win' ? o.win : o.podium;
     if (!odds) return this.toast(p.id, 'No podium bets with 3 or fewer racers.', 'bad');
+    // Backing yourself is priced shorter: the book only sees your car and your
+    // recent results, and you know how quick you actually are.
+    if (m.racer === p.id) odds = Math.min(odds, E.ODDS_SELF);
     const stake = Math.round(+m.stake);
     if (!(stake >= E.BET_MIN && stake <= E.BET_MAX)) return this.toast(p.id, `Bets are ${U.fmtMoney(E.BET_MIN)}–${U.fmtMoney(E.BET_MAX)}.`, 'bad');
     const mine = st.bets.filter((b) => b.pid === p.id).reduce((a, b) => a + b.stake, 0);

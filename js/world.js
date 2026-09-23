@@ -28,15 +28,20 @@
   }
 
   // Camera presets: [distance at rest, extra distance per m/s, pitch°, lookahead]
+  // [distance, extra distance per m/s, pitch in degrees above the car, how
+  // far the focus leads the car along its velocity]. A LOWER pitch sits the
+  // camera nearer the road, which shows more of what is coming and less of
+  // the bodywork - that is the whole point of `low`.
   const CAMS = {
     follow: [31, 0.28, 56, 0.42],
     near: [21, 0.19, 49, 0.34],
+    low: [17, 0.14, 14, 0.62], // v5.3: close and down near the road, so you see over the car into the corner
     far: [43, 0.3, 61, 0.46],
     fixed: [33, 0.28, 58, 0.42],
     tv: [43, 0.3, 61, 0.46], // v5: trackside TV cameras (see _tvCam)
   };
-  const CAM_ORDER = ['follow', 'near', 'far', 'fixed', 'tv'];
-  const CAM_NAMES = { follow: 'Chase', near: 'Close chase', far: 'High chase', fixed: 'Fixed north', tv: 'TV cameras' };
+  const CAM_ORDER = ['follow', 'near', 'low', 'far', 'fixed', 'tv'];
+  const CAM_NAMES = { follow: 'Chase', near: 'Close chase', low: 'Low chase', far: 'High chase', fixed: 'Fixed north', tv: 'TV cameras' };
   // Particle colours emitted every frame, made once (v4.5: a new array per
   // particle was needless garbage for the collector)
   const RGB = { head: [1, 0.93, 0.75], sand: [0.85, 0.72, 0.5], dirt: [0.52, 0.36, 0.22], mud: [0.3, 0.2, 0.1], nos: [0.25, 0.5, 1], nosSpark: [0.3, 0.8, 1], pad: [0.2, 0.7, 1], smoke: [0.22, 0.22, 0.24], tail: [1, 0.1, 0.05] };

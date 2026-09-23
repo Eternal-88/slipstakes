@@ -4,6 +4,10 @@
 // dare to corner.
 'use strict';
 (function (G) {
+  // How much room a bot leaves a car it is running alongside, in metres from
+  // centre to centre. Cars are 1.76-2.02 m wide, so this is a hand's width of
+  // daylight rather than a polite gap - they still race each other hard.
+  const SIDE_ROOM = 2.05;
   const U = G.U;
   // v4.4: 40 names (was 8). BotKit (below) shuffles them per session.
   const NAMES = [
@@ -91,6 +95,9 @@
       let dodge = 0;
       let tow = null; // lateral offset of a car 14-32 m ahead to tuck in behind
       let behind = false; // a faster car closing on us from right behind
+      // v5.3 side awareness: the furthest we may move each way without leaning
+      // on somebody who is already there, as an offset from our own lane.
+      let capL = Infinity, capR = -Infinity;
       const fx = Math.sin(st.h), fz = Math.cos(st.h);
       if (others) {
         if (this.rival && track.format !== 'drag') this._rival(st, others, speed, fx, fz, dt);
@@ -101,6 +108,19 @@
           const side = dx * fz - dz * fx; // + = to the left
           if (ahead < 0 && ahead > -12 && Math.abs(side) < 4 && (o.vx * fx + o.vz * fz) - speed > 0.8) behind = true;
           if (this.hunt && this.hunt.st === o) continue; // the one we're after: no dodging, no braking for it
+          // ALONGSIDE: leave them room. Anything from half a car behind to
+          // half a car ahead of us is racing us, not something to drive
+          // through, so cap the lane we are allowed to ask for on that side.
+          if (ahead > -5.5 && ahead < 5.5 && Math.abs(side) < 4.5) {
+            // A narrow street cannot give six cars a full car's width each,
+            // and demanding it just made them fight the racing line instead
+            // of each other. Measured over 40 races: asking for what the road
+            // can actually give left more gentle rubbing but cut spins by
+            // three quarters, which is the part that looks bad.
+            const room = Math.min(SIDE_ROOM, q.hw * 0.55);
+            if (side > 0) capL = Math.min(capL, side - room);
+            else capR = Math.max(capR, side + room);
+          }
           if (ahead > 0 && ahead < 14 && Math.abs(side) < 2.6) dodge += side > 0 ? -1.8 : 1.8;
           else if (tow == null && ahead >= 14 && ahead < 32 && Math.abs(side) < 4) tow = side;
           // v4: don't rear-end it. A slower car right in our path caps our
@@ -129,6 +149,12 @@
       // out and slingshot past once within 14 m — that's how packs form.
       let laneT = base + dodge;
       if (tow != null && !dodge) laneT = U.lerp(laneT, q.lat + tow, 0.65);
+      // ...and then never ask for a lane somebody is already using. A rival
+      // hunting a target is exempt: leaning on people is its whole job.
+      if (!this.hunt) {
+        if (capL < Infinity) laneT = Math.min(laneT, q.lat + capL);
+        if (capR > -Infinity) laneT = Math.max(laneT, q.lat + capR);
+      }
       if (this.hunt) {
         // rival: aim for the target's rear corner on our side
         const o = this.hunt.st, dx = o.x - st.x, dz = o.z - st.z;

@@ -12,7 +12,7 @@
       const tr = sim.track;
       const order = sim.order();
       const raceTime = sim.raceStartT != null ? sim.t - sim.raceStartT : 0;
-      const cars = sim.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, carId: c.carId, parts: c.parts, rs: sim.renderState(c, alpha), dist: c.raceDist }));
+      const cars = sim.cars.map((c) => ({ id: c.id, name: c.name, color: c.color, carId: c.carId, parts: c.parts, look: c.entrant && c.entrant.look, rs: sim.renderState(c, alpha), dist: c.raceDist }));
       const mc = sim.byId[meId];
       let me = null;
       if (mc) {
@@ -21,7 +21,7 @@
         if (tr.closed) curMs = mc.lapStartT != null && !mc.finished ? (sim.t - mc.lapStartT) * 1000 : mc.finished ? mc.finishMs : raceTime * 1000;
         else curMs = mc.finished ? mc.finishMs : mc.lapStartT === -1 ? mc.lastLap : raceTime * 1000;
         me = {
-          id: mc.id, pos, lapCount: mc.lapCount, curMs, lastLap: mc.lastLap, bestLap: mc.bestLap, carId: mc.carId, parts: mc.parts,
+          id: mc.id, pos, lapCount: mc.lapCount, curMs, lastLap: mc.lastLap, bestLap: mc.bestLap, carId: mc.carId, parts: mc.parts, look: mc.entrant && mc.entrant.look,
           rs: cars.find((c) => c.id === meId).rs, hasBoost: mc.spec.boostKind !== 'none', hasNos: !!mc.spec.nosGain, coldBrakes: (mc.spec.bCold || 1) < 0.9, wrong: mc.wrongT > 1.2, finished: mc.finished,
           // v5.1 cluster: the rev scale, and the boost dial's own numbers
           ev: !!mc.spec.ev, boostGain: mc.spec.boostGain, redline: mc.spec.redline,

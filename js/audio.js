@@ -74,16 +74,63 @@
   //   weight  : stripped cars lose their sound deadening (engine + road louder)
   //   gearing : a sequential box has straight-cut gear whine
   //   aero    : wings roar in the wind; brakes: race pads squeal near a stop
-  function modSound(parts) {
+  // v5.3: the exhaust amplifies what the ENGINE already is, instead of the
+  // same flat multiplier on every car. A straight pipe on the V8 gets rumble
+  // and lope because the V8 has rumble and lope to give (prof.sub, prof.lope);
+  // on the kei triple the same pipe gets rasp and buzz, because that is what a
+  // three-cylinder has. So "should every car burble on a straight pipe?" -
+  // no, and now they don't.
+  // `look` carries the free sound tuning (tone / overrun / BOV / idle /
+  // limiter). It never touches physics.
+  function modSound(parts, carId, look) {
     const p = Object.assign({}, G.Parts.STOCK, parts || {});
+    // Enforce the hardware gate HERE rather than trusting the garage: a look
+    // can be set and the parts changed afterwards, and this is the one place
+    // the noise is actually decided, so a bang tune with a stock silencer
+    // cannot sneak through whatever route it took to get here.
+    const L = {};
+    for (const k of G.Parts.SOUND_KEYS) {
+      const v = (look || {})[k];
+      L[k] = v && G.Parts.soundAllowed(k, v, carId, p) ? v : undefined;
+    }
+    const prof = PROFILES[carId] || PROFILES.vandal;
     const ex = { stock: { loud: 1, rasp: 0.8, q: 1.2, cut: 0.85, drone: 0, sub: 1, lope: 1 }, sport: { loud: 1.15, rasp: 1.25, q: 2.2, cut: 1, drone: 0.35, sub: 1.1, lope: 1.1 }, straight: { loud: 1.4, rasp: 1.8, q: 3.2, cut: 1.15, drone: 0.2, sub: 1.3, lope: 1.35 } }[p.exhaust] || { loud: 1, rasp: 1, q: 1.6, cut: 1, drone: 0, sub: 1, lope: 1 };
     const ecu = p.ecu === 'stage2' ? 1.18 : p.ecu === 'stage1' ? 1.08 : 1;
     const strip = { w1: 1.08, w2: 1.15, w3: 1.22 }[p.weight] || 1;
+    // How much of the pipe's gain lands as BASS and how much as RASP depends on
+    // the engine: few big cylinders (prof.sub high) rumble, many small ones
+    // (prof.grit / few sub) rasp. `bias` is 0 = rumbly .. 1 = raspy.
+    const bias = U.clamp(1 - (prof.sub || 0.3) * 0.7, 0.15, 0.95);
+    const gain = ex.sub - 1; // what the pipe adds over stock
+    let sub = 1 + gain * (1 - bias) * 2.0;
+    let rasp = ex.rasp * ecu * (1 + gain * bias * 1.6);
+    let lope = ex.lope * (1 + (prof.lope || 0) * 1.2);
+    let loud = ex.loud * strip;
+    let drone = ex.drone;
+    // ---- sound tuning (free, cosmetic)
+    if (L.tone === 'deep') { sub *= 1.5; rasp *= 0.7; drone += 0.2; }
+    else if (L.tone === 'rasp') { rasp *= 1.55; sub *= 0.75; }
+    else if (L.tone === 'loud') { loud *= 1.3; rasp *= 1.15; sub *= 1.15; }
+
+    let pops = Math.max(G.Parts.opt('exhaust', p.exhaust).pops || 0, p.ecu === 'stage2' ? 0.5 : 0);
+    let bang = 0, burble = 0, crackle = 0;
+    // A crackle tune is a DENSER, longer burst of small cracks, not simply
+    // "more pops" - as a level it did nothing at all on a straight pipe,
+    // which already pops as hard as the scale goes.
+    if (L.over === 'crackle') { pops = Math.max(pops, 0.8); crackle = 1; }
+    else if (L.over === 'bangs') { pops = Math.max(pops, 1); bang = 1; }
+    else if (L.over === 'burble') { pops = Math.max(pops, 0.55); burble = 1; }
+    else if (L.over === 'quiet') pops = 0;
+    // Lope as an ABSOLUTE depth, not a multiplier: a smooth engine has
+    // prof.lope 0, and anything times zero is zero - so a lopey-cam idle did
+    // nothing at all on the roadster, the mid-engine car or the EV.
+    const lopeAbs = (prof.lope || 0) * lope + (L.idle === 'lope' ? 0.26 : 0);
     return {
-      loud: ex.loud * strip, rasp: ex.rasp * ecu, q: ex.q, cut: ex.cut, drone: ex.drone, sub: ex.sub, lope: ex.lope,
+      loud, rasp, q: ex.q, cut: ex.cut, drone, sub, lope, lopeAbs,
       road: { w1: 1.3, w2: 1.6, w3: 2 }[p.weight] || 1,
-      pops: Math.max(G.Parts.opt('exhaust', p.exhaust).pops || 0, p.ecu === 'stage2' ? 0.5 : 0),
-      limHard: p.ecu === 'stage2', // harsher limiter bounce
+      pops, bang, burble, crackle,
+      bov: L.bov || 'stock',
+      limHard: L.lim === 'hard' || p.ecu === 'stage2', // harsher limiter bounce
       whine: p.gearing === 'seq' ? 0.014 : p.gearing === 'short' ? 0.006 : 0,
       wind: p.aero === 'a3' ? 1.7 : p.aero === 'a2' ? 1.35 : 1,
       squeal: p.brakes === 'carbon' ? 0.05 : p.brakes === 'sport' ? 0.03 : 0,
@@ -103,6 +150,7 @@
   }
 
   const Audio = {
+    modSound, // pure: tools/audit.js checks every sound option changes something
     enabled: false,
     ctx: null,
     eng: null,
@@ -491,11 +539,13 @@
       // the build's sound profile, redone only when the build changes (v4.5:
       // it was rebuilt from scratch every frame — needless garbage)
       const mp = meta.parts || G.Parts.STOCK;
-      const sig = mp.exhaust + '|' + mp.ecu + '|' + mp.weight + '|' + mp.gearing + '|' + mp.aero + '|' + mp.brakes + '|' + mp.compound + '|' + mp.suspension + '|' + mp.induction;
+      const lk = meta.look || {};
+      const sig = mp.exhaust + '|' + mp.ecu + '|' + mp.weight + '|' + mp.gearing + '|' + mp.aero + '|' + mp.brakes + '|' + mp.compound + '|' + mp.suspension + '|' + mp.induction
+        + '|' + meta.carId + '|' + lk.tone + lk.over + lk.bov + lk.idle + lk.lim;
       if (this._pSig !== sig) {
         this._pSig = sig;
         const p = Object.assign({}, G.Parts.STOCK, meta.parts || {});
-        this._pk = { parts: p, ms: modSound(p), kind: G.Parts.opt('induction', p.induction).kind };
+        this._pk = { parts: p, ms: modSound(p, meta.carId, lk), kind: G.Parts.opt('induction', p.induction).kind };
       }
       const parts = this._pk.parts, ms = this._pk.ms;
       this._ms = ms;
@@ -529,7 +579,7 @@
       // v4.5 combustion rasp (see _startEngine): gritty under load, a softer
       // burble on the overrun; stronger for rougher engines and freer pipes
       const grit = prof.ev ? 0 : Math.min(1.6, (prof.grit == null ? 1 : prof.grit) * ms.rasp); // (v5: an EV has no combustion to rasp)
-      const rl = (0.14 + thr * 0.46 + (over ? 0.16 * ms.lope : 0)) * (0.4 + 0.6 * rpm) * grit;
+      const rl = (0.14 + thr * 0.46 + (over ? 0.16 * ms.lope + ms.lopeAbs * 0.5 : 0)) * (0.4 + 0.6 * rpm) * grit;
       e.cng.gain.setTargetAtTime(rl * 0.5, t, 0.04);
       e.amg.gain.setTargetAtTime(rl * 0.5, t, 0.04);
       e.am.frequency.setTargetAtTime(f0, t, 0.025);
@@ -564,7 +614,7 @@
         this._lastGear = rs.gear;
       }
       e.amp.gain.setTargetAtTime(g, t, 0.03);
-      e.lfoG.gain.setTargetAtTime(g * prof.lope * ms.lope, t, 0.05);
+      e.lfoG.gain.setTargetAtTime(g * ms.lopeAbs, t, 0.05);
       // Forced induction — deliberately different characters:
       //  supercharger: whine LOCKED to engine speed (it's belt-driven), there
       //                the instant you touch the throttle, no blow-off
@@ -599,14 +649,52 @@
       const scg = kind === 'sc' ? (0.01 + thr * 0.036) * (0.3 + 0.7 * rpm) * master : 0;
       e.swg.gain.setTargetAtTime(scg, t, 0.03);
       e.sw2g.gain.setTargetAtTime(scg * 0.5, t, 0.03);
-      if (kind === 'turbo' && this._lastBoost > 0.45 && b < 0.25) big ? this.flutter(master) : this.blowoff(master);
+      if (kind === 'turbo' && this._lastBoost > 0.45 && b < 0.25) this.bov(ms.bov, big, master);
       if (kind === 'sc' && this._lastThr > 0.6 && thr < 0.15 && rpm > 0.4) this.noiseHit(0.3, 1800, 0.05 * master, 'bandpass', 'sfx', 0, 600, 0.8);
       this._lastBoost = b;
       // overrun crackle (free-flowing exhausts), backfire pops on shifts
       const pops = ms.pops;
-      if (this._lastThr > 0.6 && thr < 0.15 && rpm > 0.5 && pops > 0) this.crackle(pops, master);
-      if (rs.backfire > 0 && !this._bf) this.pop(master);
+      const lifting = this._lastThr > 0.6 && thr < 0.15 && rpm > 0.5;
+      if (lifting && pops > 0) (ms.bang ? this.bangBurst(master) : this.crackle(pops, master, ms.crackle));
+      // SUSTAINED backfire (anti-lag keeps the flag up for as long as you are
+      // off the throttle) cracks repeatedly while it lasts. The old edge test
+      // gave a whole overrun of flames exactly one pop.
+      const now = performance.now();
+      if (rs.backfire > 0) {
+        if (!this._bf) this._bfT = 0;
+        // Anti-lag is combustion in the exhaust, so the RATE follows engine
+        // speed - a fast hard stutter up near the limiter, slowing to an
+        // uneven mutter as the revs fall - and no two shots are the same
+        // size. A fixed interval at one volume read as a machine, which is
+        // exactly what it sounded like.
+        const gap = 1000 / (4.5 + rpm * 11); // ~210 ms near idle, ~65 ms at the top
+        if (now - (this._bfT || 0) > gap * (0.55 + Math.random() * 0.9)) {
+          this._bfT = now;
+          const amp = master * (0.32 + Math.random() * 0.68) * (0.45 + rpm * 0.55);
+          if (Math.random() < 0.22 + rpm * 0.3) this.bang(amp);
+          else this.pop(amp * 1.15);
+        }
+      }
       this._bf = rs.backfire > 0;
+      // ...and it keeps banging for as long as you stay off it, not just on
+      // the instant you lifted. Sparser and softer than anti-lag, because
+      // this is unburnt fuel lighting off on its own rather than a system
+      // deliberately keeping the turbine hot.
+      if (ms.bang && !rs.backfire && thr < 0.12 && rpm > 0.32 && speed > 3) {
+        const gap = 1000 / (1.6 + rpm * 4.5); // ~300 ms near idle, ~165 ms up high
+        if (now - (this._bgT || 0) > gap * (0.6 + Math.random() * 1.1)) {
+          this._bgT = now;
+          const amp = master * (0.4 + Math.random() * 0.6) * (0.4 + rpm * 0.6);
+          if (Math.random() < 0.45) this.bang(amp);
+          else this.pop(amp * 1.2);
+        }
+      }
+      // Burble tune: a lopey, uneven mutter off the throttle at low revs -
+      // the one you hear at a junction, not under braking.
+      if (ms.burble && thr < 0.08 && rpm < 0.45 && speed > 1 && now - (this._buT || 0) > 210 + Math.random() * 190) {
+        this._buT = now;
+        this.pop(master * (0.22 + Math.random() * 0.2));
+      }
       this._lastThr = thr;
       this._env(rs, speed, master, t);
     },
@@ -776,7 +864,7 @@
         const pc = this._msCache || (this._msCache = new WeakMap());
         let oms = o.parts && pc.get(o.parts);
         if (!oms) {
-          oms = modSound(o.parts);
+          oms = modSound(o.parts, o.carId, o.look);
           if (o.parts) pc.set(o.parts, oms);
         }
         v.f.frequency.setTargetAtTime((320 + rpm * 1900 * prof.cut) * (0.8 + 0.2 * dop) * oms.cut, t, 0.05);
@@ -786,13 +874,24 @@
         const fall = 1 / (1 + d / 11);
         const vg = (0.035 + 0.06 * thr) * fall * oms.loud;
         v.g.gain.setTargetAtTime(vg, t, 0.06);
-        v.lfoG.gain.setTargetAtTime(vg * (prof.lope || 0) * oms.lope, t, 0.08);
+        v.lfoG.gain.setTargetAtTime(vg * oms.lopeAbs, t, 0.08);
         // straight pipes / race maps crackle as they lift past you
         // (at most every 0.7 s per car: a bot's throttle flickers, and each
         // lift used to fire another burst of pops)
         if (!prof.ev && oms.pops > 0.4 && v.lt > 0.5 && !rs.thr && fall > 0.2 && performance.now() - (v.crT || 0) > 700) {
           v.crT = performance.now();
-          this.crackle(oms.pops * 0.6, fall * 0.7);
+          if (oms.bang) this.bangBurst(fall * 0.8, 'others');
+          else this.crackle(oms.pops * 0.6, fall * 0.7, oms.crackle);
+        }
+        // their anti-lag, banging away as they come past
+        if (!prof.ev && rs.backfire > 0 && fall > 0.15) {
+          const gap = 1000 / (4 + rpm * 13); // as above, a touch sparser at a distance
+          if (performance.now() - (v.bfT || 0) > gap * (0.6 + Math.random() * 1.0)) {
+            v.bfT = performance.now();
+            const amp = fall * (0.4 + Math.random() * 0.6);
+            if (Math.random() < 0.3) this.bang(amp, 'others');
+            else this.pop(amp * 1.1, 'others');
+          }
         }
         v.lt = rs.thr ? 1 : 0;
         let slip = 0;
@@ -824,7 +923,7 @@
           if (v.w.type !== 'sine') v.w.type = 'sine';
           v.w.frequency.setTargetAtTime(((ind === 't2' ? 1100 : 1750) + bst * (ind === 't2' ? 2300 : 3100)) * (0.85 + 0.15 * rpm) * dop, t, 0.08);
           v.wg.gain.setTargetAtTime(bst * 0.024 * fall, t, 0.06);
-          if (v.lb > 0.45 && bst < 0.25 && fall > 0.15) ind === 't2' ? this.flutter(fall, 'others') : this.blowoff(fall, 'others');
+          if (v.lb > 0.45 && bst < 0.25 && fall > 0.15) this.bov(oms.bov, ind === 't2', fall, 'others');
         } else v.wg.gain.setTargetAtTime(0, t, 0.06);
         v.lb = bst;
         if (rs.backfire > 0 && !v.bf && fall > 0.12) this.pop(fall * 0.8, 'others');
@@ -836,7 +935,7 @@
     race(v, world, dt) {
       const me = v.me && !v.me.finished ? v.me : null;
       this._wetEnv = world.env ? world.env.wet || (world.track && world.track.theme.rain ? 1 : 0) : 0;
-      this.update(me ? me.rs : null, dt, me ? { carId: me.carId, parts: me.parts } : null);
+      this.update(me ? me.rs : null, dt, me ? { carId: me.carId, parts: me.parts, look: me.look } : null);
       this._fed = true;
       if (!this.ok()) return;
       if (!this.env) this._startEnv();
@@ -1087,20 +1186,24 @@
       this.noiseHit(0.07, 950, 0.34 * (m || 1), 'bandpass', bus || 'sfx', 0, 0, 1.2);
       this.tone(90, 0.06, 'square', 0.12 * (m || 1), 50, bus || 'sfx');
     },
-    crackle(amount, m) {
+    // `dense` (the crackle tune): more cracks, spread over longer, and
+    // quieter individually - a rattle rather than a handful of bangs.
+    crackle(amount, m, dense) {
       const now = performance.now();
       if (now - (this._crT || 0) < 150) return; // several cars lifting at once: one burst is plenty
       this._crT = now;
-      const n = 2 + Math.round(amount * 4);
+      const n = dense ? 7 + Math.round(amount * 9) : 2 + Math.round(amount * 4);
+      const span = dense ? 0.8 : 0.49;
       for (let i = 0; i < n; i++) {
-        const w = 0.04 + Math.random() * 0.45;
-        setTimeout(() => this.pop(0.35 + Math.random() * 0.5 * (m || 1)), w * 1000);
+        const w = 0.04 + Math.random() * span;
+        const a = dense ? 0.2 + Math.random() * 0.35 : 0.35 + Math.random() * 0.5;
+        setTimeout(() => this.pop(a * (m || 1)), w * 1000);
       }
     },
     // v4 garage "Listen": rev the engine with a given build for ~2.4 s —
     // idle blip, a pull to the limiter, then lift (so pops, blow-off and the
     // exhaust's character are all heard). Uses the real engine voice.
-    revDemo(carId, parts) {
+    revDemo(carId, parts, look) {
       if (!this.ok()) return false;
       clearInterval(this._demoT);
       if (!this.env) this._startEnv();
@@ -1122,9 +1225,10 @@
         const tgt = thr ? (s < 0.35 ? 0.55 : Math.min(1, 0.3 + (s - 0.7) * 0.75)) : 0.16;
         rs.rpm += (tgt - rs.rpm) * Math.min(1, dt * (thr ? 3.2 : 2.2));
         rs.thr = thr;
+        rs.backfire = !thr && s > 1.9 && rs.rpm > 0.3 ? 0.1 : 0; // overrun: let a bang/anti-lag tune be heard
         const bt = thr * G.Parts.boostAvail(spec, rs.rpm);
         rs.boost += (bt - rs.boost) * Math.min(1, dt / (bt > rs.boost ? spec.boostLag : 0.12));
-        this.update(rs, dt, { carId, parts, demo: true });
+        this.update(rs, dt, { carId, parts, look, demo: true });
       }, 30);
       return true;
     },
@@ -1146,6 +1250,40 @@
     },
     blowoff(m, bus) {
       this.noiseHit(0.38, 5200, 0.16 * (m || 1), 'highpass', bus || 'sfx', 0, 1400);
+    },
+    // v5.3 vented to atmosphere: shorter, sharper, much louder than a recirc
+    blowoffAtmo(m, bus) {
+      this.noiseHit(0.26, 4200, 0.34 * (m || 1), 'bandpass', bus || 'sfx', 0, 900, 1.8);
+      this.noiseHit(0.5, 6800, 0.15 * (m || 1), 'highpass', bus || 'sfx', 0.02, 2200);
+    },
+    // The valve a player picked, with the turbo's own character as the default.
+    bov(kind, big, m, bus) {
+      if (kind === 'atmo') return this.blowoffAtmo(m, bus);
+      if (kind === 'flutter') return this.flutter(m, bus);
+      return big ? this.flutter(m, bus) : this.blowoff(m, bus);
+    },
+    // v5.3 anti-lag / bang tune: a hard crack with real bottom end, not the
+    // little pop used for an overrun crackle. Three layers - the body of it,
+    // a low thump you feel, and a sharp transient on top so it cuts through
+    // the engine note rather than sitting under it.
+    bang(m, bus) {
+      const k = m || 1;
+      this.noiseHit(0.16, 520, 0.95 * k, 'bandpass', bus || 'sfx', 0, 0, 1.4);
+      this.tone(54, 0.15, 'square', 0.52 * k, 28, bus || 'sfx');
+      this.noiseHit(0.05, 3200, 0.42 * k, 'highpass', bus || 'sfx', 0, 1500);
+    },
+    // The bang-pop map on a lift: one hard crack, then a scatter of smaller
+    // ones chasing it down. A single bang was what made this option feel like
+    // nothing was fitted.
+    bangBurst(m, bus) {
+      const k = m || 1;
+      this.bang(k, bus);
+      const n = 3 + Math.floor(Math.random() * 4);
+      for (let i = 0; i < n; i++) {
+        const w = 0.06 + Math.random() * 0.55;
+        const hard = Math.random() < 0.4;
+        setTimeout(() => (hard ? this.bang(k * (0.45 + Math.random() * 0.4), bus) : this.pop(k * (0.5 + Math.random() * 0.5), bus)), w * 1000);
+      }
     },
     // big-turbo compressor surge: a fast falling "stu-tu-tu-tu"
     flutter(m, bus) {

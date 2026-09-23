@@ -52,7 +52,8 @@
       const carId = G.Parts.BASE_CARS.includes(mine) ? mine : 'vandal';
       const hp = s.addPlayer({ id: HOST_PID, name: name || 'Host', token: this.token, color: G.CarModel.PALETTE[0], carId });
       hp.garage.carId = hp.carId;
-      hp.garage.look = G.Parts.cleanLook(hp.garage.look, G.App.myLook() || {}); // your paint comes with you
+      hp.garage.skins = G.App.mySkins ? G.App.mySkins() : []; // granted skins come with you
+      hp.garage.look = G.Parts.cleanLook(hp.garage.look, G.App.myLook() || {}, hp.carId, hp.garage.skins); // your paint comes with you
       s.syncBots();
       await this._startHost(s, null);
     },
@@ -492,6 +493,10 @@
       });
       net.on('lost', (why) => this._lost(why));
       this.lost = null;
+      // Present any skins we were granted. They are signed, so this host can
+      // check them without being the one who handed them out.
+      const toks = G.App.myGrants ? G.App.myGrants() : [];
+      if (toks.length) setTimeout(() => G.Client.act({ t: 'skins', toks }), 400);
     },
 
     _onCtrl(m) {

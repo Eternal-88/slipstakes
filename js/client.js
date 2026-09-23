@@ -82,6 +82,12 @@
     }
     _msg(m) {
       if (m.t === 'toast' && G.UI) G.UI.toast(m.msg, m.kind);
+      // A skin granted (or withdrawn) by the maintainer. Remembered on this
+      // device: it is an entitlement, not session progress.
+      else if (m.t === 'skin' && G.App && G.App.grantSkin) {
+        G.App.grantSkin(m.id, !!m.take, m.tok);
+        if (m.take && G.UI) G.UI.toast('A skin was removed from your garage.', 'bad');
+      }
       this.emit('msg', m);
     }
   }

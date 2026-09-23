@@ -24,13 +24,15 @@
 //   * client link drop      -> client emits 'lost' and the game layer retries
 //                              the whole handshake every few seconds.
 //   * silent peers          -> both sides ping every second; the host drops a
-//                              client after 10 s of silence, clients declare
-//                              the host lost after 6 s.
+//                              client after SILENT_MS of silence; clients
+//                              declare the host lost after 6 s of silence THEY
+//                              WERE AWAKE FOR (see pump/tick - time with a
+//                              blocked main thread is not silence).
 'use strict';
 (function (G) {
   const U = G.U;
   const PREFIX = 'slipstakes-v1-';
-  const PROTO = 9; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup; 7: v4.4 private-room asks via the list, "room closed"; 8: v5 fuel/tyre/pit state in snapshots, stops, weather + endurance race info; 9: v5.1 car physics and parts changed, and the schedule says which races are endurance races)
+  const PROTO = 10; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup; 7: v4.4 private-room asks via the list, "room closed"; 8: v5 fuel/tyre/pit state in snapshots, stops, weather + endurance race info; 9: v5.1 car physics and parts changed, and the schedule says which races are endurance races; 10: v5.3 revCut joins the car's core state, so the full-state packet is a field longer)
   // ICE servers: how two devices find a path to each other.
   //  * STUN tells each device its public address so a direct path can be
   //    punched through both networks' routers.
@@ -62,6 +64,17 @@
     return true;
   };
   const JOIN_TIMEOUT = 22000; // client gives up (covers all three routes)
+  // A gap this long between ticks means the main thread was blocked, not that
+  // the other end went quiet. See pump() and tick().
+  const STALL_MS = 1200;
+  // How long a player can go quiet before the host gives their seat up. A
+  // blocked main thread sends no pings, so this is really "how slow a device
+  // are we willing to wait for". At 10 s, a Chromebook that took two long
+  // moments to build a track lost its seat mid-race and came back as a new
+  // joiner - that is the race-start disconnect loop from the host's end. A
+  // frozen player's car is driven by a stand-in bot meanwhile (hostrace.js),
+  // so waiting longer costs the race nothing.
+  const SILENT_MS = 20000;
 
   function peerAvailable() {
     return typeof window.Peer === 'function';
@@ -319,10 +332,23 @@
     // still being set up after 25 s. (It used to be 10 s from the first knock
     // for everyone, which killed slow handshakes before they could finish.)
     tick(now) {
+      // Same rule from the other end: a host that stalls (building its own
+      // track, a GC pause on a slow machine) has not been ignored by its
+      // players, it just wasn't running. Without this it dropped everyone's
+      // seat at the start of a race and they all came back as new joiners.
+      const gap = now - (this._tickT == null ? now : this._tickT);
+      this._tickT = now;
+      if (gap > STALL_MS) {
+        for (const L of this.links.values()) {
+          L.lastSeen += gap;
+          L.born += gap;
+        }
+        this.stalls = (this.stalls || 0) + 1;
+      }
       for (const L of Array.from(this.links.values())) {
         // (a joiner waiting for the host to accept them — private rooms —
         // keeps pinging, so it gets the same 10 s silence rule as a player)
-        if (L.pid || L.waiting ? now - L.lastSeen > 10000 : now - L.born > 25000) this._drop(L, 'timeout');
+        if (L.pid || L.waiting ? now - L.lastSeen > SILENT_MS : now - L.born > 25000) this._drop(L, 'timeout');
       }
       if (this.relay) this.relay.pump(now);
     }
@@ -521,6 +547,20 @@
     }
     pump(now) {
       if (this.relayJ) this.relayJ.pump(now);
+      // A big gap between pumps means OUR main thread was blocked - building a
+      // track takes seconds on a Chromebook - not that the host went quiet. We
+      // could not have heard anything while we were not running, so that time
+      // is not silence and must not count towards the timeout.
+      // This was the race-start disconnect loop: every race the client stalled
+      // building the track, declared the host lost, reconnected, was sent the
+      // state, built the track again, and stalled again. Meanwhile the host's
+      // own 10 s rule was dropping the seat from the other end.
+      const gap = now - (this._pumpT == null ? now : this._pumpT);
+      this._pumpT = now;
+      if (gap > STALL_MS) {
+        this.lastHeard += gap;
+        this.stalls = (this.stalls || 0) + 1;
+      }
       if (!this.open || now - this._lastPing < 1000) return;
       this._lastPing = now;
       this.sendCtrl({ t: 'ping', c: now, rtt: Math.round(this.rtt) });

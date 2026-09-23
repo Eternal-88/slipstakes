@@ -411,7 +411,7 @@
             h: U.lerpAngle(this.ph, st.h, a) + this.vis.h,
           });
         }
-        return { id: e.id, name: e.name, color: e.color, carId: e.carId, parts: e.parts, rs, dist: i === this.meIdx && this.snaps.length ? this.snaps[this.snaps.length - 1].c[i][16] : rs.raceDist || 0 };
+        return { id: e.id, name: e.name, color: e.color, carId: e.carId, parts: e.parts, look: e.look, rs, dist: i === this.meIdx && this.snaps.length ? this.snaps[this.snaps.length - 1].c[i][16] : rs.raceDist || 0 };
       });
       const slow = this.slow;
       const L = (i) => (slow && slow[i] ? slow[i] : { lapCount: 0, finished: false, dnf: false, finishMs: null, bestLap: null, lastLap: null, curMs: 0, wrong: false });
@@ -436,7 +436,7 @@
           id: this.meId, pos: order.findIndex((o) => o.i === this.meIdx) + 1, lapCount: s.lapCount,
           curMs: s.finished ? s.finishMs : s.curMs + since, lastLap: s.lastLap, bestLap: s.bestLap,
           rs: cars[this.meIdx].rs, hasBoost: this.spec.boostKind !== 'none', hasNos: !!this.spec.nosGain, coldBrakes: (this.spec.bCold || 1) < 0.9, wrong: s.wrong, finished: s.finished,
-          carId: this.entrants[this.meIdx].carId, parts: this.entrants[this.meIdx].parts,
+          carId: this.entrants[this.meIdx].carId, parts: this.entrants[this.meIdx].parts, look: this.entrants[this.meIdx].look,
           // v5.1 cluster: the rev scale, and the boost dial's own numbers
           ev: !!this.spec.ev, boostGain: this.spec.boostGain, redline: this.spec.redline,
           boostAvail: G.Parts.boostAvail(this.spec, cars[this.meIdx].rs.rpm),
