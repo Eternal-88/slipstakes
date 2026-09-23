@@ -522,7 +522,7 @@
   // which stock details the skin takes over.
   const SKINS = {
     gtd: { id: 'gtd', name: 'Track Special', car: 'mule', body: 'gtd', blurb: 'Fastback shell, swan-neck wing, louvred bonnet.', wing: 1 },
-    miata: { id: 'miata', name: 'Sunchaser', car: 'sting', body: 'miata', blurb: 'Little round drop-top with pop-up lamps.', popups: 1 },
+    miata: { id: 'miata', name: 'Sunchaser', car: 'sting', body: 'miata', blurb: 'Little round drop-top with pop-up lamps.', popups: 1, humps: 1, archBody: 1 },
   };
   const skinFor = (carId, id) => (id && SKINS[id] && SKINS[id].car === carId ? SKINS[id] : null);
   // What this driver may put on the car they are in right now.

@@ -467,6 +467,31 @@
         if (gearUp) fx.emit('puff', ex, ey, ez, -sinH * 2 + rs.vx * 0.6, 0.2, -cosH * 2 + rs.vz * 0.6, 1);
         else if (rs.thr > 0.5 && speed < 8 && Math.random() < dt * 14) fx.emit('puff', ex, ey, ez, -sinH * 1.5, 0.2, -cosH * 1.5, 0.8);
       }
+      // v5.3 overrun: a free-flowing exhaust throws unburnt fuel out of the
+      // pipe, so it smokes and spits as well as banging. Driven from the car,
+      // not from the mixer, so it shows with the sound off - and it stops a
+      // couple of seconds after the lift, like the noise does.
+      const od = m.od;
+      if (od && od.pops > 0) {
+        if (m.lastThr > 0.5 && rs.thr < 0.2 && rs.rpm > 0.4) m.ovT = 0;
+        if (rs.thr > 0.3) m.ovT = 99;
+        m.ovT += dt;
+        const win = od.bang ? 2.2 : 1.2;
+        if (m.ovT < win && rs.thr < 0.25) {
+          const fade = 1 - m.ovT / win;
+          const rate = dt * (od.bang ? 26 : 14) * od.pops * fade;
+          for (const e of m.exhaust) {
+            if (Math.random() > rate) continue;
+            const [ex, ey, ez] = W(e[0], e[1], e[2]);
+            const back = -sinH * (2 + Math.random() * 3), backZ = -cosH * (2 + Math.random() * 3);
+            fx.emit('puff', ex, ey, ez, back + rs.vx * 0.5, 0.3 + Math.random() * 0.5, backZ + rs.vz * 0.5, 0.7 + Math.random() * 0.6, RGB.smoke);
+            // a bang tune spits a lick of flame with the bigger ones
+            if (od.bang && Math.random() < 0.3 * fade) fx.emit('flame', ex, ey, ez, -sinH * 4, 0, -cosH * 4, 0.8);
+          }
+        }
+      }
+      m.lastThr = rs.thr;
+
       if (rs.overheat && Math.random() < dt * 25) fx.emit('steam', rs.x + sinH * 1.5, y + 1, rs.z + cosH * 1.5, 0, 0.5, 0, 1);
       // a battered car shows it: dark smoke from under the bonnet
       if (rs.body > 0.3 && Math.random() < dt * rs.body * 16) {

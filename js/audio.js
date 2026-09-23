@@ -138,6 +138,7 @@
       kerb: p.suspension === 'race' ? 1.45 : p.suspension === 'rally' ? 0.7 : 1,
     };
   }
+  const OVERRUN = 2.2; // s an overrun keeps cracking after the lift (audio + the smoke in world.js)
   const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
 
   function shaperCurve(k) {
@@ -655,6 +656,8 @@
       // overrun crackle (free-flowing exhausts), backfire pops on shifts
       const pops = ms.pops;
       const lifting = this._lastThr > 0.6 && thr < 0.15 && rpm > 0.5;
+      if (lifting) this._ovT = performance.now(); // an overrun starts HERE and is over in a couple of seconds
+      if (thr > 0.25) this._ovT = 0; // back on the throttle: it is over now
       if (lifting && pops > 0) (ms.bang ? this.bangBurst(master) : this.crackle(pops, master, ms.crackle));
       // SUSTAINED backfire (anti-lag keeps the flag up for as long as you are
       // off the throttle) cracks repeatedly while it lasts. The old edge test
@@ -680,12 +683,17 @@
       // the instant you lifted. Sparser and softer than anti-lag, because
       // this is unburnt fuel lighting off on its own rather than a system
       // deliberately keeping the turbine hot.
-      if (ms.bang && !rs.backfire && thr < 0.12 && rpm > 0.32 && speed > 3) {
-        const gap = 1000 / (1.6 + rpm * 4.5); // ~300 ms near idle, ~165 ms up high
+      // ...and it keeps going for a couple of seconds after the lift, fading
+      // as it does - not, as it was, for as long as you stayed off the pedal,
+      // which meant it cracked away down every straight until you stopped.
+      const ovAge = this._ovT ? (now - this._ovT) / 1000 : 99;
+      if (ms.bang && !rs.backfire && thr < 0.12 && rpm > 0.32 && speed > 3 && ovAge < OVERRUN) {
+        const fade = 1 - ovAge / OVERRUN;
+        const gap = 1000 / (1.6 + rpm * 4.5) / Math.max(0.35, fade); // slows as it dies away
         if (now - (this._bgT || 0) > gap * (0.6 + Math.random() * 1.1)) {
           this._bgT = now;
-          const amp = master * (0.4 + Math.random() * 0.6) * (0.4 + rpm * 0.6);
-          if (Math.random() < 0.45) this.bang(amp);
+          const amp = master * (0.4 + Math.random() * 0.6) * (0.4 + rpm * 0.6) * (0.45 + 0.55 * fade);
+          if (Math.random() < 0.45 * fade) this.bang(amp);
           else this.pop(amp * 1.2);
         }
       }

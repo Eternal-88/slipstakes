@@ -3,8 +3,14 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.3';
+  G.VERSION = '5.3.1';
   G.CHANGELOG = [
+    {
+      v: '5.3.1', name: 'Overrun', items: [
+        ['💨', 'Pops you can see, and that stop', 'A free-flowing exhaust now throws smoke out of the pipe on the overrun, and a bangs-and-pops map spits flame with it — visible whether or not your sound is on. The bang tune also had two faults: it fired exactly ONCE when you lifted (the test only looked at the instant the throttle shut, not at the overrun that followed) and then, once that was fixed, it never stopped. It now cracks hard as you lift and fades out over a couple of seconds, the way a real one does.'],
+        ['🔧', 'Fixes', 'Wheel-arch trim is narrower, so it reads as trim rather than a slab bolted to the side. The open cockpit in the roadster — seats, floor, dash and roll hoops — is measured from the car it is in instead of fixed numbers, so nothing sinks through the deck.'],
+      ],
+    },
     {
       v: '5.3', name: 'Know Your Car II', items: [
         ['⚖', 'Top speed comes from the engine again', 'The final drive used to be set so every car hit its rev limiter exactly at its rated top speed. That made top speed a property of the GEARBOX and nothing else: a Big Turbo was worth literally 0 km/h, and longer gearing was the right answer on every track, which is why the final-drive slider never felt like a choice. Each car’s drag is now worked out from the speed its card claims, and top gear reaches about a tenth past it — so a standard car runs out of AIR, power buys 18 to 26 km/h, short gears cost you 14 to 32, and long gears unlock the rest only once you have the power to use it. Stock top speeds moved by less than 2%.'],
