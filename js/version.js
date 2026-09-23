@@ -3,8 +3,15 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.3.1';
+  G.VERSION = '5.3.2';
   G.CHANGELOG = [
+    {
+      v: '5.3.2', name: 'Clean Lines', items: [
+        ['🧹', 'Nothing left hanging in the air', 'Every car was rebuilt as real geometry in a 3D package and measured piece against piece, which turned up a list of things floating a centimetre or two off the bodywork. The roof panel took its width from one cross-section, so on any cabin that narrows towards the back it overhung the glass by 10 cm and sat 5 cm above it — a plank laid across the roof. It follows the cabin’s own top line now, and the aerial that stood on that slab came down with it. Wipers took their height from the base of the windscreen and hung 2–3 cm in the air on every car whose cowl drops away from it; they lie on the scuttle. The pickup’s spare wheel floated 10 cm over its own bed, and the rally light bar was sitting inside the intercooler.'],
+        ['🎨', 'Kit parts that stop fighting each other', 'The widebody kit drew its arch straight over the standard arch trim, and with wide tyres fitted over a second set of flares as well — three pieces cutting through one another over every wheel, with two sets of side skirts below them. The kit’s arch now replaces the lot, and its sill stops short of the arches instead of running into them. A diffuser fin standing exactly where a tail pipe comes out gets out of the way. Liveries sat as much as 3 cm off the paint, which is close enough to see; they are 5 to 11 mm now, still hundreds of times what it takes to keep them from flickering. The big aero splitter was a fixed 1.9 m plank — wider than some of the cars it was bolted to — and exhaust tips stood 16 cm proud of the bodywork.'],
+        ['🌤', 'An open car with the roof properly down', 'The roadster’s cabin was lofted as a closed volume in tinted glass, which laid a dark lid over the cockpit and hid everything in it. Only the windscreen is glass now — leaning back from the scuttle to the top rail, on pillars you can see — and the seats, dash, deck and headrests hang off the screen instead of off fixed numbers, so they land in the right place whatever body they are in.'],
+      ],
+    },
     {
       v: '5.3.1', name: 'Overrun', items: [
         ['💨', 'Pops you can see, and that stop', 'A free-flowing exhaust now throws smoke out of the pipe on the overrun, and a bangs-and-pops map spits flame with it — visible whether or not your sound is on. The bang tune also had two faults: it fired exactly ONCE when you lifted (the test only looked at the instant the throttle shut, not at the overrun that followed) and then, once that was fixed, it never stopped. It now cracks hard as you lift and fades out over a couple of seconds, the way a real one does.'],
