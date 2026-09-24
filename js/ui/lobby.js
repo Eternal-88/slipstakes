@@ -173,7 +173,7 @@
           const who = (pickers[id] || []).map((p) => `<i title="${U.esc(p.name)}" style="background:${hex(p.color)}"></i>`).join('');
           const fee = G.carFee(me, id, true);
           const price = c.price ? `<div class="cs-price">${fee.buy ? 'PREMIUM · ' + U.fmtMoney(fee.buy) : 'OWNED'}</div>` : '';
-          return `<div class="cs-car ${me.carId === id ? 'on' : ''} ${fee.buy && me.money < fee.buy ? 'locked' : ''}" data-act="car" data-id="${id}"><div class="cs-name">${c.name}</div><div class="cs-tag">${c.tag}</div>${price}<p>${U.esc(c.blurb)}</p>${bars}<div class="cs-who">${who}</div></div>`;
+          return `<div class="cs-car ${me.carId === id ? 'on' : ''} ${fee.buy && me.money < fee.buy ? 'locked' : ''}" data-act="car" data-id="${id}"><div class="cs-name">${c.name}</div><div class="cs-tag">${c.tag}</div>${price}<p title="${U.esc(c.blurb)}">${U.esc(c.blurb)}</p><div class="cs-bars">${bars}</div><div class="cs-who">${who}</div></div>`;
         }).join('')
       );
       const used = new Set(Object.values(st.players).filter((p) => p.id !== me.id).map((p) => p.color));
@@ -248,16 +248,17 @@
       const tr = G.getTrack(R.trackId);
       UI.patch(this.el.head, `<h1>RACE ${R.no} RESULTS</h1><div class="muted">${U.esc(tr.name)} <em class="fmt fmt-${tr.format}">${tr.format.toUpperCase()}</em></div>`);
       const win = R.rows.find((r) => !r.dnf);
+      const laps = tr.format === 'circuit'; // (v5.4: no Best lap column on a sprint or a drag)
       const rows = R.rows
         .map((r) => {
           const pay = r.payout;
           const time = r.dnf ? 'DNF' : r === win ? U.fmtTime(r.ms) : '+' + ((r.ms - win.ms) / 1000).toFixed(3) + 's';
-          const fast = R.fastest && R.fastest.id === r.id ? ' <em class="tag-fast">FASTEST LAP</em>' : '';
-          return `<tr class="${me && r.id === me.id ? 'me' : ''}"><td class="p">${r.pos}</td><td><i style="background:${hex(r.color)}"></i>${U.esc(r.name)}${fast}</td><td>${time}</td><td>${U.fmtTime(r.bestLap)}</td><td class="gd">${r.grid - r.pos > 0 ? '▲' + (r.grid - r.pos) : r.grid - r.pos < 0 ? '▼' + (r.pos - r.grid) : '–'}</td>${R.endu ? `<td class="num">${r.stops || 0}</td>` : ''}<td class="num pts">${r.pts ? '+' + r.pts : '–'}</td>${pay ? `<td class="pay">${U.fmtSigned(pay.net)}</td>` : ''}</tr>`;
+          const fast = laps && R.fastest && R.fastest.id === r.id ? ' <em class="tag-fast">FASTEST LAP</em>' : '';
+          return `<tr class="${me && r.id === me.id ? 'me' : ''}"><td class="p">${r.pos}</td><td><i style="background:${hex(r.color)}"></i>${U.esc(r.name)}${fast}</td><td>${time}</td>${laps ? `<td>${U.fmtTime(r.bestLap)}</td>` : ''}<td class="gd">${r.grid - r.pos > 0 ? '▲' + (r.grid - r.pos) : r.grid - r.pos < 0 ? '▼' + (r.pos - r.grid) : '–'}</td>${R.endu ? `<td class="num">${r.stops || 0}</td>` : ''}<td class="num pts">${r.pts ? '+' + r.pts : '–'}</td>${pay ? `<td class="pay">${U.fmtSigned(pay.net)}</td>` : ''}</tr>`;
         })
         .join('');
       const hasPay = R.rows.some((r) => r.payout);
-      UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Time</th><th>Best lap</th><th>Grid</th>${R.endu ? '<th>Stops</th>' : ''}<th>Pts</th>${hasPay ? '<th>Net</th>' : ''}</tr>${rows}</table>`);
+      UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Time</th>${laps ? '<th>Best lap</th>' : ''}<th>Grid</th>${R.endu ? '<th>Stops</th>' : ''}<th>Pts</th>${hasPay ? '<th>Net</th>' : ''}</tr>${rows}</table>`);
       const bty = R.bounty ? `<div class="bounty">🎯 Bounty on ${U.esc(R.bounty.name)}: ${R.bounty.winner ? `<b>${U.esc(R.bounty.winnerName)}</b> collects ${U.fmtMoney(R.bounty.amount)}` : 'nobody beat them — it stays on the table'}.</div>` : '';
       UI.patch(this.el.extra, bty + (G.Game.resultsExtra ? G.Game.resultsExtra(R) : ''));
       const left = secsLeft(st);

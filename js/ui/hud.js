@@ -419,8 +419,10 @@
       let cd = '';
       let lit = 0, green = false;
       if (v.phase === 'grid') {
-        cd = v.hold ? 'WAITING' : v.countdown > 3 ? 'READY' : String(Math.ceil(v.countdown)); // hold: a racer is still loading the track
-        lit = U.clamp(Math.ceil((3 - v.countdown) / 0.6), 0, 5);
+        // Ten on the clock, the five start lights coming on one a second over
+        // the last five, and all of them out for the go.
+        cd = v.hold ? 'WAITING' : v.countdown > 10 ? 'READY' : String(Math.ceil(v.countdown)); // hold: a racer is still loading the track
+        lit = U.clamp(Math.ceil(5 - v.countdown), 0, 5);
       } else if (v.phase === 'race' && v.raceTime < 1.2) {
         cd = 'GO!';
         green = true;
@@ -525,6 +527,28 @@
         if (gAbs > 1 && !this._windTold && v.phase === 'race') {
           this._windTold = true;
           this.banner('CROSSWIND', 'Gusts across the road here — lean on the wheel', 2.4, 'warn');
+        }
+        // v5.4 level crossings: at chase-camera height the flashing lights are
+        // only in view a few car lengths out, which at speed is too late - so
+        // the HUD calls it from 170 m while they are flashing.
+        const trk = this.track;
+        if (trk && trk.xings && trk.xings.length && v.phase === 'race' && this.bannerT <= 0.05) {
+          const q = this._xq || (this._xq = {});
+          trk.query(rs.x, rs.z, this._xh == null ? -1 : this._xh, q);
+          this._xh = q.i;
+          for (const xg of trk.xings) {
+            let ahead = xg.at - q.along;
+            if (trk.closed && ahead < 0) ahead += trk.length;
+            if (ahead < 4 || ahead > 170) continue;
+            const o = trk.dyn.find((d) => d.k === 'train' && d.i === xg.i && !d.car);
+            if (!o) continue;
+            const t = v.raceTime || 0, c = t + o.off, ph = c - Math.floor(c / o.every) * o.every;
+            const pass = (2 * o.span + o.cars * o.gap) / o.speed;
+            if (ph < pass || ph > o.every - 2.5) {
+              this.banner('LEVEL CROSSING', 'Train coming — ' + Math.round(ahead) + ' m', 0.3, 'warn');
+              break;
+            }
+          }
         }
         // v5 endurance: this set of tyres (not the race-long wear) and the tank
         const endu = !!v.endu;

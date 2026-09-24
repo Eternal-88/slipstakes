@@ -123,7 +123,16 @@
       const val = (v) => (typeof v === 'function' ? v() : v);
       const next = val(this.arg.nextTrack);
       const doneLabel = val(this.arg.doneLabel);
-      UI.patch(this.el.next, next ? `<span>NEXT RACE</span><b>${U.esc(next.name)}</b><em class="fmt fmt-${next.format}">${next.format.toUpperCase()}</em>` : '');
+      // v5.4: the next track's layout lives HERE, where you can still build
+      // and tune for it - on the start line it was too late to do anything.
+      UI.patch(this.el.next, next ? `<canvas class="g-map" title="${U.esc(next.name)} - the next race"></canvas><div class="g-nx"><span>NEXT RACE</span><b>${U.esc(next.name)}</b><em class="fmt fmt-${next.format}">${next.format.toUpperCase()}</em>${next.def.pit ? '<i class="g-nx-pit">pit lane</i>' : ''}</div>` : '');
+      if (next && G.drawLayout) {
+        const cv = this.el.next.querySelector('.g-map');
+        if (cv && cv._tid !== next.name) {
+          cv._tid = next.name;
+          G.drawLayout(cv, next, { thick: 7, pad: 8 });
+        }
+      }
       UI.patch(
         this.el.btns,
         (this.arg.onTestDrive ? `<button class="btn ghost" data-act="testdrive" title="Drive the candidate build on the Proving Ground">▶ Test drive</button>` : '') +
@@ -261,31 +270,46 @@
     },
 
     // ---------------------------------------------------------------- paint
+    // v5.4: four sub-tabs instead of fourteen sections in one scroll - the
+    // colour, its finish and the accent were three screens apart, and the
+    // whole Sound section sat in the middle of the paint.
     paintHtml(me) {
       const L = Object.assign(Parts.defaultLook(), me.garage.look);
       const LK = Parts.LOOK;
       const paint = L.paint != null ? L.paint : me.color;
+      const sub = this.paintSub || 'paint';
       const sw = (act, c, on, title) => `<button class="sw ${on ? 'on' : ''}" style="background:${hex(c)}" data-act="${act}" data-c="${c}" title="${title || ''}"></button>`;
       const chip = (act, v, label, on) => `<button class="chipb ${on ? 'on' : ''}" data-act="${act}" data-v="${v}">${label}</button>`;
-      return `
-        <div class="pt-sec"><h4>Paint</h4><div class="sws">
-          <button class="sw team ${L.paint == null ? 'on' : ''}" style="background:${hex(me.color)}" data-act="paint" data-c="team" title="Team colour">★</button>
-          ${LK.paints.map((c) => sw('paint', c, L.paint === c)).join('')}</div>
-          <label class="pt-custom">Custom colour <input type="color" data-change="paintc" value="${hex(paint)}"></label></div>
-        <div class="pt-sec"><h4>Livery</h4><div class="chips2">${LK.liveries.map(([v, l]) => chip('livery', v, l, L.livery === v)).join('')}</div></div>
-        <div class="pt-sec"><h4>Accent colour <span class="muted small">stripes, two-tone, roof</span></h4><div class="sws">${LK.accents.map((c) => sw('accent', c, L.accent === c)).join('')}</div></div>
-        <div class="pt-sec"><h4>Race number</h4><div class="pt-num"><input type="number" min="0" max="99" data-change="num" value="${L.num}"><button class="btn small ghost" data-act="numr">🎲 Random</button><span class="muted small">On the Side-stripe and Race liveries · 0 hides it</span></div></div>
-        <div class="pt-sec"><h4>Wheels</h4><div class="chips2">${LK.rims.map(([v, l]) => chip('rims', v, l, L.rims === v)).join('')}</div><div class="sws">${LK.rimCols.map((c) => sw('rimcol', c, L.rimCol === c)).join('')}</div></div>
-        <div class="pt-sec"><h4>Paint finish</h4><div class="chips2">${LK.finishes.map(([v, l]) => chip('finish', v, l, L.finish === v)).join('')}</div></div>
-        <div class="pt-sec"><h4>Headlights</h4><div class="chips2">${LK.lights.map(([v, l]) => chip('lights', v, l, L.lights === v)).join('')}</div></div>
-        <div class="pt-sec"><h4>Windows</h4><div class="chips2">${LK.tints.map(([v, l]) => chip('tint', v, l, L.tint === v)).join('')}</div></div>
-        <div class="pt-sec"><h4>Body kit</h4><div class="chips2">${LK.kits.map(([v, l]) => chip('kit', v, l, L.kit === v)).join('')}</div></div>
-        <div class="pt-sec"><h4>Spoiler <span class="muted small">looks only · an aero part replaces it</span></h4><div class="chips2">${LK.spoilers.map(([v, l]) => chip('spoiler', v, l, L.spoiler === v)).join('')}</div></div>
-        <div class="pt-sec"><h4>Exhaust tips</h4><div class="chips2">${LK.tips.map(([v, l]) => chip('tips', v, l, L.tips === v)).join('')}</div></div>
-        ${this.skinHtml(me, L)}
-        ${this.soundHtml(me, L, LK)}
-        <div class="pt-sec"><h4>Underglow</h4><div class="chips2">${LK.glows.map(([v, l]) => chip('glow', v, l, L.glow === v)).join('')}</div>${L.glow !== 'none' ? `<div class="chips2">${LK.glowFx.map(([v, l]) => chip('glowfx', v, l, L.glowFx === v)).join('')}</div>` : ''}</div>
-        <p class="muted small">Paint is free and cosmetic only. Your team colour still marks you on the minimap, name tags and standings.</p>`;
+      const cur = (list, v) => { const f = list.find((x) => x[0] === v); return f ? f[1] : ''; };
+      const sec = (title, now, body, note) => `<div class="pt-sec"><h4>${title}${now ? `<span class="pt-now">${U.esc(now)}</span>` : ''}</h4>${note ? `<p class="pt-note">${note}</p>` : ''}${body}</div>`;
+      const tabs = [['paint', '🎨 Paint'], ['body', '🚗 Body'], ['wheels', '🛞 Wheels'], ['sound', '🔊 Sound']];
+      let body = '';
+      if (sub === 'paint') {
+        body = sec('Colour', L.paint == null ? 'Team colour' : '', `<div class="sws">
+            <button class="sw team ${L.paint == null ? 'on' : ''}" style="background:${hex(me.color)}" data-act="paint" data-c="team" title="Team colour">★</button>
+            ${LK.paints.map((c) => sw('paint', c, L.paint === c)).join('')}</div>
+            <label class="pt-custom">Custom <input type="color" data-change="paintc" value="${hex(paint)}"></label>`)
+          + sec('Finish', cur(LK.finishes, L.finish), `<div class="chips2">${LK.finishes.map(([v, l]) => chip('finish', v, l, L.finish === v)).join('')}</div>`)
+          + sec('Livery', cur(LK.liveries, L.livery), `<div class="chips2">${LK.liveries.map(([v, l]) => chip('livery', v, l, L.livery === v)).join('')}</div>`)
+          + sec('Accent colour', '', `<div class="sws">${LK.accents.map((c) => sw('accent', c, L.accent === c)).join('')}</div>`, 'Stripes, two-tone, the roof and the rest of the livery.')
+          + sec('Race number', L.num ? '#' + L.num : 'none', `<div class="pt-num"><input type="number" min="0" max="99" data-change="num" value="${L.num}"><button class="btn small ghost" data-act="numr">🎲 Random</button></div>`, 'Shown on the Side-stripe and Race liveries. 0 hides it.');
+      } else if (sub === 'body') {
+        body = this.skinHtml(me, L)
+          + sec('Body kit', cur(LK.kits, L.kit), `<div class="chips2">${LK.kits.map(([v, l]) => chip('kit', v, l, L.kit === v)).join('')}</div>`)
+          + sec('Spoiler', cur(LK.spoilers, L.spoiler), `<div class="chips2">${LK.spoilers.map(([v, l]) => chip('spoiler', v, l, L.spoiler === v)).join('')}</div>`, 'Looks only. A wing from the Aero parts replaces it.')
+          + sec('Exhaust tips', cur(LK.tips, L.tips), `<div class="chips2">${LK.tips.map(([v, l]) => chip('tips', v, l, L.tips === v)).join('')}</div>`)
+          + sec('Windows', cur(LK.tints, L.tint), `<div class="chips2">${LK.tints.map(([v, l]) => chip('tint', v, l, L.tint === v)).join('')}</div>`)
+          + sec('Headlights', cur(LK.lights, L.lights), `<div class="chips2">${LK.lights.map(([v, l]) => chip('lights', v, l, L.lights === v)).join('')}</div>`);
+      } else if (sub === 'wheels') {
+        body = sec('Rims', cur(LK.rims, L.rims), `<div class="chips2">${LK.rims.map(([v, l]) => chip('rims', v, l, L.rims === v)).join('')}</div>`)
+          + sec('Rim colour', '', `<div class="sws">${LK.rimCols.map((c) => sw('rimcol', c, L.rimCol === c)).join('')}</div>`)
+          + sec('Underglow', cur(LK.glows, L.glow), `<div class="chips2">${LK.glows.map(([v, l]) => chip('glow', v, l, L.glow === v)).join('')}</div>${L.glow !== 'none' ? `<div class="chips2">${LK.glowFx.map(([v, l]) => chip('glowfx', v, l, L.glowFx === v)).join('')}</div>` : ''}`);
+      } else {
+        body = this.soundHtml(me, L, LK);
+      }
+      return `<div class="pt-subs">${tabs.map(([v, l]) => `<button class="${sub === v ? 'on' : ''}" data-act="psub" data-v="${v}">${l}</button>`).join('')}</div>
+        <div class="pt-body">${body}</div>
+        <p class="muted small pt-foot">Free and cosmetic only. Drag the car to turn it, scroll to zoom. Your team colour still marks you on the minimap, name tags and standings.</p>`;
     },
     // A skin the maintainer has given this driver, for the car they are in.
     // Nothing renders at all unless they have one, so it cannot be found by
@@ -314,7 +338,7 @@
         return `<div class="pt-sec"><h4>${title}${note ? ` <span class="muted small">${note}</span>` : ''}</h4><div class="chips2">${chips}</div></div>`;
       };
       const boosted = Parts.soundAllowed('bov', 'atmo', me.carId, inst);
-      return `<div class="pt-sound"><h3>Sound</h3>
+      return `<div class="pt-sound">
         ${row('tone', 'Exhaust tone')}
         ${row('over', 'Overrun', 'what it does when you lift')}
         ${boosted ? row('bov', 'Blow-off valve') : ''}
@@ -517,6 +541,12 @@
         UI.refresh(true);
       },
       // paint
+      psub(el) {
+        this.paintSub = el.dataset.v;
+        if (G.Preview.frame) G.Preview.frame(this.paintSub);
+        if (G.Audio) G.Audio.tab();
+        UI.refresh(true);
+      },
       paint(el) {
         this.look({ paint: el.dataset.c === 'team' ? null : +el.dataset.c });
       },

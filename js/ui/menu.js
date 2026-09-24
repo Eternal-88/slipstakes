@@ -317,16 +317,19 @@
       const place = r.finished ? U.ordinal(r.pos) : 'DNF';
       const cls = !r.finished ? 'neg' : r.pos === 1 ? 'gold' : r.pos <= 3 ? 'pod' : '';
       UI.patch(this.el.head, `<div class="qr-pos ${cls}">${place}</div><div><h1>${r.pos === 1 && r.finished ? 'YOU WIN!' : r.finished && r.pos <= 3 ? 'PODIUM!' : 'RACE OVER'}</h1><div class="muted">${U.esc(r.track.name)} <em class="fmt fmt-${r.track.format}">${r.track.format.toUpperCase()}</em> · ${U.esc(G.BotKit.level(G.Settings.s.botLevel).name)} bots</div></div>`);
+      // (v5.4: a sprint or a drag has no laps - the column was all dashes)
+      const laps = r.track.format === 'circuit';
       const rows = r.rows
         .map((x) => {
           const time = !x.finished ? 'DNF' : x === win ? U.fmtTime(x.ms) : '+' + ((x.ms - win.ms) / 1000).toFixed(3) + 's';
-          return `<tr class="${x.id === 'me' ? 'me' : ''}"><td class="p">${x.pos}</td><td><i style="background:${UI.colorHex(x.color)}"></i>${U.esc(x.name)}</td><td class="muted">${Parts.CARS[x.carId].name}</td><td>${time}</td><td>${U.fmtTime(x.best)}</td></tr>`;
+          return `<tr class="${x.id === 'me' ? 'me' : ''}"><td class="p">${x.pos}</td><td><i style="background:${UI.colorHex(x.color)}"></i>${U.esc(x.name)}</td><td class="muted">${Parts.CARS[x.carId].name}</td><td>${time}</td>${laps ? `<td>${U.fmtTime(x.best)}</td>` : ''}</tr>`;
         })
         .join('');
-      UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Car</th><th>Time</th><th>Best lap</th></tr>${rows}</table>`);
+      UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Car</th><th>Time</th>${laps ? '<th>Best lap</th>' : ''}</tr>${rows}</table>`);
+      const mine = r.rows.find((x) => x.id === 'me');
       const me = G.Client.me;
       const bet = r.bet ? `<div class="ln"><span>Backed yourself (${r.bet.type} @ ${r.bet.odds.toFixed(2)}x)</span><b class="${r.bet.won ? 'pos' : 'neg'}">${r.bet.won ? U.fmtSigned(r.bet.payout) + ' 🎉' : 'lost ' + U.fmtMoney(r.bet.stake)}</b></div>` : '';
-      UI.patch(this.el.money, `<div class="box"><div class="ln"><span>Prize (${place})</span><b>${U.fmtSigned(r.prize)}</b></div><div class="ln"><span>Fuel</span><b>${U.fmtSigned(-r.fuel)}</b></div>${bet}<div class="ln tot"><span>Garage money</span><b>${me ? U.fmtMoney(me.money) : ''}</b></div></div>${r.pb ? `<div class="box"><div class="ln"><span>Your best lap here</span><b>${U.fmtTime(r.best)}</b></div><div class="ln"><span>Personal best (this car)</span><b>${U.fmtTime(r.pb)}</b></div></div>` : ''}`);
+      UI.patch(this.el.money, `<div class="box"><div class="ln"><span>Prize (${place})</span><b>${U.fmtSigned(r.prize)}</b></div><div class="ln"><span>Fuel</span><b>${U.fmtSigned(-r.fuel)}</b></div>${bet}<div class="ln tot"><span>Garage money</span><b>${me ? U.fmtMoney(me.money) : ''}</b></div></div>${r.pb ? `<div class="box"><div class="ln"><span>${laps ? 'Your best lap here' : 'Your time'}</span><b>${U.fmtTime(laps ? r.best : mine && mine.finished ? mine.ms : null)}</b></div><div class="ln"><span>Personal best (this car)</span><b>${U.fmtTime(r.pb)}</b></div></div>` : ''}`);
       UI.patch(this.el.btns, `<button class="btn primary big" data-act="again">↻ Race again</button><button class="btn big" data-act="next">🎲 Next track</button><button class="btn" data-act="garage">🔧 Garage</button><button class="btn ghost" data-act="menu">⌂ Menu</button>`);
     },
     acts: {
