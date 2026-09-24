@@ -66,6 +66,7 @@
         if (!b) return;
         const c = b.dataset.c;
         if (c === 'menu') this.isOpen ? this.hide() : this.show('pause');
+        else if (c === 'online' && G.Online) G.Online.toggle();
         else if (c === 'sound') G.Audio.toggle();
         else if (c === 'fs') fullscreen();
         if (G.Audio && c !== 'sound') G.Audio.click();
@@ -83,7 +84,7 @@
     renderCorner() {
       const snd = G.Audio && G.Audio.enabled;
       const fs = !!document.fullscreenElement;
-      this.corner.innerHTML = `<button data-c="menu" title="Menu (Esc)">☰</button><button data-c="sound" class="${snd ? '' : 'off'}" title="Sound on/off (M)">${snd ? '🔊' : '🔇'}</button><button data-c="fs" title="Fullscreen">${fs ? '🗗' : '⛶'}</button>`;
+      this.corner.innerHTML = `${G.Online ? G.Online.cornerHtml() : ''}<button data-c="menu" title="Menu (Esc)">☰</button><button data-c="sound" class="${snd ? '' : 'off'}" title="Sound on/off (M)">${snd ? '🔊' : '🔇'}</button><button data-c="fs" title="Fullscreen">${fs ? '🗗' : '⛶'}</button>`;
     },
 
     // Esc: close key capture / sub-view / overlay, or open it.
