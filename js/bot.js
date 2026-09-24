@@ -64,6 +64,33 @@
       this.rival = false;
       this.hunt = null;
       this.huntN = 0;
+      this.humans = null; // (race.js) the cars people are driving
+      this.grudge = null; // v5.5: a car that rammed us, and for how long we mind
+      this.rev = 0; // backing out of a wall (s left)
+      this.revCool = 0;
+    }
+
+
+    // v5.5: a car hit us (race.js decides who ran into whom). Only a rival
+    // bothers getting even, and only with the car that started it.
+    rammedBy(o, j) {
+      if (this.rival && j > 3500) this.grudge = { st: o, t: 25 };
+    }
+
+    // v5.5 corner memory: where this bot ran wide, it aims a little slower
+    // next lap - the apex and the run in to it (buckets of ~10 m)
+    _learn(track, i) {
+      if (this._memoTr !== track) {
+        this._memoTr = track;
+        this.memo = new Float32Array(Math.ceil(track.N / 5) + 1).fill(1);
+      }
+      if (this.t - (this._learnT || -9) < 0.25) return;
+      this._learnT = this.t;
+      const b = Math.floor(i / 5), nb = this.memo.length;
+      for (let d = -3; d <= 1; d++) {
+        const k = track.closed ? (((b + d) % nb) + nb) % nb : U.clamp(b + d, 0, nb - 1);
+        this.memo[k] = Math.max(0.84, this.memo[k] - 0.014);
+      }
     }
 
     // v5 rival for this race: a few attempts to bump whoever is just ahead
@@ -106,7 +133,11 @@
           const dx = o.x - st.x, dz = o.z - st.z;
           const ahead = dx * fx + dz * fz;
           const side = dx * fz - dz * fx; // + = to the left
-          if (ahead < 0 && ahead > -12 && Math.abs(side) < 4 && (o.vx * fx + o.vz * fz) - speed > 0.8) behind = true;
+          // v5.5: people get more room than bots. A person brakes early, lifts
+          // mid-corner, changes line - a bot can't read that, so it keeps a
+          // bigger gap, reacts sooner, and never shuts the door on one
+          const hum = this.humans && this.humans.has(o);
+          if (!hum && ahead < 0 && ahead > -12 && Math.abs(side) < 4 && (o.vx * fx + o.vz * fz) - speed > 0.8) behind = true;
           if (this.hunt && this.hunt.st === o) continue; // the one we're after: no dodging, no braking for it
           // ALONGSIDE: leave them room. Anything from half a car behind to
           // half a car ahead of us is racing us, not something to drive
@@ -117,11 +148,11 @@
             // of each other. Measured over 40 races: asking for what the road
             // can actually give left more gentle rubbing but cut spins by
             // three quarters, which is the part that looks bad.
-            const room = Math.min(SIDE_ROOM, q.hw * 0.55);
+            const room = Math.min(SIDE_ROOM + (hum ? 0.4 : 0), q.hw * (hum ? 0.62 : 0.55));
             if (side > 0) capL = Math.min(capL, side - room);
             else capR = Math.max(capR, side + room);
           }
-          if (ahead > 0 && ahead < 14 && Math.abs(side) < 2.6) dodge += side > 0 ? -1.8 : 1.8;
+          if (ahead > 0 && ahead < (hum ? 20 : 14) && Math.abs(side) < (hum ? 3 : 2.6)) dodge += (side > 0 ? -1.8 : 1.8) * (hum ? 1.25 : 1);
           else if (tow == null && ahead >= 14 && ahead < 32 && Math.abs(side) < 4) tow = side;
           // v4: don't rear-end it. A slower car right in our path caps our
           // speed near its own until the dodge (above) takes us clear. (With
@@ -132,10 +163,10 @@
           // can still carry us past: a harder cap chopped the throttle of
           // big-power cars mid-swerve and set them weaving (a Big Turbo that
           // won the Salt Flat in v3 stopped finishing it).
-          if (ahead > 0 && Math.abs(side) < 2.1) {
+          if (ahead > 0 && Math.abs(side) < (hum ? 2.5 : 2.1)) {
             const vo = o.vx * fx + o.vz * fz;
             const close = speed - vo;
-            if (close > 1 && ahead / close < 0.9) this._cap = Math.min(this._cap, vo + ahead * 0.8);
+            if (close > 1 && ahead / close < (hum ? 1.4 : 0.9)) this._cap = Math.min(this._cap, vo + ahead * (hum ? 0.5 : 0.8));
           }
         }
       }
@@ -183,6 +214,7 @@
         }
       }
       const lane = pitting ? U.clamp(laneT, -q.wall + 1.8, q.wall - 1.8) : U.clamp(laneT, -q.hw + 1.5, q.hw - 1.5);
+      this.lane = lane;
       // how much this build's power overwhelms its rear tyres (>1 = wheelspin
       // on tap) — feeds the steering damping and traction limit below
       if (this._spec !== spec) {
@@ -202,8 +234,29 @@
       const delta = Math.atan((2 * Math.sin(err) * spec.wheelbase) / Ld);
       const lock = spec.steerLock / (1 + speed / spec.steerFalloff);
       out.s = U.clamp(-delta / lock - st.w * (0.04 + 0.05 * exK), -1, 1);
+      // v5.5 running wide: at full lock and still sliding to the outside of
+      // the lane it asked for means it came in too fast: lift now, and
+      // remember the corner for next lap. (Drifting outward at full lock AND
+      // already outside its line - a lane change it asked for, a dodge or a
+      // hazard, is not running wide.)
+      const kHere = track.K[q.i];
+      const latV = this._pLat != null && this._pI != null && Math.abs(q.i - this._pI) < 20 ? (q.lat - this._pLat) / Math.max(dt, 1e-3) : 0;
+      this._pLat = q.lat;
+      this._pI = q.i;
+      if (Math.abs(kHere) > 1 / 160 && Math.abs(out.s) > 0.9 && !this.hunt && speed > 6) {
+        const out1 = -Math.sign(kHere);
+        const wide = out1 * (q.lat - lane), drift = out1 * latV;
+        // (a lift, not a stamp on the brakes: braking hard mid-corner halved
+        // the wall hits too but cost a Legend bot 4 s a race; lifting keeps
+        // nearly all of the first and none of the second)
+        if (wide > 1.5 && drift > 1.6) {
+          this._cap = Math.min(this._cap, speed - 0.3 - Math.min(0.5, drift * 0.1));
+          if (wide > 2.5 && drift > 2) this._learn(track, q.i);
+        }
+      }
       // Speed: min over the road ahead of the corner speed + braking distance.
       const g = 9.81;
+      const memo = this._memoTr === track ? this.memo : null;
       // Real grip includes tyre load sensitivity: heavy cars have less per kg.
       const sens = 1 - spec.loadSens * ((spec.mass * g) / 4 / spec.fzNom - 1);
       let vT = 99;
@@ -232,18 +285,27 @@
         const mu = spec.mu * sm * sens * 0.86 * this.skill * (1 - sf.rough * spec.roughGrip);
         // v² = mu*g / (k - mu*0.6*clA/m) : downforce raises the limit with speed
         const den = k - (mu * 0.6 * spec.clA) / spec.mass;
-        const vc = den > 1e-5 ? Math.sqrt((mu * g) / den) : 99;
+        let vc = den > 1e-5 ? Math.sqrt((mu * g) / den) : 99;
+        if (memo) vc *= memo[Math.floor(i / 5)] || 1; // (v5.5 corner memory)
         const decel = mu * g * brakeK;
-        const va = Math.sqrt(vc * vc + 2 * decel * d);
+        // (braking starts a reaction's worth early: the pedal lagged the plan
+        // by 3-4 m/s into every braking zone, so bots arrived too fast)
+        const va = Math.sqrt(vc * vc + 2 * decel * Math.max(0, d - speed * 0.12));
         if (va < vT) vT = va;
       }
-      if (!track.closed && q.along > track.finishDist + 5) vT = Math.min(vT, 12);
+      // past a sprint's finish: roll down and stop short of the barrier at
+      // the end of the road (v5.5 - they used to nose into it and keep
+      // pushing, in front of everybody watching the results)
+      const parked = !track.closed && q.along > track.finishDist + 5;
+      if (parked) vT = Math.min(vT, 12, Math.sqrt(2 * 4 * Math.max(0, track.length - 14 - q.along)));
       if (this.err && this.err.k === 'lift') vT = Math.min(vT, speed * 0.86);
       vT = Math.min(vT, this._cap, pitCap);
       const dv = vT - speed;
       this.lastDv = dv;
       out.t = U.clamp(dv * 0.6 + 0.3, 0, 1);
-      out.b = dv < -1.5 ? U.clamp(-dv * 0.25, 0, 1) : 0;
+      // (v5.5: firmer and sooner - was nothing until 1.5 m/s over, then a
+      // quarter of the pedal per m/s)
+      out.b = dv < -0.8 ? U.clamp(0.18 + (-dv - 0.8) * 0.4, 0, 1) : 0;
       if (this.hunt && dv > -3) {
         out.t = Math.max(out.t, 0.95); // closing in for the hit
         out.b = 0;
@@ -272,12 +334,46 @@
         this.prevBeta = beta;
         if (Math.abs(beta) > 0.14) out.t *= U.clamp(1 - (Math.abs(beta) - 0.14) * (growing ? 4 : 2.2), 0.2, 1);
       }
-      if (st.heat > 0.8) out.t = Math.min(out.t, 0.55); // manage turbo heat
+      if (spec.ev) {
+        // v5.5 an electric motor derates smoothly from 55 % temperature, so
+        // it is managed early: ease the pedal back as it warms, and it never
+        // reaches the cut-out. (The turbo rule below kept the Volt bot
+        // overheated for two thirds of a race - it was a lap down.)
+        if (st.heat > 0.5) out.t = Math.min(out.t, U.clamp(1 - (st.heat - 0.5) * 2.2, 0.3, 1));
+      } else if (st.heat > 0.8) out.t = Math.min(out.t, 0.55); // manage turbo heat
       out.hb = 0;
-      if (pitHold) {
+      if (pitHold || (parked && vT < 0.5 && speed < 1.5)) {
         out.t = 0;
         out.b = 1;
+        out.hb = parked ? 1 : 0; // (brake + handbrake = parked, never reverse)
         this.stuck = 0;
+        if (parked) {
+          out.n = 0;
+          return out;
+        }
+      }
+      // v5.5 unsticking: stopped with the nose in a wall, or pointing well
+      // away from where it wants to go - back out with the wheel the other
+      // way, then drive on. It used to push into the barrier until the
+      // reset timer fired, and bumped the wall a dozen times doing it.
+      // (and nose-first against a rock or a barrel stack, pushing: back off
+      // and go round it)
+      this.revCool -= dt;
+      this.pushT = speed < 1.5 && st.wallHit > 0 && out.t > 0.3 ? (this.pushT || 0) + dt : Math.max(0, (this.pushT || 0) - dt * 2);
+      if (this.rev <= 0 && this.revCool <= 0 && !pitting && !pitHold && speed < 2.5 && this.env && this.env.t > 2 && !(this._cap < 1) && (Math.abs(err) > 1.1 || (st.wallHit > 0 && Math.abs(err) > 0.45) || this.pushT > 0.35)) {
+        this.rev = 0.9 + Math.min(0.6, Math.abs(err) * 0.3);
+        this.revS = Math.abs(err) > 0.15 ? Math.sign(err) : Math.sign(lane - q.lat) || 1;
+        this.pushT = 0;
+      }
+      if (this.rev > 0) {
+        this.rev -= dt;
+        if (this.rev <= 0) this.revCool = 1.6;
+        out.t = 0;
+        out.b = 0.8;
+        out.s = this.revS; // reversing: the nose swings the other way
+        out.n = 0;
+        this.stuck = Math.max(0, this.stuck - dt * 0.5);
+        return out;
       }
       // Nitrous: fire it accelerating on a straight-ish bit, never when hot.
       out.n = spec.nosGain && st.nos > 0.04 && dv > 3 && speed > 8 && Math.abs(out.s) < 0.3 && st.heat < 0.7 && !this.aggressive ? 1 : 0;
@@ -295,10 +391,12 @@
       return out;
     }
 
-    // v5 rival: now and then pick whoever is just ahead (human or bot, it
-    // doesn't care) and go for their rear corner, a few times a race.
+    // v5 rival: now and then pick whoever is just ahead and go for their
+    // rear corner, a few times a race. (v5.5: a person is only ever a target
+    // after ramming this bot first - someone racing clean is left alone.)
     _rival(st, others, speed, fx, fz, dt) {
       this.cool -= dt;
+      if (this.grudge && (this.grudge.t -= dt) <= 0) this.grudge = null;
       const h = this.hunt;
       if (h) {
         h.t -= dt;
@@ -315,6 +413,7 @@
       let best = null, bd = 1e9;
       for (const o of others) {
         if (o === st || o.ghost > 0) continue;
+        if (this.humans && this.humans.has(o) && !(this.grudge && this.grudge.st === o)) continue;
         const dx = o.x - st.x, dz = o.z - st.z;
         const ahead = dx * fx + dz * fz, side = dx * fz - dz * fx;
         if (ahead < 5 || ahead > 22 || Math.abs(side) > 5) continue;

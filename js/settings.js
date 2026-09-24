@@ -34,15 +34,19 @@
     botLevel: 'normal', // rookie | easy | normal | hard | pro | legend (single-player bots; bot.js LEVELS)
     catchup: 'mild', // off | mild | wild (single-player quick races; the host picks for multiplayer)
     raceWeather: 'auto', // v5 auto (sometimes a shower mid-race) | dry | rain (single-player quick races)
-    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH' },
+    stt: true, // v5.5 speech to text in multiplayer chat (hold the talk key or tap the mic)
+    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH', talk: 'KeyV' },
   };
-  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn' };
+  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn', talk: 'Speech to text (hold)' };
   // Catch-up strength per setting: the most extra power a car far behind gets.
   const CATCHUP = { off: 0, mild: 0.1, wild: 0.25 };
 
   const saved = U.store.get('ss.settings', null) || {};
   const s = Object.assign({}, DEF, saved);
   s.keys = Object.assign({}, DEF.keys, saved.keys || {});
+  // (v5.5: someone who already put V on another control keeps it; talk
+  //  starts unbound for them and they can pick a key in Controls)
+  if (!(saved.keys && saved.keys.talk) && Object.keys(s.keys).some((a) => a !== 'talk' && s.keys[a] === s.keys.talk)) s.keys.talk = '';
   // one-time migration of the pre-settings keys
   if (!saved.quality && U.store.get('ss.quality', null)) s.quality = U.store.get('ss.quality');
   if (saved.sound == null && U.store.get('ss.sound', null) != null) s.sound = !!U.store.get('ss.sound');

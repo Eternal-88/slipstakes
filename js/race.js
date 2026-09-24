@@ -58,6 +58,9 @@
       });
       this.byId = {};
       this.cars.forEach((c) => (this.byId[c.id] = c));
+      // v5.5: bots know which cars people are driving (they give them more room)
+      const humans = new Set(this.cars.filter((c) => !c.bot).map((c) => c.st));
+      for (const c of this.cars) if (c.bot) c.bot.humans = humans;
       // v5 rivals: in a real race, up to two bots (by their level's odds) go
       // looking for someone to bump. They pick whoever is nearby, bot or human.
       if (!this.practice) {
@@ -232,6 +235,14 @@
           // physics above still runs every tick; only the effects are
           // throttled (a new, much harder hit still gets through).
           if (jn > 1500) {
+            // v5.5 who ran into whom: whichever car was driving INTO the other
+            // (a rival bot only ever gets even with the one that started it)
+            if (A.bot || B.bot) {
+              const dx = B.st.x - A.st.x, dz = B.st.z - A.st.z, dl = Math.hypot(dx, dz) || 1;
+              const va = (A.st.vx * dx + A.st.vz * dz) / dl, vb = -(B.st.vx * dx + B.st.vz * dz) / dl;
+              if (va > vb + 1 && B.bot) B.bot.rammedBy(A.st, jn);
+              else if (vb > va + 1 && A.bot) A.bot.rammedBy(B.st, jn);
+            }
             const key = A.id < B.id ? A.id + '|' + B.id : B.id + '|' + A.id;
             const last = this._hits.get(key);
             if (!last || this.t - last.t > 0.35 || (jn > last.j * 2.5 && this.t - last.t > 0.08)) {

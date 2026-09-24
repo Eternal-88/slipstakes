@@ -206,7 +206,7 @@
       const sim = this.sim;
       this.snapN++;
       const base = {
-        t: 's', no: this.no, k: sim.tick, ts: performance.now(),
+        t: 's', no: this.no, k: sim.tick, ts: Math.round(performance.now() * 10) / 10, // (0.1 ms is plenty; the raw clock was 16 digits a packet)
         ph: NP.PH[sim.phase], cd: Math.max(0, +sim.countdown.toFixed(3)),
         rt: sim.raceStartT != null ? +(sim.t - sim.raceStartT).toFixed(3) : 0,
         c: sim.cars.map(NP.packFast),

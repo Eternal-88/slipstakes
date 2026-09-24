@@ -32,7 +32,8 @@
 //      b) replay the remaining (TPI - at) ticks of the acked block and every
 //         later block in `hist` (the newest only as far as we've simulated it),
 //      c) compute where that puts the car vs. where we were DRAWING it, and
-//         hide the difference in a visual offset that decays over ~100 ms.
+//         hide the difference in a visual offset that eases out (a
+//         critically damped spring, ~0.3 s).
 //    Errors > SNAP_DIST (a big shunt we couldn't predict, a respawn) snap.
 //
 // 3. CONTACT PREDICTION (our car only)   [v5.2]
@@ -48,11 +49,17 @@
 (function (G) {
   const U = G.U, P = G.Physics, NP = G.NetPack;
   const TPI = 4;
-  const LEAD_MAX = 320; // ms of dead reckoning we are willing to do at all
-  const STALE_MS = 300; // newest snapshot older than this: stop guessing, hold
-  const LEAD_TOTAL = 380; // ms; a stalled link must not slide cars across the map
-  const EASE_TAU = 0.07; // s, how fast a projection correction is absorbed
-  const EASE_MAX = 4; // m; a bigger step than this is a respawn, so snap to it
+  // (v5.5: 320 / 300 / 380 ms before. Through the backup relay a car has to
+  // be guessed ~450 ms ahead to sit where it really is next to OUR car, and
+  // the old cap left every relayed car drawn 2.9 m behind on average - now
+  // 1.2 m. School Wi-Fi also stalls for a few hundred ms at a time: past the
+  // old 300 ms every car froze, then jumped up to 5.6 m when the burst
+  // landed. Measured with tools/netlag.js, three seeds each.)
+  const LEAD_MAX = 600; // ms of dead reckoning we are willing to do at all
+  const STALE_MS = 550; // newest snapshot older than this: stop guessing, hold
+  const LEAD_TOTAL = 700; // ms; a stalled link must not slide cars across the map
+  const EASE_MAX = 7; // m; a bigger step than this is a respawn, so snap to it (a respawn is flagged as one anyway)
+  const SPRING_W = 18; // 1/s: how stiffly that offset is pulled back to zero (critically damped, ~0.25 s)
   const OFF_WIN = 4000; // ms window for the host-clock estimate
   // How a client resolves its own half of a contact: the impulse of a real
   // bump, no position claim, nothing below a 1.2 m/s closing speed. See the
@@ -66,8 +73,8 @@
   // relayed player gets the projection but hears shunts from the host only.
   const GUESS_MAX = 0.26; // s
   const KEEP_MS = 1500;
-  const SNAP_DIST = 6;
-  const VIS_TAU = 0.1;
+  const SNAP_DIST = 9; // (v5.5: 6 - the softer spring below can be carrying a few metres when a stall's correction lands)
+  const VIS_W = 12; // 1/s, own-car correction spring (critically damped)
 
   function blankRs() {
     return { x: 0, z: 0, h: 0, vx: 0, vz: 0, w: 0, steer: 0, ax: 0, ay: 0, rpm: 0.14, gear: 1, boost: 0, heat: 0, slip: [0, 0, 0, 0], surf: [0, 0, 0, 0], spin: 0, lock: 0, overheat: 0, backfire: 0, ghost: 0, wallHit: 0, raceDist: 0 };
@@ -129,7 +136,7 @@
         this.cur = { s: 0, t: 0, b: 0, hb: 0, n: 0 };
         this.acc = 0;
         this.px = g.x; this.pz = g.z; this.ph = g.h;
-        this.vis = { x: 0, z: 0, h: 0 };
+        this.vis = { x: 0, z: 0, h: 0, vx: 0, vz: 0, vh: 0 };
         this._me = { st: this.pred, spec: this.spec };
       }
     }
@@ -217,7 +224,7 @@
       this.stats.lastErr = err;
       if (err > 0.05) this.stats.corrections++;
       if (err > SNAP_DIST) {
-        this.vis.x = this.vis.z = this.vis.h = 0;
+        this.vis.x = this.vis.z = this.vis.h = this.vis.vx = this.vis.vz = this.vis.vh = 0;
         this.px = st.x; this.pz = st.z; this.ph = st.h;
       } else {
         this.vis.x = ex;
@@ -262,10 +269,18 @@
         n++;
       }
       if (n >= 12) this.acc = 0;
-      const k = Math.exp(-dt / VIS_TAU);
-      this.vis.x *= k;
-      this.vis.z *= k;
-      this.vis.h *= k;
+      // v5.5: the visual offset rides a critically damped spring (as for
+      // the other cars), so a correction - the big one after a Wi-Fi stall
+      // especially - glides in instead of yanking the car sideways on the
+      // first frame. Measured through 0.35-0.7 s stalls: frames where our own
+      // car visibly jumped went from 17-20 a minute to 0-2.
+      const V = this.vis, sx = Math.exp(-VIS_W * dt);
+      let tq = (V.vx + VIS_W * V.x) * dt;
+      V.x = (V.x + tq) * sx; V.vx = (V.vx - VIS_W * tq) * sx;
+      tq = (V.vz + VIS_W * V.z) * dt;
+      V.z = (V.z + tq) * sx; V.vz = (V.vz - VIS_W * tq) * sx;
+      tq = (V.vh + VIS_W * V.h) * dt;
+      V.h = (V.h + tq) * sx; V.vh = (V.vh - VIS_W * tq) * sx;
     }
 
     // The other cars, dead-reckoned onto OUR clock. See note (1) at the top.
@@ -275,73 +290,118 @@
       const A = S[S.length - 1];
       const dt = Math.min(0.1, Math.max(0, (now - (this._pt == null ? now : this._pt)) / 1000));
       this._pt = now;
-      const k = Math.exp(-dt / EASE_TAU);
       const age = now - A.rt;
       // How far ahead of the snapshot we have to guess to land on our own
       // car's clock: the snapshot's own age plus the round trip. Past STALE_MS
       // the link has gone quiet and guessing further only flings cars about.
       this.fresh = age < STALE_MS;
-      const lead = Math.min(Math.min(age, STALE_MS) + Math.min(U.clamp((this.net && this.net.rtt) || 0, 0, 3000), LEAD_MAX), LEAD_TOTAL) / 1000;
+      // (the ping estimate moves in steps once a second; glide between them,
+      // or every remote car hops a little each time it updates)
+      const rttNow = U.clamp((this.net && this.net.rtt) || 0, 0, 3000);
+      this.rttS = this.rttS == null ? rttNow : this.rttS + (rttNow - this.rttS) * (1 - Math.exp(-dt / 0.6));
+      const rttL = Math.min(this.rttS, LEAD_MAX);
+      const leadOf = (snap) => Math.min(Math.min(now - snap.rt, STALE_MS) + rttL, LEAD_TOTAL) / 1000;
+      const lead = leadOf(A);
       this.lead = lead;
-      const tr = this.track, t = lead;
+      const T = this._pj || (this._pj = { x: 0, z: 0, h: 0, vx: 0, vz: 0, hint: -1 });
       for (let j = 0; j < this.rs.length; j++) {
         if (j === this.meIdx) continue;
         const o = this.rs[j];
         NP.unpackFast(A.c[j], o);
         const E = this.ease[j];
-        const vx = o.vx, vz = o.vz, w = o.w;
-        let tx, tz;
-        if (Math.abs(w) > 0.02) {
-          // Constant yaw rate. A car in a corner holds its rate of turn far
-          // better than it holds a straight line, so integrating the rotating
-          // velocity exactly is what makes guessing this far ahead work at all
-          // - plain velocity dead reckoning fires cars off on the tangent.
-          const s1 = Math.sin(w * t), c1 = 1 - Math.cos(w * t);
-          tx = o.x + (vx * s1 + vz * c1) / w;
-          tz = o.z + (vz * s1 - vx * c1) / w;
-        } else {
-          tx = o.x + vx * t;
-          tz = o.z + vz * t;
-        }
-        // Braking and accelerating, along the car's own axis at mid-guess. ax
-        // is already a smoothed number and this is a guess, so take half of it.
-        const th = U.wrapAngle(o.h + w * t);
-        const hm = o.h + w * t * 0.5;
-        const al = U.clamp(o.ax, -12, 12) * t * t * 0.25;
-        tx += Math.sin(hm) * al;
-        tz += Math.cos(hm) * al;
-        // Turn the velocity with it, so wheel spin, engine note, body roll and
-        // the skid marks all match the direction the car is actually pointing.
-        const cw = Math.cos(w * t), sw = Math.sin(w * t);
-        o.vx = vx * cw + vz * sw;
-        o.vz = vz * cw - vx * sw;
-        // Never guess a car through a barrier.
-        const q = tr.query(tx, tz, E.hint, this._q);
-        E.hint = q.i;
-        if (Math.abs(q.lat) > q.wall) {
-          const d = U.clamp(q.lat, -q.wall, q.wall) - q.lat;
-          tx += q.nx * d;
-          tz += q.nz * d;
-        }
+        this._guess(o, lead, E, T);
+        const tx = T.x, tz = T.z, th = T.h;
+        o.vx = T.vx;
+        o.vz = T.vz;
         // A new snapshot moves the target by whatever the guess got wrong.
         // Absorb that step in an offset that decays, so the car doesn't twitch
         // every time one lands. Too big a step is a respawn: snap to it.
+        // v5.5: the step is measured against where the OLD guess puts the car
+        // at this instant - not where it was drawn last frame. Last frame's
+        // spot was a frame of travel behind, so every car stood still for one
+        // frame each time a snapshot landed (30 times a second: a fine,
+        // constant shimmer on every car you race against, 0.4 m at speed).
+        // v5.5: the offset rides a critically damped spring instead of
+        // decaying straight away. The position was already continuous; now
+        // its SPEED is too, so a correction eases in and out rather than
+        // kinking the car's path the frame it starts.
+        const sx = Math.exp(-SPRING_W * dt);
+        let tq = ((E.vx || 0) + SPRING_W * E.ox) * dt;
+        E.ox = (E.ox + tq) * sx; E.vx = ((E.vx || 0) - SPRING_W * tq) * sx;
+        tq = ((E.vz || 0) + SPRING_W * E.oz) * dt;
+        E.oz = (E.oz + tq) * sx; E.vz = ((E.vz || 0) - SPRING_W * tq) * sx;
+        tq = ((E.vh || 0) + SPRING_W * E.oh) * dt;
+        E.oh = (E.oh + tq) * sx; E.vh = ((E.vh || 0) - SPRING_W * tq) * sx;
         if (E.k !== A.k) {
+          let bx = E.x, bz = E.z, bh = E.h;
+          if (E.has && E.base && E.base !== A) {
+            const B = this._pjOld || (this._pjOld = { slip: [0, 0, 0, 0], surf: [0, 0, 0, 0] });
+            NP.unpackFast(E.base.c[j], B);
+            const T2 = this._pj2 || (this._pj2 = { x: 0, z: 0, h: 0, vx: 0, vz: 0, hint: -1 });
+            T2.hint = E.hint;
+            this._guess(B, leadOf(E.base), T2, T2);
+            bx = T2.x + E.ox;
+            bz = T2.z + E.oz;
+            bh = U.wrapAngle(T2.h + E.oh);
+          }
           E.k = A.k;
-          const ex = E.x - tx, ez = E.z - tz;
+          E.base = A;
+          const ex = bx - tx, ez = bz - tz;
           if (E.has && !o.ghost && Math.hypot(ex, ez) < EASE_MAX) {
             E.ox = ex;
             E.oz = ez;
-            E.oh = U.wrapAngle(E.h - th);
-          } else E.ox = E.oz = E.oh = 0;
+            E.oh = U.wrapAngle(bh - th);
+          } else E.ox = E.oz = E.oh = E.vx = E.vz = E.vh = 0;
         }
-        E.ox *= k; E.oz *= k; E.oh *= k;
         o.x = E.x = tx + E.ox;
         o.z = E.z = tz + E.oz;
         o.h = E.h = U.wrapAngle(th + E.oh);
-        o.hint = E.hint;
+        o.hint = E.hint = T.hint;
         E.has = true;
       }
+    }
+
+    // Dead-reckon one car (unpacked fast state `o`) `t` seconds ahead into
+    // `out` {x, z, h, vx, vz, hint}. `H.hint` seeds the road lookup.
+    _guess(o, t, H, out) {
+      const tr = this.track;
+      const vx = o.vx, vz = o.vz, w = o.w;
+      let tx, tz;
+      if (Math.abs(w) > 0.02) {
+        // Constant yaw rate. A car in a corner holds its rate of turn far
+        // better than it holds a straight line, so integrating the rotating
+        // velocity exactly is what makes guessing this far ahead work at all
+        // - plain velocity dead reckoning fires cars off on the tangent.
+        const s1 = Math.sin(w * t), c1 = 1 - Math.cos(w * t);
+        tx = o.x + (vx * s1 + vz * c1) / w;
+        tz = o.z + (vz * s1 - vx * c1) / w;
+      } else {
+        tx = o.x + vx * t;
+        tz = o.z + vz * t;
+      }
+      // Braking and accelerating, along the car's own axis at mid-guess. ax
+      // is already a smoothed number and this is a guess, so take half of it.
+      const th = U.wrapAngle(o.h + w * t);
+      const hm = o.h + w * t * 0.5;
+      const al = U.clamp(o.ax, -12, 12) * t * t * 0.25;
+      tx += Math.sin(hm) * al;
+      tz += Math.cos(hm) * al;
+      // Turn the velocity with it, so wheel spin, engine note, body roll and
+      // the skid marks all match the direction the car is actually pointing.
+      const cw = Math.cos(w * t), sw = Math.sin(w * t);
+      out.vx = vx * cw + vz * sw;
+      out.vz = vz * cw - vx * sw;
+      // Never guess a car through a barrier.
+      const q = tr.query(tx, tz, H.hint, this._q);
+      out.hint = q.i;
+      if (Math.abs(q.lat) > q.wall) {
+        const d = U.clamp(q.lat, -q.wall, q.wall) - q.lat;
+        tx += q.nx * d;
+        tz += q.nz * d;
+      }
+      out.x = tx;
+      out.z = tz;
+      out.h = th;
     }
 
     // The other cars as we are DRAWING them, ready for a contact test.

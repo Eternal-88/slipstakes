@@ -120,16 +120,33 @@
       }
     }
     // Four-sided loft (cabins, windscreens): {z, yb, yt, wb, wt}
-    loft4(secs, col, colTop) {
+    // faceCol(e, k), optional: the colour of face e (1 right, 2 top, 3 left)
+    // of segment k, or null to leave it out, or {split: [f, outer, inner]}
+    // to lay the top face in three strips - the middle f of its width in
+    // `inner` - so a window can sit IN a panel rather than on top of it.
+    loft4(secs, col, colTop, faceCol) {
       const ring = (s) => [[-s.wb, s.yb, s.z], [s.wb, s.yb, s.z], [s.wt, s.yt, s.z], [-s.wt, s.yt, s.z]];
       const R = secs.map(ring);
+      const mix = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t, p[2] + (q[2] - p[2]) * t];
       for (let k = 0; k < R.length - 1; k++) {
         const A = R[k], B = R[k + 1];
         const iz = (secs[k].z + secs[k + 1].z) / 2;
         const iy = (secs[k].yb + secs[k + 1].yb) / 2 + 0.05;
         for (let e = 1; e < 4; e++) {
           const e2 = (e + 1) % 4;
-          this.quad(A[e], A[e2], B[e2], B[e], e === 2 && colTop ? colTop : col, 0, iy, iz);
+          let c = e === 2 && colTop ? colTop : col;
+          const f = faceCol ? faceCol(e, k) : undefined;
+          if (f === null) continue;
+          if (f && f.split) {
+            const t0 = (1 - f.split[0]) / 2, t1 = 1 - t0;
+            const ra = mix(A[e], A[e2], t0), la = mix(A[e], A[e2], t1), rb = mix(B[e], B[e2], t0), lb = mix(B[e], B[e2], t1);
+            this.quad(A[e], ra, rb, B[e], f.split[1], 0, iy, iz);
+            this.quad(ra, la, lb, rb, f.split[2], 0, iy, iz);
+            this.quad(la, A[e2], B[e2], lb, f.split[1], 0, iy, iz);
+            continue;
+          }
+          if (f) c = f;
+          this.quad(A[e], A[e2], B[e2], B[e], c, 0, iy, iz);
         }
       }
       for (const [k, dir] of [[0, -1], [R.length - 1, 1]]) {
@@ -645,6 +662,7 @@
       gb.quadN([-e1.wt, e1.yt, e1.z], [e1.wt, e1.yt, e1.z], [e1.wt, e1.yt - DEEP, e1.z], [-e1.wt, e1.yt - DEEP, e1.z], C(0x1c1e24), [0, 0, -1]);
     }
     const pillar = L.livery === 'roof' ? acc : body;
+    const roofCol = P.weight === 'w3' ? carbon : L.livery === 'roof' || L.livery === 'checker' ? acc : bodyTop;
     const c0 = cab[0], cN = cab[cab.length - 1];
     // An open car has no glass lid. Lofting the whole cabin volume in tinted
     // glass laid a dark slab over the cockpit and hid everything inside it;
@@ -653,7 +671,22 @@
     if (B.cockpit) {
       gb.quadN([cN.wt - 0.02, cN.yt - 0.02, cN.z], [-(cN.wt - 0.02), cN.yt - 0.02, cN.z],
         [-(scS.wt - 0.05), scS.yt + 0.01, scZ], [scS.wt - 0.05, scS.yt + 0.01, scZ], glass, [0, 0.8, 0.6]);
-    } else gb.loft4(cab, glass);
+    } else {
+      // v5.5: the cabin is ONE surface - glass where there is glass, metal
+      // where there is metal. Metal panels laid a few millimetres over a
+      // glass cabin fought it for the same pixels at a distance, and the
+      // glass flickered through the roof.
+      const roofZa = B.roof ? B.roof[0] - 0.06 : 99, roofZb = B.roof ? B.roof[1] + 0.06 : -99;
+      // (the GTD: behind the doors a Mustang is a broad metal sail panel with
+      // the rear window set into it)
+      const sailZ = SK && SK.id === 'gtd' ? B.doors[1] - 0.12 + 1e-6 : -99;
+      gb.loft4(cab, glass, null, (e, k) => {
+        const za = cab[k].z, zb = cab[k + 1].z;
+        if (zb <= sailZ) return e === 2 ? { split: [0.58, bodyTop, glass] } : bodyTop;
+        if (e === 2 && za >= roofZa && zb <= roofZb) return roofCol;
+        return undefined;
+      });
+    }
     if (B.roof) {
       const [z0, z1, y] = B.roof;
       // Width comes from the cabin sections the roof actually spans. Taken
@@ -663,11 +696,10 @@
       let rw = 0;
       for (const sc of cab) if (sc.z >= z0 - 0.14 && sc.z <= z1 + 0.14) rw = Math.max(rw, sc.wt);
       const w = (rw || cab[1].wt) * 2 - 0.015;
-      const roofCol = P.weight === 'w3' ? carbon : L.livery === 'roof' || L.livery === 'checker' ? acc : bodyTop;
-      const rsec = cab.filter((sc) => sc.z >= z0 - 0.06 && sc.z <= z1 + 0.06)
-        .map((sc) => ({ z: sc.z, yb: sc.yt - 0.035, yt: sc.yt + 0.006, wb: sc.wt - 0.008, wt: sc.wt - 0.008 }));
-      if (rsec.length >= 2) gb.loft4(rsec, roofCol, roofCol);
-      else gb.box(0, y - 0.004, (z0 + z1) / 2, w, 0.035, z1 - z0 + 0.04, roofCol);
+      // (the roof is the cabin's own top face now - see the cabin loft; a
+      // cabin with too few sections under the roof still gets a panel)
+      const rsec = cab.filter((sc) => sc.z >= z0 - 0.06 && sc.z <= z1 + 0.06);
+      if (rsec.length < 2) gb.box(0, y - 0.004, (z0 + z1) / 2, w, 0.035, z1 - z0 + 0.04, roofCol);
       if (L.livery === 'checker') {
         const nx = 6, nz = 7;
         for (let i = 0; i < nx; i++) for (let k = 0; k < nz; k++) {
@@ -1236,35 +1268,6 @@
     // add the things you actually recognise a car by.
     if (SK && SK.id === 'gtd') {
       const tS = secAt(B, tz);
-      // Metal where a Mustang is metal. The cabin is lofted whole in glass, so
-      // behind the doors - where the real car has a broad sail panel sweeping
-      // down to the deck and a rear window set INTO it - this was glass all
-      // the way back. That, not the roof, is what read as a glass roof.
-      const cabAt = (z) => {
-        for (let i = 0; i < cab.length - 1; i++) {
-          const a = cab[i], b2 = cab[i + 1];
-          if (z >= a.z && z <= b2.z) {
-            const u = (z - a.z) / (b2.z - a.z || 1), mix = (k) => a[k] + (b2[k] - a[k]) * u;
-            return { z, yb: mix('yb'), yt: mix('yt'), wb: mix('wb'), wt: mix('wt') };
-          }
-        }
-        return z < cab[0].z ? cab[0] : cab[cab.length - 1];
-      };
-      const sailZ = B.doors[1] - 0.17; // just behind the door shut line
-      const szs = [cab[0].z];
-      for (const sc of cab) if (sc.z > cab[0].z + 0.01 && sc.z < sailZ - 0.01) szs.push(sc.z);
-      szs.push(sailZ);
-      const sail = szs.map(cabAt);
-      for (let i = 0; i < sail.length - 1; i++) {
-        const a = sail[i], b2 = sail[i + 1];
-        for (const sx of [-1, 1]) {
-          // the sail panel over the cabin's flank
-          gb.quadN([sx * (a.wb + 0.008), a.yb + 0.004, a.z], [sx * (b2.wb + 0.008), b2.yb + 0.004, b2.z], [sx * (b2.wt + 0.008), b2.yt + 0.002, b2.z], [sx * (a.wt + 0.008), a.yt + 0.002, a.z], bodyTop, [sx, 0.3, 0]);
-          // and the pillar either side of the rear window, on the slope: the
-          // glass is the middle 58 % of it
-          gb.quadN([sx * a.wt, a.yt + 0.005, a.z], [sx * b2.wt, b2.yt + 0.005, b2.z], [sx * b2.wt * 0.58, b2.yt + 0.005, b2.z], [sx * a.wt * 0.58, a.yt + 0.005, a.z], bodyTop, [0, 1, 0]);
-        }
-      }
       // Swan-neck wing: two uprights off the deck, the blade hung UNDER their
       // tops rather than sitting on posts - that is the detail that reads.
       // Level with the roof, not hovering above it, on uprights you can see.

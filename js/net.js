@@ -433,7 +433,17 @@
           relay.knock();
           this.emit('status', 'relay');
         };
-        const knockT = setTimeout(knock, usePeer ? RELAY_AFTER : 0);
+        // v5.5: this tab has been in this room before and the direct link
+        // couldn't be made (a school Wi-Fi): knock on the relay straight
+        // away on a reconnect instead of waiting RELAY_AFTER to find out
+        // again. The direct attempt still runs alongside it. (Per tab and
+        // per room code, never saved beyond the tab.)
+        const hintKey = 'ss.route.' + this.code;
+        let hint = null;
+        try {
+          hint = sessionStorage.getItem(hintKey);
+        } catch (e) {}
+        const knockT = setTimeout(knock, usePeer && hint !== 'relay' ? RELAY_AFTER : 0);
 
         // Channels arrive from up to three places: our own WebRTC call and the
         // host's reverse call (both route 'direct', see NetHost._onConn), and
@@ -450,6 +460,9 @@
           this.ctrl = r.ctrl;
           this.fast = r.fast;
           this.via = kind === 'direct' ? 'direct' : 'relay';
+          try {
+            sessionStorage.setItem(hintKey, this.via);
+          } catch (e) {}
           for (const c of all) {
             if (c === r.ctrl || c === r.fast) continue;
             try {
