@@ -63,7 +63,7 @@
       const r = session.state.race;
       this.no = r.no;
       this.track = G.getTrack(r.trackId);
-      this.sim = new G.RaceSim(this.track, r.entrants, { countdown: 4.5, catchup: r.catchup || 0, weather: r.weather || null, endu: r.endu || null });
+      this.sim = new G.RaceSim(this.track, r.entrants, { countdown: 10.5, catchup: r.catchup || 0, weather: r.weather || null, endu: r.endu || null });
       this.inputs = {}; // pid -> {q: [blocks], cur: block|null, seq, ticks, rs}
       this.acc = 0;
       this.snapN = 0;

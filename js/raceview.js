@@ -67,7 +67,7 @@
       } else if (G.Audio) {
         G.Audio.race(v, world, dt);
         const cd = v.phase === 'grid' ? Math.ceil(v.countdown) : 0;
-        if (v.phase === 'grid' && cd >= 1 && cd <= 3 && cd !== this._lastCd) G.Audio.countdown(cd);
+        if (v.phase === 'grid' && cd >= 1 && cd <= 10 && cd !== this._lastCd) G.Audio.countdown(cd);
         this._lastCd = cd;
       }
     },

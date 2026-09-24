@@ -20,6 +20,9 @@
     gravel: [0xb4a58e, 0xa89a82],
     concrete: [0x8d949c, 0x858c94],
     sand: [0xe2c58f, 0xd9bb85],
+    ice: [0xbcd8e8, 0xc8e1ee],
+    mud: [0x5a3c22, 0x62432a],
+    water: [0x3f6f95, 0x46789e],
   };
   // Hazard patch colours (base, inner sheen / ruts / frost)
   const PATCH_COL = { oil: [0x121418, 0x2a2f38], mud: [0x5a3c22, 0x6d4a2b], ice: [0xcfe6f2, 0xf2fbff], water: [0x3f6f95, 0x8fc3e6] };
@@ -332,7 +335,8 @@
       for (let s = 0; s < segCount; s++) {
         const i = s, j = track.idx(s + 1);
         const sid = G.SURF[track.S[i]].id;
-        const pal = SURF_COL[sid] || SURF_COL.tarmac;
+        // (v5.4: a theme can recolour a surface - volcanic gravel is ash-black)
+        const pal = (th.surfCol && th.surfCol[sid]) || SURF_COL[sid] || SURF_COL.tarmac;
         const cc = C(pal[Math.floor(s / 5) % 2]);
         const w0 = track.W[i], w1 = track.W[j];
         // two strips so banking tilts correctly about the centre
@@ -359,7 +363,7 @@
         // (v5: per-section width + surface: pit aprons, gravel-trap shortcuts)
         const rsid = G.SURF[track.RS[i]].id;
         if (rsid !== 'grass' || track.GR) {
-          const rc = rsid === 'grass' ? C(s % 2 ? th.ground2 : th.ground) : C((SURF_COL[rsid] || SURF_COL.sand)[s % 2]);
+          const rc = rsid === 'grass' ? C(s % 2 ? th.ground2 : th.ground) : C(((th.surfCol && th.surfCol[rsid]) || SURF_COL[rsid] || SURF_COL.sand)[s % 2]);
           const ra = track.RO[i], rb = track.RO[j];
           pushQuad(pos, col, P(i, w0 + ra, -0.02), P(i, w0, -0.02), P(j, w1, -0.02), P(j, w1 + rb, -0.02), rc);
           pushQuad(pos, col, P(i, -w0, -0.02), P(i, -w0 - ra, -0.02), P(j, -w1 - rb, -0.02), P(j, -w1, -0.02), rc);
@@ -457,9 +461,19 @@
       const H = 0.9, T = 0.5;
       const wc = th.wall.map(C);
       const stone = C(th.mtn || 0x8a8f96).lerp(C(0x9a948c), 0.5), stone2 = stone.clone().multiplyScalar(0.9);
+      const xg = track.xings || [];
+      const atXing = (k) => {
+        for (const x of xg) {
+          let d = Math.abs(track.D[k] - x.at);
+          if (closed && d > track.length / 2) d = track.length - d;
+          if (d < x.hw) return true;
+        }
+        return false;
+      };
       for (const side of [1, -1]) {
         for (let s = 0; s < segCount; s++) {
           const i = s, j = track.idx(s + 1);
+          if (xg.length && (atXing(i) || atXing(j))) continue; // (the rails cross here)
           const la = side * track.wallD[i], lb = side * track.wallD[j];
           // Skip where the offset curve folds (tight inside of a hairpin): the
           // wall point must genuinely be ~wallD from the nearest centreline.
@@ -559,6 +573,7 @@
     const rng = U.rng(U.hashStr(track.id + 'boards'));
     const q = {};
     const clearOf = (x, z, need) => {
+      if (track.nearRail && track.nearRail(x, z, 2)) return false;
       track.query(x, z, -1, q);
       return Math.abs(q.lat) > q.wall + need;
     };
@@ -946,6 +961,7 @@
     const b = track.bounds, M = 170;
     const q = {};
     const clearOf = (x, z, extra) => {
+      if (track.nearRail && track.nearRail(x, z, 3)) return false;
       track.query(x, z, -1, q);
       return Math.abs(q.lat) > q.wall + extra || q.along < 0 || (!track.closed && (q.along <= 0.5 || q.along >= track.length - 0.5) && Math.hypot(x - track.X[q.i], z - track.Z[q.i]) > q.wall + extra);
     };
@@ -1389,7 +1405,90 @@
     const env = () => group.userData.env || { t: 0 };
     const tmp = {}, q = {};
     for (const o of track.dyn) {
-      if (o.k === 'swing') {
+      if (o.k === 'train') {
+        // v5.4 level crossing. Built in the crossing's own frame: local X runs
+        // ALONG the rails (across the road), local Z along the road.
+        const i = o.i, y0 = track.Y[i], H0 = track.H[i];
+        const cx = track.X[i], cz = track.Z[i];
+        if (!o.car) {
+          const xb = new G.CarModel.GB();
+          for (const rl of [-0.72, 0.72]) xb.box(0, 0.07, rl, o.span * 2, 0.1, 0.12, C(0x7a808a));
+          for (let k = -o.span; k <= o.span; k += 1.4) xb.box(k, 0.03, 0, 0.32, 0.06, 2.4, C(0x3a2e24));
+          // a post each side of the road, before the rails in each direction:
+          // crossbuck on top, twin lamps under it
+          const lampOn = [], wd = track.wallD[i] + 0.9;
+          for (const sx of [wd, -wd]) {
+            for (const sz of [-3.6, 3.6]) {
+              xb.box(sx, 1.6, sz, 0.14, 3.2, 0.14, C(0xf4f4f4));
+              xb.beam([sx - 0.66, 2.66, sz], [sx + 0.66, 3.34, sz], 0.06, 0.18, C(0xe8322b));
+              xb.beam([sx - 0.66, 3.34, sz], [sx + 0.66, 2.66, sz], 0.06, 0.18, C(0xe8322b));
+              xb.box(sx, 2.3, sz, 0.9, 0.34, 0.08, C(0x1b1d22));
+              for (const lx of [-0.26, 0.26]) lampOn.push([sx + lx, 2.3, sz + Math.sign(sz) * 0.06]);
+            }
+          }
+          const xm = new THREE.Mesh(xb.geometry(), G.CarModel.material());
+          xm.position.set(cx, y0, cz);
+          xm.rotation.y = H0;
+          xm.castShadow = true;
+          group.add(xm);
+          // the lamps: two sets of lit discs, flashed alternately
+          const mk = (odd) => {
+            const lb = new G.CarModel.GB();
+            lampOn.forEach((q, k) => { if (k % 2 === odd) lb.box(q[0], q[1], q[2], 0.2, 0.2, 0.05, C(0xff3b30)); });
+            const m = new THREE.Mesh(lb.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+            m.position.set(cx, y0, cz);
+            m.rotation.y = H0;
+            m.visible = false;
+            group.add(m);
+            return m;
+          };
+          const lA = mk(0), lB = mk(1);
+          const pass = (2 * o.span + o.cars * o.gap) / o.speed;
+          let horned = -1;
+          group.userData.animFns.push(() => {
+            const t = env().t;
+            if (t <= 0) { lA.visible = lB.visible = false; return; }
+            const c = t + o.off, n = Math.floor(c / o.every), ph = c - n * o.every;
+            const warn = ph < pass || ph > o.every - 2.5;
+            const on = warn && Math.floor(t * 2.6) % 2 === 0;
+            lA.visible = warn && on;
+            lB.visible = warn && !on;
+            // the horn as it comes in, if you are near enough to hear it
+            if (ph < 0.6 && horned !== n) {
+              horned = n;
+              const cam = group.userData.cam;
+              if (cam && G.Audio && G.Audio.trainHorn) G.Audio.trainHorn(U.clamp(1.15 - Math.hypot(cam.fx - cx, cam.fz - cz) / 140, 0, 1));
+            }
+          });
+        }
+        // this carriage: the loco in yellow, then container wagons
+        const cb = new G.CarModel.GB();
+        const L = o.gap * 0.92;
+        const loco = !o.car;
+        const colBody = loco ? C(0xffc400) : C([0x2f6bb5, 0x9c3a26, 0x4d7d4a, 0x7a7f88][o.car % 4]);
+        cb.box(0, 0.55, 0, L, 0.4, 2.6, C(0x22252b)); // chassis
+        for (const wx of [-L * 0.3, L * 0.3]) for (const wz of [-0.8, 0.8]) cb.box(wx, 0.38, wz, 0.7, 0.62, 0.2, C(0x121418));
+        cb.box(0, 2.0, 0, L - 0.08, 2.5, 2.7, colBody);
+        if (loco) {
+          cb.box(-L * 0.28, 2.75, 0, L * 0.34, 0.8, 2.72, C(0x1b1d22)); // cab windows
+          cb.box(L * 0.2, 3.35, 0, L * 0.4, 0.2, 2.3, C(0x3a3f47));
+        } else {
+          for (let k = -2; k <= 2; k++) cb.box(k * L * 0.18, 2.0, 1.36, 0.06, 2.3, 0.02, colBody.clone().multiplyScalar(0.8)); // corrugations
+          for (let k = -2; k <= 2; k++) cb.box(k * L * 0.18, 2.0, -1.36, 0.06, 2.3, 0.02, colBody.clone().multiplyScalar(0.8));
+        }
+        const car = new THREE.Mesh(cb.geometry(), G.CarModel.material());
+        car.castShadow = true;
+        car.visible = false;
+        car.rotation.y = H0;
+        group.add(car);
+        const tp = {};
+        group.userData.animFns.push(() => {
+          const p = track.dynPos(o, env().t, tp);
+          if (!p) { car.visible = false; return; }
+          car.visible = true;
+          car.position.set(p.x, y0, p.z);
+        });
+      } else if (o.k === 'swing') {
         // gantry across the road, chain + ball on a pivot
         const i = o.i, wd = track.wallD[i] + 1.4, H = 14.5, L = H - o.r - 0.25;
         const gb = new G.CarModel.GB();
@@ -1435,6 +1534,7 @@
         });
       } else if (o.k === 'rockfall') {
         // warning signs at the zone ends, rubble on the verges, one live rock
+        // per stream (the signs and rubble once per zone)
         const rb = new G.CarModel.GB();
         const rng = U.rng(o.seed);
         for (let k = 0; k < 14; k++) {
@@ -1452,9 +1552,11 @@
           rb.box(pt.x, gy + 2.9, pt.z, 1.5, 1.5, 0.12, C(0xffc400), track.H[pt.i]);
           rb.box(pt.x, gy + 2.9, pt.z, 0.5, 0.5, 0.14, C(0x1b1d22), track.H[pt.i]);
         }
-        const rub = new THREE.Mesh(rb.geometry(), G.CarModel.material());
-        rub.castShadow = true;
-        group.add(rub);
+        if (!o.stream) {
+          const rub = new THREE.Mesh(rb.geometry(), G.CarModel.material());
+          rub.castShadow = true;
+          group.add(rub);
+        }
         const rock = new THREE.Mesh(geo('rock'), G.CarModel.material());
         rock.userData.sharedGeo = true;
         rock.scale.setScalar(o.r / 1.3);
@@ -1494,7 +1596,7 @@
             const cam = group.userData.cam;
             if (cam && G.Audio && env().t > 0) G.Audio.rockImpact(U.clamp(1.1 - Math.hypot(cam.fx - p.x, cam.fz - p.z) / 90, 0, 1));
             const fx = group.userData.fx;
-            if (fx) for (let k = 0; k < 10; k++) fx.emit(k < 6 ? 'dust' : 'debris', p.x, gy + 0.6, p.z, (Math.random() - 0.5) * 9, 1 + Math.random() * 3, (Math.random() - 0.5) * 9, 1.2, [0.55, 0.5, 0.45]);
+            if (fx) for (let k = 0; k < 18; k++) fx.emit(k < 11 ? 'dust' : 'debris', p.x, gy + 0.6, p.z, (Math.random() - 0.5) * 12, 1 + Math.random() * 4.5, (Math.random() - 0.5) * 12, 1.5, [0.55, 0.5, 0.45]);
           }
         });
       }

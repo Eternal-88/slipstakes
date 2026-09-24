@@ -32,7 +32,7 @@
 (function (G) {
   const U = G.U;
   const PREFIX = 'slipstakes-v1-';
-  const PROTO = 10; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup; 7: v4.4 private-room asks via the list, "room closed"; 8: v5 fuel/tyre/pit state in snapshots, stops, weather + endurance race info; 9: v5.1 car physics and parts changed, and the schedule says which races are endurance races; 10: v5.3 revCut joins the car's core state, so the full-state packet is a field longer)
+  const PROTO = 11; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup; 7: v4.4 private-room asks via the list, "room closed"; 8: v5 fuel/tyre/pit state in snapshots, stops, weather + endurance race info; 9: v5.1 car physics and parts changed, and the schedule says which races are endurance races; 10: v5.3 revCut joins the car's core state, so the full-state packet is a field longer; 11: v5.3.3 aero is sized to the car and the Mule's power changed - an old client would predict its own car against different numbers)
   // ICE servers: how two devices find a path to each other.
   //  * STUN tells each device its public address so a direct path can be
   //    punched through both networks' routers.

@@ -436,7 +436,7 @@
       const enduNow = quick && (track.def.endurance || (track.def.enduChance && Math.random() < track.def.enduChance));
       const endu = enduNow ? G.RaceEnv.endu(track) : null;
       const weather = quick ? G.RaceEnv.roll(track, G.Settings.s.raceWeather, null, endu && endu.laps) : null;
-      this.sim = new G.RaceSim(track, ents, { countdown: quick ? 3.5 : 2.5, practice: !quick, catchup, weather, endu });
+      this.sim = new G.RaceSim(track, ents, { countdown: quick ? 10.5 : 2.5, practice: !quick, catchup, weather, endu });
       this.attract = null;
       this.world.setCars(ents);
       this.world.cam.snap = true;

@@ -89,7 +89,7 @@
       this.lastK = -1;
       this.offset = null;
       this.phase = 'grid';
-      this.countdown = 4.5;
+      this.countdown = 10.5;
       this.goHost = null;
       this.rs = race.entrants.map((e, i) => {
         const g = this.track.gridSlot(i);

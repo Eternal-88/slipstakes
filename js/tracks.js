@@ -45,6 +45,10 @@
     goldpass: { ground: 0x86ad68, ground2: 0x769d5a, hill: 0x9fb07e, patch: 0xc2b67c, runoff: 'gravel', sky: 0xf2b384, fog: 0xf7d6b4, trees: 'pine', props: 'forest', wall: [0xe9e4dc, 0x4a3b36], mtn: 0x8c7d98, snow: 1, hills: 1.9, tufts: 'grass', sunCol: 0xffcc92, sunI: 2.25, hemiI: 1.6, hemiSky: 0xffe8d4, fogNear: 220, fogFar: 680 },
     tour: { ground: 0x7fbf62, ground2: 0x6dae55, hill: 0x92c872, patch: 0xcfd27a, runoff: 'grass', sky: 0x94d0ff, fog: 0xcfeaff, trees: 'round', props: 'forest', wall: [0x2d7ff9, 0xf4f1e8], mtn: 0x7e9fae, tufts: 'grass', todTo: 0.55, fogNear: 200, fogFar: 640 },
     neon: { ground: 0x2c3038, ground2: 0x272a31, hill: 0x343842, patch: 0x30343c, runoff: 'concrete', sky: 0x151a3a, fog: 0x1c1a3c, trees: 'none', props: 'city', wall: [0xff2d92, 0x20232b], night: 1, neon: 1, lamps: 1, showers: 0.35, fogNear: 110, fogFar: 460 },
+    // v5.4 themes
+    frost: { ground: 0xe9eff6, ground2: 0xdfe7f1, hill: 0xf3f7fb, patch: 0xd3e0ec, runoff: 'grass', sky: 0xb9d6f2, fog: 0xe0ecf7, trees: 'pine', props: 'forest', wall: [0x2f6bff, 0xf4f4f4], mtn: 0x9cb1c6, snow: 1, hills: 1.5, sunCol: 0xfff2e2, sunI: 1.8, hemiI: 2.1, hemiSky: 0xeaf3ff, fogNear: 170, fogFar: 560, todTo: 0.7 },
+    rail: { song: 'street', ground: 0x807b6c, ground2: 0x747062, hill: 0x8b8676, patch: 0x6e6556, runoff: 'concrete', sky: 0xf0a474, fog: 0xf2c3a0, trees: 'none', props: 'scrap', wall: [0xffc400, 0x1b1d22], mtn: 0x6b6072, sunCol: 0xffb474, sunI: 1.85, hemiI: 1.45, hemiSky: 0xffd8bc, fogNear: 160, fogFar: 560, lamps: 1, todTo: 0.85, tufts: 'dry' },
+    ash: { ground: 0x4c4549, ground2: 0x443e42, hill: 0x5b5053, patch: 0x6e3c2c, runoff: 'gravel', sky: 0xd4805e, fog: 0xca8b6e, trees: 'none', props: 'rocks', wall: [0xff5a1f, 0x2a2426], mtn: 0x3b3036, hills: 2.1, surfCol: { gravel: [0x5c5357, 0x544b4f] }, sunCol: 0xffb484, sunI: 1.95, hemiI: 1.3, hemiSky: 0xffc8a4, fogNear: 140, fogFar: 520, tufts: 'dry' },
     endu: { ground: 0x78b862, ground2: 0x68a655, hill: 0x8cc472, patch: 0xb9cc72, runoff: 'grass', sky: 0x9cd4ff, fog: 0xd2ecff, trees: 'round', props: 'stands', wall: [0x14b8a6, 0xf4f1e8], mtn: 0x809fa8, tufts: 'grass', todTo: 1, lamps: 1, fogNear: 190, fogFar: 600 },
   };
 
@@ -311,8 +315,8 @@
     // New hazards: water, wind, rockfall, swing (trackbuild.js _hazards).
     // pit {at, side, len}: an endurance pit box beside the main straight.
     {
-      id: 'serpent', name: 'Serpent Pass', format: 'sprint', theme: 'goldpass', runoff: 5, startAt: 40, finishBack: 250, isNew: 1,
-      blurb: 'The long one: a two-minute point-to-point up a mountain at golden hour. Through a ford and a rockfall gorge, up four switchbacks, over a windy icy summit and all the way down.',
+      id: 'serpent', name: 'Serpent Pass', format: 'sprint', theme: 'goldpass', runoff: 5, startAt: 40, finishBack: 250,
+      blurb: 'The long one: a two-minute point-to-point up a mountain at golden hour. Through a ford and a rockfall gorge, up four switchbacks, over a windy icy summit and all the way down - with the rock still coming down on the descent.',
       pts: [
         [0, -40, { w: 7, s: 'tarmac', kerb: 1, y: 0 }],
         [0, 260, { r: 140, y: 4 }],
@@ -340,15 +344,16 @@
       ],
       hazards: [
         { k: 'water', x: 70, z: 345, len: 14, hw: 9 },
-        { k: 'rockfall', x: 120, z: 535, len: 150, spread: 4, every: 5, stay: 6, r: 1.1 },
+        { k: 'rockfall', x: 120, z: 535, len: 150, spread: 4.5, every: 6, stay: 4.5, r: 1.2, count: 4 },
         { k: 'wind', x: 500, z: 1205, len: 190, str: 6, period: 4.5 },
         { k: 'ice', x: 470, z: 1390, len: 30, hw: 5 },
-        { k: 'rock', x: 520, z: 1680, lat: 3.2, r: 1.0 },
+        { k: 'rockfall', x: 520, z: 1680, len: 120, spread: 4, every: 6.5, stay: 4.5, r: 1.1, count: 3, off: 2.2 },
         { k: 'rock', x: 670, z: 1990, lat: -3.2, r: 1.1 },
+        { k: 'rockfall', x: 680, z: 2200, len: 170, spread: 4.5, every: 6, stay: 4.5, r: 1.2, count: 4, off: 4.1 },
       ],
     },
     {
-      id: 'tour', name: 'Grand Tour', format: 'circuit', laps: 1, theme: 'tour', runoff: 6, isNew: 1,
+      id: 'tour', name: 'Grand Tour', format: 'circuit', laps: 1, theme: 'tour', runoff: 6,
       // (three laps as an endurance race, not two: with only two, a thirsty
       //  build ran dry before the one pit window it was ever going to get)
       pit: { at: 150, side: -1, len: 70 }, enduChance: 0.22, enduLaps: 3,
@@ -384,7 +389,7 @@
       ],
     },
     {
-      id: 'neon', name: 'Neon Nights', format: 'circuit', laps: 2, theme: 'neon', runoff: 3.5, isNew: 1,
+      id: 'neon', name: 'Neon Nights', format: 'circuit', laps: 2, theme: 'neon', runoff: 3.5,
       blurb: 'Downtown after dark: street lamps, neon, a flooded underpass and a building site where the wrecking balls are still swinging.',
       pts: [
         [0, 0, { w: 7.5, s: 'tarmac', kerb: 1 }],
@@ -415,7 +420,7 @@
       // but this one is ALWAYS the long race with fuel, tyres and pit stops.
       // (v5.1: four more circuits have a pit lane and an enduChance — when one
       // of those comes up it is sometimes run as an endurance race instead.)
-      id: 'endu', name: 'Endurance Park', format: 'circuit', laps: 3, theme: 'endu', runoff: 7, isNew: 1,
+      id: 'endu', name: 'Endurance Park', format: 'circuit', laps: 3, theme: 'endu', runoff: 7,
       pit: { at: 170, side: -1, len: 70 }, endurance: 1, enduLaps: 3,
       blurb: 'The endurance race: three laps of parkland with a proper pit lane. Fuel and tyres run down, so you stop and work your pit crew. The sun goes down as you race.',
       pts: [
@@ -438,13 +443,91 @@
         { k: 'oil', x: -180, z: 510, lat: 1.5, len: 10, hw: 2.4 },
       ],
     },
+    {
+      // v5.4: a winter circuit with a causeway straight ACROSS a frozen lake -
+      // 350 m of real ice with a kink in it, and the wind coming off the lake.
+      // Tarmac everywhere else, so it is a question of how much you dare on
+      // the ice and what it costs you on the way out.
+      id: 'frost', name: 'Frostbite Lake', format: 'circuit', laps: 3, theme: 'frost', runoff: 7, isNew: 1,
+      blurb: 'A winter circuit round a frozen lake - and straight across it on a causeway of sheet ice, with the wind coming off the water. Tarmac everywhere else. How brave are you on the ice?',
+      pts: [
+        [0, 0, { w: 7.5, s: 'tarmac', kerb: 1 }],
+        [320, 0, { r: 50 }],
+        [360, 200, { r: 70 }],
+        [260, 330, { r: 30 }],
+        [215, 330, { s: 'ice', kerb: 0 }], // onto the lake, out of the corner
+        [80, 330, { r: 40 }],
+        [-60, 420, { r: 30, s: 'tarmac', kerb: 1 }],
+        [-200, 300, { r: 40 }],
+        [-120, 0, { r: 45 }],
+      ],
+      hazards: [
+        { k: 'wind', x: 150, z: 345, len: 170, str: 5, period: 4.8 },
+        { k: 'ice', x: 330, z: 40, lat: 1.5, len: 12, hw: 2.6 },
+        { k: 'ice', x: -180, z: 250, lat: -1.5, len: 12, hw: 2.6 },
+        { k: 'boost', x: 170, z: 0, lat: -2.2 },
+      ],
+    },
+    {
+      // v5.4: the level crossings. A freight yard at dusk, and the circuit
+      // crosses the main line twice - once on the start straight and once
+      // across the top. The trains run to a timetable: beat one across or
+      // sit at the lights and watch the leaders get away.
+      id: 'freight', name: 'Freight Yard', format: 'circuit', laps: 3, theme: 'rail', runoff: 4, isNew: 1,
+      blurb: 'A freight yard at dusk. The circuit crosses the main line twice, and the trains do not stop for anybody: beat one across the crossing, or sit at the flashing lights while the leaders get away.',
+      pts: [
+        [0, 0, { w: 7.5, s: 'tarmac', kerb: 1 }],
+        [280, 0, { r: 35 }],
+        [300, 160, { r: 40 }],
+        [180, 240, { r: 25 }],
+        [180, 380, { r: 30 }],
+        [-40, 380, { r: 35 }],
+        [-120, 240, { r: 45 }],
+        [-40, 120, { r: 30 }],
+        [-120, 0, { r: 46 }], // (a wider last hairpin: at r 35 it was a pile-up every few laps)
+      ],
+      hazards: [
+        { k: 'train', x: 110, z: 0, cars: 9, speed: 21, every: 17, off: 6 },
+        { k: 'train', x: 80, z: 380, cars: 9, speed: 21, every: 19, off: 11, dir: -1 },
+        { k: 'oil', x: 180, z: 310, lat: 1.2, len: 10, hw: 2.4 },
+        { k: 'water', x: -100, z: 190, len: 16, hw: 8 },
+        { k: 'boost', x: 210, z: 0, lat: 2.2 },
+      ],
+    },
+    {
+      // v5.4: down the side of a live volcano. Loose ash and gravel in two
+      // long sections, lava bombs raining into the road in two zones, and a
+      // crosswind on the crater rim at the top.
+      id: 'ashfall', name: 'Ashfall Ridge', format: 'sprint', theme: 'ash', runoff: 5, startAt: 40, finishBack: 150, isNew: 1,
+      blurb: 'Flat out down the side of a live volcano: a crosswind on the crater rim, two long runs on loose ash, and lava bombs raining into the road. Keep your eyes on the shadows.',
+      pts: [
+        [0, -40, { w: 7, s: 'tarmac', kerb: 1, y: 60 }],
+        [0, 220, { r: 80, y: 58 }],
+        [160, 360, { r: 50, y: 54 }],
+        [140, 560, { r: 35, y: 48, s: 'gravel', kerb: 0 }],
+        [300, 640, { r: 30, y: 42 }],
+        [320, 820, { r: 45, y: 34, s: 'tarmac', kerb: 1 }],
+        [180, 980, { r: 60, y: 26 }],
+        [260, 1180, { r: 40, y: 18, s: 'gravel', kerb: 0 }],
+        [440, 1240, { r: 50, y: 12, s: 'tarmac', kerb: 1 }],
+        [520, 1450, { r: 90, y: 6 }],
+        [480, 1700, { y: 2 }],
+        [480, 1900, { y: 0 }],
+      ],
+      hazards: [
+        { k: 'wind', x: 10, z: 110, len: 160, str: 6, period: 4 },
+        { k: 'rockfall', x: 150, z: 460, len: 140, spread: 4.5, every: 5.5, stay: 4, r: 1.2, count: 4 },
+        { k: 'rockfall', x: 250, z: 900, len: 160, spread: 4.5, every: 5.5, stay: 4, r: 1.25, count: 4, off: 2.7 },
+        { k: 'boost', x: 480, z: 1780, lat: 0 },
+      ],
+    },
   ];
 
   // (endurance: this track is ALWAYS raced as an endurance race. enduChance:
   //  the odds it is run as one this time. Either way that means enduLaps laps
   //  with fuel, tyre wear and a pit box at pit {at, side, len}.)
   // Format rotation: never the same format twice in a row, cycles all tracks.
-  const ROTATION = ['harbour', 'canyon', 'quarter', 'dustbowl', 'serpent', 'rainline', 'saltflat', 'pine', 'city', 'summit', 'coast', 'scrap', 'mile', 'neon', 'tour', 'endu'];
+  const ROTATION = ['harbour', 'canyon', 'quarter', 'dustbowl', 'serpent', 'rainline', 'saltflat', 'pine', 'city', 'summit', 'coast', 'scrap', 'mile', 'neon', 'tour', 'endu', 'frost', 'freight', 'ashfall'];
   // v5.1: tracks that can turn into an endurance race, and the one that always is
   const ENDURANCE = ROTATION.filter((id) => {
     const d = TRACKS.find((t) => t.id === id);

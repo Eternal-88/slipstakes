@@ -282,7 +282,10 @@
       // Nitrous: fire it accelerating on a straight-ish bit, never when hot.
       out.n = spec.nosGain && st.nos > 0.04 && dv > 3 && speed > 8 && Math.abs(out.s) < 0.3 && st.heat < 0.7 && !this.aggressive ? 1 : 0;
       // Stuck / wrong way -> ask for a respawn.
-      if (speed < 1.2 && out.t > 0.5) this.stuck += dt;
+      // (v5.4: stopped counts as stuck once the race is running, whatever the
+      // throttle says - a bot pinned against a barrel stack was feathering it,
+      // never asked for a reset, and sat there for the rest of the race)
+      if (speed < 1.2 && (out.t > 0.5 || (this.env && this.env.t > 3)) && !(this._cap < 1)) this.stuck += dt; // (not while it is waiting for a train on purpose)
       else this.stuck = Math.max(0, this.stuck - dt);
       if (Math.abs(err) > 2.2 && speed > 3) this.stuck += dt * 0.5;
       if (this.stuck > 2.5) {
@@ -362,6 +365,19 @@
           if (o.k === 'swing') {
             const eta = Math.max(0, d) / Math.max(speed, 5);
             away(o.lat + o.amp * Math.sin((2 * Math.PI * (this.env.t + eta)) / o.period + o.off), o.r + 2.2);
+          } else if (o.k === 'train') {
+            // a level crossing: if a carriage will be ON the road when we get
+            // there, stop short of the rails and let it go by
+            if (d < -1) continue;
+            const eta = Math.max(0, d) / Math.max(speed, 4);
+            let block = false;
+            for (const dt2 of [-0.6, 0, 0.6, 1.2]) {
+              const p = track.dynPos(o, this.env.t + eta + dt2, pos);
+              if (!p) continue;
+              const pq = track.query(p.x, p.z, o.i, this._dq || (this._dq = {}));
+              if (Math.abs(pq.lat) < track.W[o.i] + 2.4) { block = true; break; }
+            }
+            if (block) this._cap = Math.min(this._cap, Math.max(0, (d - 7) * 0.8));
           } else {
             const p = track.dynPos(o, this.env.t, pos);
             if (!p) continue;
@@ -403,12 +419,12 @@
   // used to be four stock Vandal/Brick/Sting/Mule in near-identical paint with
   // the same eight names.
   const STYLES = {
-    grip: { cars: ['vandal', 'sting'], premium: ['apex'], buys: [['compound', 'medium'], ['suspension', 'sport'], ['width', 'wide'], ['weight', 'w1'], ['aero', 'a1'], ['compound', 'soft'], ['aero', 'a2'], ['weight', 'w2']] },
-    power: { cars: ['mule', 'vandal'], premium: ['apex', 'volt'], buys: [['exhaust', 'sport'], ['ecu', 'stage1'], ['induction', 'sc'], ['cooling', 'radiator'], ['nitrous', 'n1'], ['ecu', 'stage2'], ['induction', 't1'], ['weight', 'w1']] },
+    grip: { cars: ['vandal', 'sting'], premium: ['apex', 'rotor'], buys: [['compound', 'medium'], ['suspension', 'sport'], ['width', 'wide'], ['weight', 'w1'], ['aero', 'a1'], ['compound', 'soft'], ['aero', 'a2'], ['weight', 'w2']] },
+    power: { cars: ['mule', 'vandal'], premium: ['apex', 'volt', 'regent'], buys: [['exhaust', 'sport'], ['ecu', 'stage1'], ['induction', 'sc'], ['cooling', 'radiator'], ['nitrous', 'n1'], ['ecu', 'stage2'], ['induction', 't1'], ['weight', 'w1']] },
     rally: { cars: ['brick'], premium: ['dune', 'storm'], buys: [['aids', 'antilag'], ['width', 'narrow'], ['suspension', 'rally'], ['compound', 'medium'], ['weight', 'w1'], ['diff', 'clutch'], ['ecu', 'stage1'], ['nitrous', 'n1']] },
-    light: { cars: ['sting', 'pip'], premium: ['apex', 'storm'], buys: [['wheels', 'mag'], ['weight', 'w1'], ['brakes', 'sport'], ['compound', 'medium'], ['suspension', 'sport'], ['weight', 'w2'], ['aero', 'a2']] },
+    light: { cars: ['sting', 'pip'], premium: ['apex', 'storm', 'rotor'], buys: [['wheels', 'mag'], ['weight', 'w1'], ['brakes', 'sport'], ['compound', 'medium'], ['suspension', 'sport'], ['weight', 'w2'], ['aero', 'a2']] },
     drag: { cars: ['mule'], premium: ['volt'], buys: [['aids', 'launch'], ['gearing', 'short'], ['induction', 't1'], ['cooling', 'race'], ['nitrous', 'n1'], ['exhaust', 'straight'], ['weight', 'w1'], ['ecu', 'stage1']] },
-    allround: { cars: ['vandal', 'brick', 'sting', 'mule', 'pip'], premium: ['dune', 'volt'], buys: [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator']] },
+    allround: { cars: ['vandal', 'brick', 'sting', 'mule', 'pip'], premium: ['dune', 'volt', 'regent', 'rotor'], buys: [['compound', 'medium'], ['suspension', 'sport'], ['brakes', 'sport'], ['aero', 'a1'], ['exhaust', 'sport'], ['weight', 'w1'], ['ecu', 'stage1'], ['nitrous', 'n1'], ['induction', 'sc'], ['cooling', 'radiator']] },
   };
   // v5.1: the cars with a slot of their own. A bot that bought a supercharger
   // for an electric car was throwing its money away; these are what it buys
@@ -501,7 +517,7 @@
         for (let i = 0; i < tr.N; i += 8) if (G.SURF[tr.S[i]].loose || G.SURF[tr.S[i]].icy) k++;
         loose = k / (tr.N / 8) > 0.25;
       }
-      const suits = (id) => loose == null || (loose ? ['storm', 'dune'] : ['apex', 'volt']).includes(id);
+      const suits = (id) => loose == null || (loose ? ['storm', 'dune'] : ['apex', 'volt', 'regent', 'rotor']).includes(id);
       return this.names(n, [], rnd).map((name) => {
         const style = this.style(rnd);
         const S = STYLES[style];

@@ -53,6 +53,12 @@
     apex: { cyl: 6, types: ['square', 'sine', 'sawtooth'], cut: 2.2, rasp: 3.2, lope: 0.02, lopeDiv: 6, sub: 0.15, h2: 1.1, res: 600, grit: 0.8 },
     // Group B inline-five: the off-beat warble (lope at 2/5 of firing)
     storm: { cyl: 5, types: ['sawtooth', 'square', 'sawtooth'], cut: 1.3, rasp: 6.2, lope: 0.4, lopeDiv: 2.5, sub: 0.5, h2: 0.45, res: 340, grit: 1.5 },
+    // v5.4 V12 grand tourer: six firing pulses a turn - smooth, high and
+    // silky, a clean scream at the top instead of a bark
+    regent: { cyl: 12, types: ['sawtooth', 'sine', 'triangle'], cut: 1.55, rasp: 1.9, lope: 0.0, lopeDiv: 6, sub: 0.3, h2: 0.85, res: 520, grit: 0.55 },
+    // v5.4 two-rotor rotary: two pulses a turn like a four, but square-heavy
+    // and bright - the buzz - with the uneven "brap" at idle
+    rotor: { cyl: 4, types: ['square', 'sawtooth', 'triangle'], cut: 2.35, rasp: 5.2, lope: 0.5, lopeDiv: 2, sub: 0.18, h2: 0.7, res: 880, grit: 1.1 },
     // electric: no combustion — a motor tone and an inverter whine
     volt: { cyl: 8, types: ['triangle', 'sine', 'sine'], cut: 3.0, rasp: 0.2, lope: 0.0, lopeDiv: 4, sub: 0.04, h2: 1.4, res: 1800, grit: 0, ev: 1 },
   };
@@ -467,11 +473,42 @@
       v.w = this._osc('sine', 2000);
       v.wg = this._gain(0);
       v.w.connect(v.wg).connect(out);
+      // v5.4: the rest of YOUR engine's recipe, so another car is not a
+      // cheaper-sounding thing than yours. Combustion grit: noise gated at the
+      // firing frequency (the single biggest difference between an engine
+      // and a synth pad); the supercharger's second partial and rotor whirr
+      // through the same nasal band; and the turbo's intake whoosh.
+      v.cn = this.ctx.createBufferSource();
+      v.cn.buffer = this.noise;
+      v.cn.loop = true;
+      v.cnf = this._filt('bandpass', 900, 0.9);
+      v.cng = this._gain(0);
+      v.cn.connect(v.cnf).connect(v.cng).connect(v.f);
+      v.am = this._osc('sawtooth', 50);
+      v.amg = this._gain(0);
+      v.am.connect(v.amg).connect(v.cng.gain);
+      v.wf = this._filt('bandpass', 2500, 1.2);
+      v.wo = this._gain(1);
+      v.w2 = this._osc('sine', 4000);
+      v.w2g = this._gain(0);
+      v.w2.connect(v.w2g).connect(v.wf);
+      v.wf.connect(v.wo).connect(out);
+      v.wl = this._osc('sine', 30);
+      v.wlg = this._gain(0);
+      v.wl.connect(v.wlg).connect(v.wo.gain);
+      v.hf = this._filt('highpass', 2600, 0.8);
+      v.hg = this._gain(0);
+      v.n.connect(v.hf).connect(v.hg).connect(out);
+      v.gear = 0;
       v.o1.start();
       v.o2.start();
       v.o3.start();
       v.w.start();
+      v.w2.start();
+      v.wl.start();
+      v.am.start();
       v.n.start(0, Math.random() * 1.5);
+      v.cn.start(0, Math.random() * 1.5);
       return v;
     },
     _voiceCar(v, prof) {
@@ -489,15 +526,8 @@
     },
     _killVoice(v) {
       try {
-        v.lfo.stop();
-        v.o1.stop();
-        v.o2.stop();
-        v.o3.stop();
-        v.n.stop();
-        v.w.stop();
-        v.g.disconnect();
-        v.ng.disconnect();
-        v.wg.disconnect();
+        for (const n of [v.lfo, v.o1, v.o2, v.o3, v.n, v.w, v.w2, v.wl, v.am, v.cn]) if (n) n.stop();
+        for (const n of [v.g, v.ng, v.wg, v.wo, v.hg]) if (n) n.disconnect();
       } catch (e) {}
     },
     // 0..1 loudness for a sound at (x, z) relative to the listener (camera focus).
@@ -647,11 +677,12 @@
       e.swf.frequency.setTargetAtTime(900 + rpm * 3000, t, 0.03);
       e.swl.frequency.setTargetAtTime(crank * 2, t, 0.03);
       e.swlg.gain.setTargetAtTime(kind === 'sc' ? 0.3 : 0, t, 0.05);
-      const scg = kind === 'sc' ? (0.01 + thr * 0.036) * (0.3 + 0.7 * rpm) * master : 0;
+      // (v5.4: about 1.7x louder - it was the quietest thing a supercharger did)
+      const scg = kind === 'sc' ? (0.018 + thr * 0.062) * (0.3 + 0.7 * rpm) * master : 0;
       e.swg.gain.setTargetAtTime(scg, t, 0.03);
       e.sw2g.gain.setTargetAtTime(scg * 0.5, t, 0.03);
       if (kind === 'turbo' && this._lastBoost > 0.45 && b < 0.25) this.bov(ms.bov, big, master);
-      if (kind === 'sc' && this._lastThr > 0.6 && thr < 0.15 && rpm > 0.4) this.noiseHit(0.3, 1800, 0.05 * master, 'bandpass', 'sfx', 0, 600, 0.8);
+      if (kind === 'sc' && this._lastThr > 0.6 && thr < 0.15 && rpm > 0.4) this.noiseHit(0.3, 1800, 0.08 * master, 'bandpass', 'sfx', 0, 600, 0.8);
       this._lastBoost = b;
       // overrun crackle (free-flowing exhausts), backfire pops on shifts
       const pops = ms.pops;
@@ -782,6 +813,7 @@
         // its last level through the whole main menu.
         v.wg.gain.setTargetAtTime(0, t, 0.06);
         v.lfoG.gain.setTargetAtTime(0, t, 0.06);
+        for (const k of ['cng', 'amg', 'w2g', 'wlg', 'hg']) if (v[k]) v[k].gain.setTargetAtTime(0, t, 0.06);
         v.id = null;
         v.o = null;
       }
@@ -797,17 +829,18 @@
       const t = this.ctx.currentTime;
       this._lx = lx;
       this._lz = lz;
-      // The (up to) 4 nearest within 120 m, by insertion into reused arrays.
+      // The (up to) 5 nearest within 150 m, by insertion into reused arrays.
       // (v4.5: the old map/filter/sort/slice built a dozen objects a frame.)
-      const nc = this._nc || (this._nc = [null, null, null, null]);
-      const nd = this._nd || (this._nd = [0, 0, 0, 0]);
+      const NV = 5;
+      const nc = this._nc || (this._nc = [null, null, null, null, null]);
+      const nd = this._nd || (this._nd = [0, 0, 0, 0, 0]);
       let n = 0;
       for (let i = 0; i < cars.length; i++) {
         const c = cars[i];
         if (c.id === skipId) continue;
         const d = Math.hypot(c.rs.x - lx, c.rs.z - lz);
-        if (d >= 120 || (n === 4 && d >= nd[3])) continue;
-        let k = n < 4 ? n++ : 3;
+        if (d >= 150 || (n === NV && d >= nd[NV - 1])) continue;
+        let k = n < NV ? n++ : NV - 1;
         while (k > 0 && nd[k - 1] > d) {
           nc[k] = nc[k - 1];
           nd[k] = nd[k - 1];
@@ -849,6 +882,7 @@
           v.lfoG.gain.setTargetAtTime(0, t, 0.06);
           v.ng.gain.setTargetAtTime(0, t, 0.06);
           v.wg.gain.setTargetAtTime(0, t, 0.06);
+          for (const k of ['cng', 'amg', 'w2g', 'wlg', 'hg']) v[k].gain.setTargetAtTime(0, t, 0.06);
           continue;
         }
         const rs = o.rs;
@@ -879,10 +913,27 @@
         v.f.Q.setTargetAtTime(1.4 * (oms.q / 1.6), t, 0.1);
         v.pk.gain.setTargetAtTime(2 + oms.q, t, 0.2);
         const thr = rs.thr ? U.clamp(rs.thr, 0.5, 1) : 0.45;
-        const fall = 1 / (1 + d / 11);
-        const vg = (0.035 + 0.06 * thr) * fall * oms.loud;
-        v.g.gain.setTargetAtTime(vg, t, 0.06);
+        // v5.4: heard from further off, and closer to your own engine's level
+        // up close. At 20 m a car used to play at a sixth of yours.
+        const fall = 1 / (1 + d / 17);
+        let vg = (0.05 + 0.085 * thr) * fall * oms.loud;
+        // their gearchanges: the same short dip yours makes
+        if ((rs.gear || 0) > v.gear && v.gear > 0) {
+          v.g.gain.cancelScheduledValues(t);
+          v.g.gain.setValueAtTime(vg * 0.35, t);
+        }
+        v.gear = rs.gear || 0;
+        // their rev limiter
+        if (rpm > 0.985 && rs.thr && Math.sin(performance.now() * 0.095) < 0) vg *= oms.limHard ? 0.1 : 0.3;
+        v.g.gain.setTargetAtTime(vg, t, 0.05);
         v.lfoG.gain.setTargetAtTime(vg * oms.lopeAbs, t, 0.08);
+        // combustion grit, as on your own engine (none from an electric car)
+        const grit = prof.ev ? 0 : Math.min(1.6, (prof.grit == null ? 1 : prof.grit) * oms.rasp);
+        const rl = (0.14 + thr * 0.46) * (0.4 + 0.6 * rpm) * grit * fall;
+        v.cng.gain.setTargetAtTime(rl * 0.5, t, 0.04);
+        v.amg.gain.setTargetAtTime(rl * 0.5, t, 0.04);
+        v.am.frequency.setTargetAtTime(f0, t, 0.03);
+        v.cnf.frequency.setTargetAtTime(650 + rpm * 2400 * prof.cut + thr * 700, t, 0.05);
         // straight pipes / race maps crackle as they lift past you
         // (at most every 0.7 s per car: a bot's throttle flickers, and each
         // lift used to fire another burst of pops)
@@ -917,6 +968,14 @@
         const ind = (o.parts && o.parts.induction) || 'na';
         const okind = prof.ev ? 'ev' : G.Parts.opt('induction', ind).kind;
         const bst = rs.boost || 0;
+        const fsc = crank * 14 * dop;
+        v.w2.frequency.setTargetAtTime(fsc * 2, t, 0.03);
+        v.wf.frequency.setTargetAtTime(900 + rpm * 3000, t, 0.04);
+        v.wl.frequency.setTargetAtTime(crank * 2, t, 0.04);
+        const scW = okind === 'sc' ? (0.022 + 0.06 * thr) * (0.3 + 0.7 * rpm) * fall : 0;
+        v.w2g.gain.setTargetAtTime(scW * 0.5, t, 0.04);
+        v.wlg.gain.setTargetAtTime(okind === 'sc' ? 0.3 : 0, t, 0.06);
+        v.hg.gain.setTargetAtTime(okind === 'turbo' ? bst * (0.3 + 0.7 * thr) * (ind === 't2' ? 0.055 : 0.03) * fall : 0, t, 0.06);
         if (okind === 'ev') {
           // their inverter + reduction gear whine, rising with road speed
           const spd = Math.hypot(rs.vx || 0, rs.vz || 0);
@@ -925,8 +984,8 @@
           v.wg.gain.setTargetAtTime((0.01 + 0.02 * thr) * Math.min(1, spd / 6 + 0.15) * fall, t, 0.05);
         } else if (okind === 'sc') {
           if (v.w.type !== 'triangle') v.w.type = 'triangle';
-          v.w.frequency.setTargetAtTime(crank * 14 * dop, t, 0.03); // crank-locked, like your own
-          v.wg.gain.setTargetAtTime((0.008 + 0.022 * thr) * rpm * fall, t, 0.04);
+          v.w.frequency.setTargetAtTime(fsc, t, 0.03); // crank-locked, like your own
+          v.wg.gain.setTargetAtTime(scW, t, 0.04);
         } else if (okind === 'turbo') {
           if (v.w.type !== 'sine') v.w.type = 'sine';
           v.w.frequency.setTargetAtTime(((ind === 't2' ? 1100 : 1750) + bst * (ind === 't2' ? 2300 : 3100)) * (0.85 + 0.15 * rpm) * dop, t, 0.08);
@@ -1043,6 +1102,7 @@
       const H = {
         vandal: [410, 520, 'square'], brick: [500, 630, 'square'], sting: [560, 705, 'square'], mule: [300, 380, 'sawtooth'],
         pip: [640, 800, 'square'], dune: [250, 315, 'sawtooth'], apex: [470, 590, 'square'], volt: [620, 780, 'triangle'], storm: [440, 555, 'sawtooth'],
+        regent: [350, 440, 'sawtooth'], rotor: [520, 655, 'square'],
       }[carId] || [410, 520, 'square'];
       const c = this.ctx, t = c.currentTime, dur = 0.42;
       const f = c.createBiquadFilter();
@@ -1106,7 +1166,9 @@
       this.tone(freq || 440, dur || 0.18, 'square', 0.09);
     },
     countdown(n) {
-      if (n > 0) {
+      // a soft tick for the long count, the full beep with each start light
+      if (n > 5) this.tone(440, 0.07, 'sine', 0.035);
+      else if (n > 0) {
         this.tone(520, 0.2, 'square', 0.09);
         this.tone(1040, 0.2, 'sine', 0.04);
       } else this.go();
@@ -1149,6 +1211,15 @@
       this.tone(48, 0.5, 'sine', 0.35 * k, 32);
       this.noiseHit(0.12, 1800, 0.18 * k, 'bandpass', 'sfx', 0, 700, 2);
       for (let i = 0; i < 4; i++) this.noiseHit(0.06, 900 + Math.random() * 700, 0.06 * k, 'bandpass', 'sfx', 0.2 + i * 0.13, 0, 4);
+    },
+    // v5.4 level crossing: a two-tone air horn and the rumble of the train
+    trainHorn(k) {
+      if (!this.ok() || k < 0.03) return;
+      for (const f of [311, 370]) {
+        this.tone(f, 1.1, 'sawtooth', 0.05 * k);
+        this.tone(f, 0.5, 'sawtooth', 0.045 * k, 0, 'sfx', 1.3);
+      }
+      this.noiseHit(3.2, 90, 0.35 * k, 'lowpass', 'sfx', 0.2, 60);
     },
     whoosh(k) {
       if (!this.ok() || k < 0.03) return;

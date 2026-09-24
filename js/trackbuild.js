@@ -325,6 +325,8 @@
     //       'wind' {len, str m/s², period, dir}  gusting crosswind zone (physics §8)
     //       'rockfall' {len, spread, every, stay, r, off}  rocks drop into the zone (dynPos)
     //       'swing' {amp, period, r, off}        a wrecking ball swinging across the road
+    //   v5.4: 'rockfall' takes count: that many staggered streams of rocks
+    //       'train' {cars, gap, speed, span, every, off, dir}  a level crossing
     _hazards() {
       const N = this.N, sp = this.sp;
       this.patches = [];
@@ -337,6 +339,7 @@
       this.WZ = null;
       this.dyn = [];
       this.DYL = null;
+      this.xings = [];
       const list = this.def.hazards || [];
       if (!list.length) return;
       this.PT = new Int16Array(N).fill(-1);
@@ -375,7 +378,21 @@
           this.winds.push(W);
         } else if (h.k === 'rockfall' || h.k === 'swing') {
           const sw = h.k === 'swing';
-          this.dyn.push({ k: h.k, i: ic, at, lat, r: h.r || (sw ? 1.3 : 1.1), len: h.len || 30, spread: h.spread != null ? h.spread : 5, every: h.every || 14, stay: h.stay || 7, off: h.off || 0, amp: h.amp || 5, period: h.period || 6, seed: Math.round(at * 10) });
+          // v5.4: a rockfall zone runs several staggered STREAMS of rocks.
+          // With one, a 150 m gorge only ever held a single rock at a time -
+          // which is why Serpent Pass's rockfall felt like nothing much.
+          const streams = sw ? 1 : Math.max(1, h.count || 1), every = h.every || 14, r0 = h.r || (sw ? 1.3 : 1.1);
+          for (let si = 0; si < streams; si++) {
+            this.dyn.push({ k: h.k, i: ic, at, lat, r: si ? r0 * (0.8 + 0.4 * ((si * 0.618) % 1)) : r0, len: h.len || 30, spread: h.spread != null ? h.spread : 5, every, stay: h.stay || 7, off: (h.off || 0) + (si * every) / streams + si * 0.37, amp: h.amp || 5, period: h.period || 6, seed: Math.round(at * 10) + si * 101, stream: si });
+          }
+        } else if (h.k === 'train') {
+          // v5.4 level crossing: every `every` s a train of `cars` carriages
+          // runs straight across the road at `speed` m/s. Each carriage is
+          // its own moving hazard, so physics, the bots and the minimap need
+          // nothing new; the barriers leave a gap where the rails cross.
+          const cars = h.cars || 8, gap = h.gap || 3.4, speed = h.speed || 20, span = h.span || 48, every = h.every || 16;
+          for (let j = 0; j < cars; j++) this.dyn.push({ k: 'train', i: ic, at, lat: 0, r: h.r || 1.55, span, speed, every, off: h.off || 0, car: j, cars, gap, dir: h.dir || 1, len: 0, seed: Math.round(at * 10) + j });
+          this.xings.push({ i: ic, at, hw: 3.4, span });
         } else {
           const o = { k: h.k, i: ic, at, lat, r: h.r || 0.9, x: this.X[ic] + this.NX[ic] * lat, z: this.Z[ic] + this.NZ[ic] * lat };
           this.obs.push(o);
@@ -464,6 +481,22 @@
     //   rockfall: every `every` s a rock drops somewhere in the zone (1.5 s of
     //   shadow first), sits for `stay` s, then it's gone
     dynPos(o, t, out) {
+      if (o.k === 'train') {
+        // the loco starts `span` m out on one side at the top of each cycle
+        // and runs across; carriage `car` trails it by car·gap
+        if (t <= 0) return null;
+        const c = t + o.off, n = Math.floor(c / o.every), ph = c - n * o.every;
+        const s = -o.span + ph * o.speed - o.car * o.gap;
+        if (s < -o.span || s > o.span) return null;
+        const lat = o.dir * s;
+        out.x = this.X[o.i] + this.NX[o.i] * lat;
+        out.z = this.Z[o.i] + this.NZ[o.i] * lat;
+        out.vx = this.NX[o.i] * o.speed * o.dir;
+        out.vz = this.NZ[o.i] * o.speed * o.dir;
+        out.r = o.r;
+        out.fall = 0;
+        return out;
+      }
       if (o.k === 'swing') {
         const w = (2 * Math.PI) / o.period, a = w * t + o.off;
         const lat = o.lat + o.amp * Math.sin(a), vl = o.amp * w * Math.cos(a);
@@ -492,6 +525,17 @@
       out.r = o.r;
       out.fall = ph < 1.5 ? 1 - ph / 1.5 : 0;
       return out;
+    }
+
+    // v5.4: is (x, z) on or beside a railway line? Scenery keeps off it, or
+    // the train would run through the trees.
+    nearRail(x, z, pad) {
+      for (const xg of this.xings || []) {
+        const i = xg.i, dx = x - this.X[i], dz = z - this.Z[i];
+        const along = dx * this.TX[i] + dz * this.TZ[i], lat = dx * this.NX[i] + dz * this.NZ[i];
+        if (Math.abs(along) < 4 + (pad || 0) && Math.abs(lat) < xg.span + 8) return true;
+      }
+      return false;
     }
 
     // Speed pad under (sample i, lateral lat), or null.

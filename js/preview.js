@@ -150,6 +150,15 @@
     // and tilt, scroll to zoom. It turns slowly by itself until you touch it,
     // and again 8 s after you let go.
     cam: { yaw: null, pitch: 18, dist: 9, touchedAt: 0 },
+    // v5.4: the paint tab's sections ask for a view - low and close for the
+    // wheels - and the camera eases there instead of jumping
+    frame(kind) {
+      const c = this.cam;
+      if (c.base == null) c.base = c.dist;
+      const f = { paint: [18, 1], body: [24, 1.05], wheels: [7, 0.72], sound: [16, 1] }[kind] || [18, 1];
+      c.tPitch = f[0];
+      c.tDist = U.clamp(c.base * f[1], 4.5, 24);
+    },
     camTouched() {
       if (this.cam.yaw == null && this.world) this.cam.yaw = this.world.cam.yaw || 0;
       this.cam.touchedAt = performance.now();
@@ -158,6 +167,12 @@
       const c = this.cam, w = this.world;
       if (c.yaw == null) c.yaw = w.cam.yaw || 0;
       if (performance.now() - c.touchedAt > 8000) c.yaw += dt * 0.28;
+      if (c.tPitch != null) {
+        const k = Math.min(1, dt * 4);
+        c.pitch += (c.tPitch - c.pitch) * k;
+        c.dist += (c.tDist - c.dist) * k;
+        if (Math.abs(c.tPitch - c.pitch) < 0.2 && Math.abs(c.tDist - c.dist) < 0.02) c.tPitch = c.tDist = null;
+      }
       w.cam.yaw = c.yaw;
       // v4.5: the paint panel covers the right of the screen, so look at a
       // point half a panel to the car's right — the car then sits in the
@@ -204,7 +219,14 @@
     if (!inView(e)) return;
     drag = { x: e.clientX, y: e.clientY };
     document.body.classList.add('dragging');
+    // v5.4: a drag round the car used to start a text selection too, and
+    // swept a highlight across every panel the pointer crossed
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.removeAllRanges) sel.removeAllRanges();
     Preview.camTouched();
+  });
+  document.addEventListener('selectstart', (e) => {
+    if (drag) e.preventDefault();
   });
   window.addEventListener('pointermove', (e) => {
     if (!drag || !Preview.showroom) return;
@@ -226,6 +248,7 @@
     (e) => {
       if (!inView(e)) return;
       Preview.cam.dist = U.clamp(Preview.cam.dist * (e.deltaY > 0 ? 1.1 : 0.9), 4.5, 24);
+      Preview.cam.tPitch = Preview.cam.tDist = null;
       Preview.camTouched();
     },
     { passive: true }

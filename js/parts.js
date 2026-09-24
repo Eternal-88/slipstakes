@@ -44,7 +44,11 @@
       // the top. It was last or nearly last everywhere INCLUDING the drags,
       // which are its whole reason to exist. Now nothing beats it away from a
       // slow corner or down a long straight; it still can't change direction.
-      mass: 1440, powerKW: 180, redline: 6300, rearBias: 1.0, wheelbase: 2.8, weightFront: 0.5,
+      // v5.3.3: 180 -> 190 kW. It had just 6% more power per kilo than the
+      // four-cylinder Sting and won a quarter mile by a tenth; a V8 should win
+      // it clearly. (Past ~190 it is traction-limited when the nitrous fires,
+      // and the bigger shot stops buying anything.)
+      mass: 1440, powerKW: 190, redline: 6300, rearBias: 1.0, wheelbase: 2.8, weightFront: 0.5,
       cgH: 0.54, track: 1.66, vTop: 60, inertiaK: 0.98, body: 'muscle', len: 4.75, wid: 1.96, tq: { lo: 1.2, hi: 1.02 },
     },
     // v4 premium chassis: bought once per session (price), then swappable
@@ -103,7 +107,7 @@
       // (physics.js) instead of doing nothing and then cutting to half power.
       // It was the quickest car in the game AND one of the easiest; the long
       // flat-out tracks now ask you to lift and let it breathe.
-      evHeat: 0.115, regen: 0.35, fuelK: 0.45, tankM: 0.62, chargeK: 1.5, noParts: ['induction', 'exhaust', 'nitrous'],
+      evHeat: 0.14, regen: 0.35, fuelK: 0.45, tankM: 0.62, chargeK: 1.5, noParts: ['induction', 'exhaust', 'nitrous'],
     },
     // Stormer: a Group B monster. Light, short, rear-biased AWD with a big
     // turbo built in — nothing, nothing, then everything. On gravel, dirt and
@@ -119,8 +123,26 @@
       // Rally Turbo slot swaps it for one with a different character instead.
       turbo: 1, noParts: ['induction'],
     },
+    // v5.4: a long-bonnet V12 grand tourer. The fastest thing in the paddock
+    // flat out and dead steady at speed - and 1.7 tonnes of it arriving at a
+    // hairpin. Its torque builds smoothly all the way to the top.
+    regent: {
+      id: 'regent', name: 'Regent V12', tag: 'V12 grand tourer', drive: 'RWD', price: 5600,
+      blurb: 'A long-bonnet V12 grand tourer: the highest top speed in the paddock and rock-steady at 200 km/h. It is also 1.7 tonnes, soft and wide - it hates hairpins and it hates dirt. Pick the fast tracks.',
+      mass: 1620, powerKW: 238, redline: 7200, rearBias: 1.0, wheelbase: 2.95, weightFront: 0.46,
+      cgH: 0.5, track: 1.7, vTop: 64, inertiaK: 1.02, body: 'gt', len: 4.95, wid: 2.0, looseBonus: 0.88, wearK: 1.2, tq: { lo: 0.94, hi: 1.05 },
+    },
+    // v5.4: a light rotary coupe. Revs to 9,000 and makes almost nothing
+    // below half of that, so it is slow out of a hairpin and brilliant
+    // anywhere you can keep it spinning. Thirsty, like every rotary.
+    rotor: {
+      id: 'rotor', name: 'Rotor 7', tag: 'rotary RWD coupé', drive: 'RWD', price: 2900,
+      blurb: 'A light rotary coupé that revs to 9,000 and makes almost nothing below half of that. Keep it spinning and it flies through flowing corners; drop it off the boil in a hairpin and it bogs. Thirsty in endurance.',
+      mass: 1180, powerKW: 150, redline: 9000, rearBias: 1.0, wheelbase: 2.45, weightFront: 0.5,
+      cgH: 0.46, track: 1.6, vTop: 56, inertiaK: 0.9, body: 'rotor', len: 4.3, wid: 1.76, fuelK: 1.3, wearK: 1.1, tq: { lo: 0.7, hi: 1.12 },
+    },
   };
-  const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule', 'pip', 'dune', 'apex', 'volt', 'storm'];
+  const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule', 'pip', 'dune', 'apex', 'rotor', 'volt', 'storm', 'regent'];
   const BASE_CARS = ['vandal', 'brick', 'sting', 'mule', 'pip']; // free for everyone
   // v5: parts a car can't take (the Volt has no engine to turbo or pipe), and
   // v5.1 the other way round: slots only one kind of car has (the Stormer's
@@ -464,12 +486,12 @@
   const LOOK = {
     paints: [0xff3b30, 0xd7263d, 0xff8a00, 0xffc400, 0xf2e94e, 0x9be15d, 0x22c55e, 0x0f9d58, 0x19c3e6, 0x2f6bff, 0x1d3fbb, 0x6c3ce0, 0xa855f7, 0xff2d92, 0xff7eb6, 0xf5f5f5, 0xc9ced6, 0x8a929c, 0x4a4f58, 0x1b1d22, 0x7a4a2a, 0xc49a6c, 0x2f5d50, 0x9e1b32],
     accents: [0xf5f5f5, 0x1b1d22, 0xffc400, 0xff3b30, 0x2f6bff, 0x22c55e, 0x19c3e6, 0xff2d92, 0xff8a00, 0xa855f7, 0x8a929c, 0xd4a017],
-    liveries: [['none', 'Plain'], ['stripes', 'Twin stripes'], ['single', 'Centre stripe'], ['side', 'Side stripe'], ['twotone', 'Two-tone'], ['roof', 'Contrast roof'], ['race', 'Race (stripes + roundels)'], ['checker', 'Checker roof'], ['fade', 'Fade (accent → paint)'], ['flames', 'Flames'], ['tiger', 'Tiger slashes'], ['chevron', 'Hood chevrons'], ['bolt', 'Lightning bolt']],
-    rims: [['five', '5-spoke'], ['mesh', 'Mesh'], ['dish', 'Dish'], ['rally', 'Rally steel'], ['turbine', 'Turbine']],
+    liveries: [['none', 'Plain'], ['stripes', 'Twin stripes'], ['single', 'Centre stripe'], ['side', 'Side stripe'], ['twotone', 'Two-tone'], ['roof', 'Contrast roof'], ['race', 'Race (stripes + roundels)'], ['checker', 'Checker roof'], ['fade', 'Fade (accent → paint)'], ['flames', 'Flames'], ['tiger', 'Tiger slashes'], ['chevron', 'Hood chevrons'], ['bolt', 'Lightning bolt'], ['heritage', 'Heritage band'], ['panels', 'Contrast panels'], ['retro', 'Retro pinstripes']],
+    rims: [['five', '5-spoke'], ['mesh', 'Mesh'], ['dish', 'Dish'], ['rally', 'Rally steel'], ['turbine', 'Turbine'], ['split', 'Split 5'], ['classic', 'Classic 8']],
     rimCols: [0xc9d0d8, 0x2a2d33, 0xd4a017, 0xf5f5f5, 0x5a6270, 0xa0602e, 0xe8322b, 0x19c3e6],
     tints: [['clear', 'Clear'], ['dark', 'Dark'], ['black', 'Limo black']],
     glows: [['none', 'None'], ['cyan', 'Cyan'], ['pink', 'Pink'], ['green', 'Green'], ['yellow', 'Yellow'], ['purple', 'Purple']],
-    finishes: [['gloss', 'Gloss'], ['metal', 'Metallic'], ['chrome', 'Chrome flake'], ['matte', 'Matte']],
+    finishes: [['gloss', 'Gloss'], ['metal', 'Metallic'], ['pearl', 'Pearl'], ['chrome', 'Chrome flake'], ['matte', 'Matte']],
     lights: [['warm', 'Halogen'], ['xenon', 'Xenon blue'], ['amber', 'Rally amber']],
     // v5
     kits: [['none', 'Stock'], ['street', 'Street (splitter + skirts)'], ['wide', 'Widebody'], ['bash', 'Rally bash bar'], ['drift', 'Drift (bash bar + canards)']],
@@ -521,8 +543,8 @@
   // Each skin belongs to exactly one car. `wing` / `popups` tell the model
   // which stock details the skin takes over.
   const SKINS = {
-    gtd: { id: 'gtd', name: 'Track Special', car: 'mule', body: 'gtd', blurb: 'Fastback shell, swan-neck wing, louvred bonnet.', wing: 1, carbonRoof: 1 },
-    miata: { id: 'miata', name: 'Sunchaser', car: 'sting', body: 'miata', blurb: 'Little round drop-top with pop-up lamps.', popups: 1, humps: 1, archBody: 1 },
+    gtd: { id: 'gtd', name: 'Track Special', car: 'mule', body: 'gtd', blurb: 'Fastback shell, swan-neck wing, louvred bonnet.', wing: 1 },
+    miata: { id: 'miata', name: 'Sunchaser', car: 'sting', body: 'miata', blurb: 'Little round drop-top with pop-up lamps.', popups: 1, flatDeck: 1 },
   };
   const skinFor = (carId, id) => (id && SKINS[id] && SKINS[id].car === carId ? SKINS[id] : null);
   // What this driver may put on the car they are in right now.
@@ -722,8 +744,19 @@
       return m;
     });
 
-    const aeroCl = ae.id === 'a2' || ae.id === 'a3' ? ae.clA * wingM : ae.clA;
-    const aeroCd = ae.id === 'a2' || ae.id === 'a3' ? ae.cdA * (0.5 + 0.5 * wingM) : ae.cdA;
+    // v5.3.3: a wing is sized to the car it is bolted to - a wide muscle car
+    // carries a wider wing and a bigger splitter than a little roadster. As one
+    // fixed number every car got the same downforce IN NEWTONS, which on a
+    // 960 kg car is half again the grip it is on a 1,440 kg one: the Full Aero
+    // Kit made the Sting 8% faster and the Mule 2%, and a fully built Sting won
+    // more tracks than anything in the paddock. Scaled to the car's footprint
+    // (the Vandal's 8 m², the middle of the field, is the reference) the
+    // downforce per kilo comes out close to even, and so does the drag.
+    // (floored, so the kei car - which the field already outpowers - is not
+    // also punished for being small)
+    const aeroSz = Math.max(0.8, (c.len * c.wid) / 8.0);
+    const aeroCl = (ae.id === 'a2' || ae.id === 'a3' ? ae.clA * wingM : ae.clA) * aeroSz;
+    const aeroCd = (ae.id === 'a2' || ae.id === 'a3' ? ae.cdA * (0.5 + 0.5 * wingM) : ae.cdA) * aeroSz;
     const s = {
       carId: c.id, parts: p, tune: T,
       mass, Iz, wheelbase: c.wheelbase, cgF, cgR, cgH: c.cgH + su.rideH * 0.5 + rideCm * 0.006, track: c.track, wheelR: WHEEL_R,
@@ -735,7 +768,7 @@
       boostKind: ind.kind, boostGain: ind.boostGain * boostM * (boosted ? co.boostPow || 1 : 1), boostLag: ind.boostLag, boostOn: ind.boostOn,
       heatRate: ind.heatRate * ec.heatM * boostM * boostM * (co.heatK || 1),
       // v5 electronics / wheels / pit kit
-      launch: ai.launch ? 1 : 0, antilag: (ind.antilag || (ai.antilag && ind.kind === 'turbo')) ? 1 : 0, wallDmg: wh.wallDmg || 1, qr: pk.qr || 1, coolRate: 0.035 * co.coolM, fuelRate: 0.85 * ind.fuelMult * ec.fuelM * (c.fuelK || 1) * (c.ev ? mo.drainM : 1),
+      launch: ai.launch ? 1 : 0, antilag: (ind.antilag || (ai.antilag && ind.kind === 'turbo')) ? 1 : 0, wallDmg: wh.wallDmg || 1, qr: pk.qr || 1, coolRate: 0.035 * (c.ev ? 1 + (co.coolM - 1) * 0.5 : co.coolM) /* v5.4: a radiator is for an engine - on the Volt it does half as much */, fuelRate: 0.85 * ind.fuelMult * ec.fuelM * (c.fuelK || 1) * (c.ev ? mo.drainM : 1),
       // v5: EV motor heat under load, regen, battery size + charging speed
       evHeat: (c.evHeat || 0) * ec.heatM * (c.ev ? mo.heatM : 1), regen: c.regen || 0, tankM: (c.tankM || 1) * (pk.tankM || 1), chargeK: (c.chargeK || 1) * (pk.tankM ? 1.2 : 1),
       engineHealth,
@@ -1022,6 +1055,8 @@
     // v5 cars and parts
     if (s.carId === 'pip') out.push(['warn', 'Pip K1: front-drive — too much throttle mid-corner washes the nose wide. Lift or brake into a corner to swing the tail round. Light: bigger cars push it around.']);
     if (s.carId === 'volt') out.push(['warn', 'Volt E: one gear and instant torque. Flat out for long, the motor gets hot and power drops — ease off a moment to cool it.']);
+    if (s.carId === 'regent') out.push(['warn', 'Regent V12: brake early and in a straight line - it carries its weight into every corner. Unbeatable flat out; it is the hairpins you lose it in.']);
+    if (s.carId === 'rotor') out.push(['warn', 'Rotor 7: keep it above 5,000. Out of a slow corner, pick the lower gear - below half revs it has nothing.']);
     if (s.carId === 'storm') out.push(['warn', 'Stormer B: the turbo arrives late and all at once. On tarmac, get it straight before the boost hits or the tail comes round.']);
     if (p.gbturbo === 'small') out.push(['good', 'Small Rally Turbo: half a second to spool instead of a second. Much easier to place on tarmac — and slower on the stages it was built for.']);
     if (p.gbturbo === 'big') out.push(['warn', 'Group B Turbo: nothing below two-thirds revs, then everything. On a tight track you will be waiting for it at every exit.']);
