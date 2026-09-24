@@ -39,7 +39,7 @@
           <div class="panel lb-chat">
             <h3>Chat & trash talk</h3>
             <div class="chat-log"></div>
-            <div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small" data-act="send">Send</button></div>
+            <div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small stt-mic" title="Speech to text: hold the talk key or tap here, then speak">🎤</button><button class="btn small" data-act="send">Send</button></div>
           </div>
         </div>`;
       this.el = { code: root.querySelector('.lb-code'), count: root.querySelector('.lb-count'), pl: root.querySelector('.lb-players'), set: root.querySelector('.lb-set'), btns: root.querySelector('.lb-btns'), log: root.querySelector('.chat-log'), inp: root.querySelector('.chat-in input') };

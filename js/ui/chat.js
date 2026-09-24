@@ -5,6 +5,7 @@
 // Closed, the latest lines show in the corner for a few seconds and fade;
 // the 💬 button counts what you missed. Hidden on screens that already have a
 // big chat panel (lobby, intermission) and outside multiplayer.
+// v5.5: speech to text - hold V (or tap 🎤), speak, and it goes into chat.
 'use strict';
 (function (G) {
   const U = G.U;
@@ -16,7 +17,7 @@
       const el = document.createElement('div');
       el.id = 'chatbox';
       el.style.display = 'none';
-      el.innerHTML = `<div class="cb-log"></div><div class="cb-in"><input maxlength="140" placeholder="Say something… Enter sends · Esc closes"></div><button class="cb-btn" title="Chat (T or Enter)">💬 <span>Chat</span><b></b></button>`;
+      el.innerHTML = `<div class="cb-log"></div><div class="cb-in"><input maxlength="140" placeholder="Say something… Enter sends · Esc closes"></div><div class="cb-row"><button class="cb-btn" title="Chat (T or Enter)">💬 <span>Chat</span><b></b></button><button class="cb-btn stt-mic" title="Speech to text: hold the talk key or tap here, then speak">🎤</button></div>`;
       document.body.appendChild(el);
       this.el = el;
       this.logEl = el.querySelector('.cb-log');
@@ -43,6 +44,7 @@
       this.inp.addEventListener('blur', () => setTimeout(() => document.activeElement !== this.inp && this.open && this.close(), 0));
       window.addEventListener('keydown', (e) => this._hotkey(e));
       setInterval(() => this.update(), 200);
+      Talk.init();
     },
 
     available() {
@@ -90,6 +92,12 @@
 
     update() {
       const on = this.available() && !this.panel();
+      const stt = Talk.supported && !!G.Settings.s.stt && this.available();
+      document.body.classList.toggle('stt', stt);
+      if (!stt && Talk.on) Talk.cancel();
+      const tk = G.Settings.s.keys.talk;
+      const ph = 'Say something… Enter sends · Esc closes' + (stt && tk ? ' · hold ' + G.Settings.keyName(tk) + ' to talk' : '');
+      if (this.inp.placeholder !== ph) this.inp.placeholder = ph;
       this.el.style.display = on ? '' : 'none';
       document.body.classList.toggle('chatting', on && this.open);
       if (!on && this.open) this.close();
@@ -142,6 +150,163 @@
       if (this.badge.textContent !== b) this.badge.textContent = b;
     },
   };
+
+  // ---- v5.5 speech to text --------------------------------------------------
+  // For players who want to talk but can't wear a headset: hold the talk key
+  // (V) or tap a 🎤, speak, and what you said goes into the chat as a 🎤
+  // line. It is the browser's own recogniser - Chrome and Edge send the audio
+  // to their speech service, so it needs a connection and the page's
+  // microphone permission, and a school Chromebook may have the microphone
+  // blocked. Chrome stars out swear words itself.
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const FAIL = {
+    'not-allowed': 'Microphone blocked. Allow it from the icon at the left of the address bar (a school Chromebook may not let you).',
+    'service-not-allowed': 'Speech to text is switched off in this browser.',
+    'audio-capture': 'No microphone found.',
+    network: 'Speech to text needs the internet (it uses your browser\'s speech service).',
+    'language-not-supported': 'Speech to text does not support your browser\'s language.',
+  };
+  const Talk = {
+    supported: !!SR,
+    on: false, // listening
+    init() {
+      const bar = document.createElement('div');
+      bar.id = 'sttbar';
+      bar.innerHTML = '<i></i><div><b></b><span></span></div>';
+      document.body.appendChild(bar);
+      this.bar = bar;
+      this.lbl = bar.querySelector('b');
+      this.txt = bar.querySelector('span');
+      window.addEventListener('keydown', (e) => {
+        const k = G.Settings.s.keys.talk;
+        if (!k || e.code !== k || e.repeat || this.on || !this.ready()) return;
+        const a = document.activeElement;
+        if (a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT' || a.isContentEditable)) return;
+        if (document.querySelector('.modal-bg') || (G.Overlay && G.Overlay.isOpen)) return;
+        e.preventDefault();
+        this.start(k);
+      });
+      window.addEventListener('keyup', (e) => {
+        if (this.held && e.code === this.held) this.stop();
+      });
+      window.addEventListener('blur', () => this.held && this.stop());
+      // every 🎤 button (the chat corner, the lobby and results panels)
+      document.addEventListener('click', (e) => {
+        const b = e.target.closest && e.target.closest('.stt-mic');
+        if (!b) return;
+        e.preventDefault();
+        if (this.on) this.stop();
+        else if (!this.supported) G.UI.toast('Speech to text needs Chrome or Edge.', 'bad');
+        else if (this.ready()) this.start(null);
+      });
+    },
+    ready() {
+      return this.supported && !!G.Settings.s.stt && Chat.available();
+    },
+    // held: the key being held (talk until it's let go), or null for a tap
+    // on the mic (one sentence, sent when you pause)
+    start(held) {
+      let r;
+      try {
+        r = new SR();
+        r.lang = navigator.language || 'en-US';
+        r.continuous = !!held;
+        r.interimResults = true;
+        r.maxAlternatives = 1;
+      } catch (e) {
+        return G.UI.toast('Speech to text could not start.', 'bad');
+      }
+      this.rec = r;
+      this.held = held;
+      this.fin = '';
+      this.mid = '';
+      this.err = null;
+      r.onresult = (ev) => {
+        let fin = '', mid = '';
+        for (let i = 0; i < ev.results.length; i++) {
+          const x = ev.results[i];
+          if (x.isFinal) fin += x[0].transcript;
+          else mid += x[0].transcript;
+        }
+        this.fin = fin;
+        this.mid = mid;
+        this.paint();
+      };
+      r.onerror = (ev) => {
+        this.err = ev.error;
+      };
+      r.onend = () => this.finish();
+      try {
+        r.start();
+      } catch (e) {
+        this.rec = null;
+        this.held = null;
+        return G.UI.toast('Speech to text could not start.', 'bad');
+      }
+      this.on = true;
+      // a key held down forever (or a tab switch mid-sentence) can't leave
+      // the microphone open
+      clearTimeout(this.cap);
+      this.cap = setTimeout(() => this.stop(), 15000);
+      if (G.Audio && G.Audio.duck) G.Audio.duck(true);
+      this.paint();
+    },
+    stop() {
+      this.held = null;
+      if (!this.rec) return;
+      this.sending = true;
+      this.paint();
+      try {
+        this.rec.stop();
+      } catch (e) {
+        this.finish();
+      }
+    },
+    // the setting was switched off or the session ended: drop it unsent
+    cancel() {
+      this.fin = this.mid = '';
+      this.err = 'aborted';
+      this.held = null;
+      if (this.rec) {
+        try {
+          this.rec.abort();
+        } catch (e) {
+          this.finish();
+        }
+      }
+    },
+    finish() {
+      if (!this.on) return;
+      clearTimeout(this.cap);
+      this.on = false;
+      this.held = null;
+      this.rec = null;
+      this.sending = false;
+      if (G.Audio && G.Audio.duck) G.Audio.duck(false);
+      this.paint();
+      // (stopped mid-word, Chrome may still hold the last words as interim)
+      let text = (this.fin + ' ' + this.mid).replace(/\s+/g, ' ').trim();
+      if (this.err === 'aborted') return;
+      if (!text) {
+        if (this.err && FAIL[this.err]) return G.UI.toast(FAIL[this.err], 'bad');
+        const k = G.Settings.s.keys.talk;
+        return G.UI.toast("🎤 Didn't catch that. " + (k ? 'Hold ' + G.Settings.keyName(k) + ' while you speak.' : 'Tap 🎤 and speak.'), 'info', false);
+      }
+      text = text[0].toUpperCase() + text.slice(1);
+      if (Chat.available()) G.Client.act({ t: 'chat', text: '🎤 ' + text.slice(0, 136) });
+    },
+    paint() {
+      this.bar.classList.toggle('on', this.on);
+      for (const b of document.querySelectorAll('.stt-mic')) b.classList.toggle('live', this.on);
+      if (!this.on) return;
+      const k = this.held ? G.Settings.keyName(this.held) : '';
+      this.lbl.textContent = this.sending ? 'Sending…' : this.held ? `Listening. Let go of ${k} to send` : 'Listening. Sends when you pause';
+      const t = (this.fin + ' ' + this.mid).trim();
+      this.txt.textContent = t || 'Speak now';
+      this.txt.classList.toggle('hint', !t);
+    },
+  };
+  Chat.Talk = Talk;
 
   G.Chat = Chat;
   window.addEventListener('load', () => Chat.init());

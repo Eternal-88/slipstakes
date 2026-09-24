@@ -38,7 +38,7 @@
   const Standings = {
     mount(root) {
       root.innerHTML = `<div class="inter"><div class="panel in-card"><div class="in-head"></div><div class="in-body"></div>
-        <div class="in-chat"><h3>Chat & trash talk</h3><div class="chat-log"></div><div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small" data-act="send">Send</button></div></div></div></div>`;
+        <div class="in-chat"><h3>Chat & trash talk</h3><div class="chat-log"></div><div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small stt-mic" title="Speech to text: hold the talk key or tap here, then speak">🎤</button><button class="btn small" data-act="send">Send</button></div></div></div></div>`;
       this.el = { head: root.querySelector('.in-head'), body: root.querySelector('.in-body'), log: root.querySelector('.chat-log'), inp: root.querySelector('.chat-in input') };
     },
     acts: {
