@@ -3,8 +3,13 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.5.1';
+  G.VERSION = '5.5.2';
   G.CHANGELOG = [
+    {
+      v: '5.5.2', name: 'Steady', items: [
+        ['🏎', 'Other cars stop wobbling', 'On a joiner’s screen, other cars - people’s especially - swayed from side to side in a way the real cars never did. Three causes, all fixed. Every car was guessed ahead from the moment each update ARRIVED, so on jittery Wi-Fi the point it was guessed to jumped back and forth by up to a metre with every update; it is now timed from the host’s own clock. A person on a keyboard changes their rate of turn several times a second, and carrying each one a third of a second ahead swung the drawn nose from side to side; the guessed turn now fades the way a real car’s does. And the smoothing that hides each correction slid cars sideways without turning them, a crab-walk that read as a wobble; it now takes sideways corrections gently. Measured against where the cars really were, a keyboard player’s side-to-side movement is 2 to 3 times smaller and their nose sways about as much as the real car’s does, with no return of the old stutter.'],
+      ],
+    },
     {
       v: '5.5.1', name: 'Say It Your Way', items: [
         ['🎤', 'Voice settings', 'Speech to text has its own tab in Settings, with four ways to use it. Push to talk: hold V and speak, and letting go sends it. Tap to talk: tap V or the microphone once, and it sends when you pause. Voice activated: it listens the whole time you are in a session and sends each sentence when you pause, and V or the microphone mutes it (the microphone button goes grey while muted and gets a green ring while listening). Or Off, which also removes the microphone buttons.'],

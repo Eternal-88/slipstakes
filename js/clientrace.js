@@ -59,7 +59,9 @@
   const STALE_MS = 550; // newest snapshot older than this: stop guessing, hold
   const LEAD_TOTAL = 700; // ms; a stalled link must not slide cars across the map
   const EASE_MAX = 7; // m; a bigger step than this is a respawn, so snap to it (a respawn is flagged as one anyway)
-  const SPRING_W = 18; // 1/s: how stiffly that offset is pulled back to zero (critically damped, ~0.25 s)
+  const EASE_TAU = 0.07; // s, a correction along the car (and of its heading) eases out
+  const EASE_LAT_TAU = 0.3; // s, ...and across it (v5.5.2), so the car never crabs sideways
+  const YAW_TAU = 0.15; // s, how quickly a guessed car's rate of turn fades (v5.5.2)
   const OFF_WIN = 4000; // ms window for the host-clock estimate
   // How a client resolves its own half of a contact: the impulse of a real
   // bump, no position claim, nothing below a 1.2 m/s closing speed. See the
@@ -291,18 +293,27 @@
       const dt = Math.min(0.1, Math.max(0, (now - (this._pt == null ? now : this._pt)) / 1000));
       this._pt = now;
       const age = now - A.rt;
-      // How far ahead of the snapshot we have to guess to land on our own
-      // car's clock: the snapshot's own age plus the round trip. Past STALE_MS
-      // the link has gone quiet and guessing further only flings cars about.
+      // Past STALE_MS the link has gone quiet and guessing further only
+      // flings cars about.
       this.fresh = age < STALE_MS;
       // (the ping estimate moves in steps once a second; glide between them,
       // or every remote car hops a little each time it updates)
       const rttNow = U.clamp((this.net && this.net.rtt) || 0, 0, 3000);
       this.rttS = this.rttS == null ? rttNow : this.rttS + (rttNow - this.rttS) * (1 - Math.exp(-dt / 0.6));
       const rttL = Math.min(this.rttS, LEAD_MAX);
-      const leadOf = (snap) => Math.min(Math.min(now - snap.rt, STALE_MS) + rttL, LEAD_TOTAL) / 1000;
+      // How far ahead of a snapshot to guess, to land on our own car's clock:
+      // from the moment the HOST took it to now on the host's clock, plus the
+      // round trip. v5.5.2: this used to count from when the snapshot ARRIVED,
+      // so every packet that came in late or early on a jittery Wi-Fi moved
+      // the point every car was guessed to by that much - up to a metre a
+      // snapshot at speed - and the smoothing turned it into sway. Measured
+      // from the host's clock the target moves smoothly, and a late snapshot
+      // is simply guessed further.
+      const hNow = now + (this.offset || 0);
+      const leadOf = (snap) => Math.min(Math.min(Math.max(0, hNow - snap.ts), STALE_MS) + rttL, LEAD_TOTAL) / 1000;
       const lead = leadOf(A);
       this.lead = lead;
+      const kAl = Math.exp(-dt / EASE_TAU), kLat = Math.exp(-dt / EASE_LAT_TAU);
       const T = this._pj || (this._pj = { x: 0, z: 0, h: 0, vx: 0, vz: 0, hint: -1 });
       for (let j = 0; j < this.rs.length; j++) {
         if (j === this.meIdx) continue;
@@ -313,25 +324,27 @@
         const tx = T.x, tz = T.z, th = T.h;
         o.vx = T.vx;
         o.vz = T.vz;
+        // The offset that hides each snapshot's correction eases out. v5.5.2:
+        // split along and across the car. Along it (a touch faster or slower)
+        // goes quickly and nobody notices; ACROSS it slid the car sideways
+        // without turning it - 30 cm in a tenth of a second is a crab-walk at
+        // several m/s, which read as the car wobbling side to side. That part
+        // now eases out over a third of a second. (v5.5's critically damped
+        // spring kept its momentum from one correction into the next, and a
+        // keyboard driver's corrections alternate, so it swung the nose from
+        // side to side: that is gone again too.)
+        {
+          const sh = Math.sin(E.h), ch = Math.cos(E.h);
+          const lon = (E.ox * sh + E.oz * ch) * kAl, lat = (E.ox * ch - E.oz * sh) * kLat;
+          E.ox = lon * sh + lat * ch;
+          E.oz = lon * ch - lat * sh;
+          E.oh *= kAl;
+        }
         // A new snapshot moves the target by whatever the guess got wrong.
-        // Absorb that step in an offset that decays, so the car doesn't twitch
-        // every time one lands. Too big a step is a respawn: snap to it.
-        // v5.5: the step is measured against where the OLD guess puts the car
-        // at this instant - not where it was drawn last frame. Last frame's
-        // spot was a frame of travel behind, so every car stood still for one
-        // frame each time a snapshot landed (30 times a second: a fine,
-        // constant shimmer on every car you race against, 0.4 m at speed).
-        // v5.5: the offset rides a critically damped spring instead of
-        // decaying straight away. The position was already continuous; now
-        // its SPEED is too, so a correction eases in and out rather than
-        // kinking the car's path the frame it starts.
-        const sx = Math.exp(-SPRING_W * dt);
-        let tq = ((E.vx || 0) + SPRING_W * E.ox) * dt;
-        E.ox = (E.ox + tq) * sx; E.vx = ((E.vx || 0) - SPRING_W * tq) * sx;
-        tq = ((E.vz || 0) + SPRING_W * E.oz) * dt;
-        E.oz = (E.oz + tq) * sx; E.vz = ((E.vz || 0) - SPRING_W * tq) * sx;
-        tq = ((E.vh || 0) + SPRING_W * E.oh) * dt;
-        E.oh = (E.oh + tq) * sx; E.vh = ((E.vh || 0) - SPRING_W * tq) * sx;
+        // Too big a step is a respawn: snap to it. v5.5: the step is measured
+        // against where the OLD guess puts the car at this instant - not where
+        // it was drawn last frame, which was a frame of travel behind: every
+        // car stood still for one frame each time a snapshot landed.
         if (E.k !== A.k) {
           let bx = E.x, bz = E.z, bh = E.h;
           if (E.has && E.base && E.base !== A) {
@@ -351,7 +364,7 @@
             E.ox = ex;
             E.oz = ez;
             E.oh = U.wrapAngle(bh - th);
-          } else E.ox = E.oz = E.oh = E.vx = E.vz = E.vh = 0;
+          } else E.ox = E.oz = E.oh = 0;
         }
         o.x = E.x = tx + E.ox;
         o.z = E.z = tz + E.oz;
@@ -366,29 +379,37 @@
     _guess(o, t, H, out) {
       const tr = this.track;
       const vx = o.vx, vz = o.vz, w = o.w;
-      let tx, tz;
+      // The car keeps turning, but its rate of turn fades (YAW_TAU) rather
+      // than holding for the whole guess. Holding it exactly suited a bot's
+      // smooth steering, but a person on a keyboard changes theirs several
+      // times a second, and each snapshot's rate carried a third of a second
+      // ahead swung the drawn nose side to side (up to 3x the real car's own
+      // wiggle through the backup relay). Turned through by time q:
+      // w·τ·(1 - e^(-q/τ)).
+      const phi = (q) => w * YAW_TAU * (1 - Math.exp(-q / YAW_TAU));
+      let tx = o.x, tz = o.z;
       if (Math.abs(w) > 0.02) {
-        // Constant yaw rate. A car in a corner holds its rate of turn far
-        // better than it holds a straight line, so integrating the rotating
-        // velocity exactly is what makes guessing this far ahead work at all
-        // - plain velocity dead reckoning fires cars off on the tangent.
-        const s1 = Math.sin(w * t), c1 = 1 - Math.cos(w * t);
-        tx = o.x + (vx * s1 + vz * c1) / w;
-        tz = o.z + (vz * s1 - vx * c1) / w;
+        const n = Math.max(2, Math.ceil(t / 0.025)), ds = t / n;
+        for (let i = 0; i < n; i++) {
+          const f = phi((i + 0.5) * ds), c = Math.cos(f), sn = Math.sin(f);
+          tx += (vx * c + vz * sn) * ds;
+          tz += (vz * c - vx * sn) * ds;
+        }
       } else {
-        tx = o.x + vx * t;
-        tz = o.z + vz * t;
+        tx += vx * t;
+        tz += vz * t;
       }
+      const ft = phi(t);
+      const th = U.wrapAngle(o.h + ft);
       // Braking and accelerating, along the car's own axis at mid-guess. ax
       // is already a smoothed number and this is a guess, so take half of it.
-      const th = U.wrapAngle(o.h + w * t);
-      const hm = o.h + w * t * 0.5;
+      const hm = o.h + phi(t * 0.5);
       const al = U.clamp(o.ax, -12, 12) * t * t * 0.25;
       tx += Math.sin(hm) * al;
       tz += Math.cos(hm) * al;
       // Turn the velocity with it, so wheel spin, engine note, body roll and
       // the skid marks all match the direction the car is actually pointing.
-      const cw = Math.cos(w * t), sw = Math.sin(w * t);
+      const cw = Math.cos(ft), sw = Math.sin(ft);
       out.vx = vx * cw + vz * sw;
       out.vz = vz * cw - vx * sw;
       // Never guess a car through a barrier.
