@@ -218,3 +218,43 @@
 .ov-foot .ver { display: inline-block; font-weight: 900; background: rgba(255,255,255,.14); color: var(--ink); border-radius: 7px; padding: 3px 9px; margin-left: 6px; cursor: pointer; letter-spacing: 0; }
 .ov-foot .ver:hover { background: var(--yellow); color: #1a1300; }
 .logo .ver, .ov-foot .ver { -webkit-user-select: none; user-select: none; touch-action: manipulation; -webkit-touch-callout: none; }
+
+/* v5.4: the next track's layout in the garage header, where you can still
+   build for it */
+.g-next { flex-direction: row; align-items: center; gap: 10px; }
+.g-next .g-nx { display: flex; flex-direction: column; align-items: flex-end; }
+.g-next .g-map { width: 150px; height: 92px; flex: none; background: rgba(0, 0, 0, .2); border-radius: 8px; }
+.g-next .g-nx-pit { font-style: normal; font-size: 10px; font-weight: 900; letter-spacing: .5px; color: #ffc400; }
+@media (max-width: 720px) { .g-next .g-map { width: 110px; height: 70px; } }
+
+/* v5.4 paint tab: sub-tabs, the current choice beside each heading, and no
+   text selection while you drag the car round */
+body.dragging, body.dragging * { -webkit-user-select: none !important; user-select: none !important; }
+.pt-subs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px; margin-bottom: 10px; position: sticky; top: 0; z-index: 2; background: var(--panel, #161a22); padding-bottom: 6px; }
+.pt-subs button { font-family: var(--body); font-weight: 900; font-size: 12px; background: rgba(255,255,255,.06); color: var(--muted); border: 0; border-radius: 9px; padding: 8px 4px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pt-subs button:hover { color: var(--ink); }
+.pt-subs button.on { background: var(--yellow); color: #1a1300; }
+.pt-sec h4 { display: flex; align-items: baseline; gap: 8px; }
+.pt-sec h4 .pt-now { margin-left: auto; font-family: var(--body); font-size: 11px; letter-spacing: 0; text-transform: none; color: var(--ink); opacity: .75; font-weight: 900; }
+.pt-note { margin: -4px 0 8px; font-size: 11px; color: var(--muted); }
+.pt-sound .pt-sec:last-child { background: none; padding-left: 2px; }
+.pt-foot { margin-top: 6px; }
+@media (max-width: 720px) { .pt-subs { grid-template-columns: repeat(2, 1fr); } }
+
+/* v5.4 car select: eleven cars. Four to a row with the last row centred, the
+   blurb held to three lines (the whole thing on hover) and the stat bars in
+   two columns, so every card shows its bars on a 768-px Chromebook screen. */
+@media (min-width: 901px) {
+  .cs-cars { display: flex; flex-wrap: wrap; justify-content: center; align-content: stretch; gap: 10px; overflow-y: auto; }
+  .cs-cars .cs-car { flex: 0 1 calc(25% - 8px); min-width: 0; padding: 12px 14px; gap: 4px; }
+}
+.cs-car p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; margin: 2px 0 4px; }
+.cs-bars { display: grid; grid-template-columns: 1fr 1fr; column-gap: 12px; row-gap: 3px; }
+
+/* v5.4: on a phone the GARAGE title ran under the cash figure. The tabs say
+   where you are, so the title goes; the next-track map is too small to read
+   at that width, so it goes too (the track name stays). */
+@media (max-width: 520px) {
+  .g-title h1 { display: none; }
+  .g-next .g-map { display: none; }
+}
