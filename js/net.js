@@ -25,7 +25,7 @@
 //                              the whole handshake every few seconds.
 //   * silent peers          -> both sides ping every second; the host drops a
 //                              client after SILENT_MS of silence; clients
-//                              declare the host lost after 6 s of silence THEY
+//                              declare the host lost after 10 s of silence THEY
 //                              WERE AWAKE FOR (see pump/tick - time with a
 //                              blocked main thread is not silence).
 'use strict';
@@ -582,8 +582,11 @@
       if (!this.open || now - this._lastPing < 1000) return;
       this._lastPing = now;
       this.sendCtrl({ t: 'ping', c: now, rtt: Math.round(this.rtt) });
-      // Host silent for 6 s -> treat as lost (tab crashed, network died).
-      if (now - this.lastHeard > 6000) this._lost('silent');
+      // Host silent for 10 s -> treat as lost (tab crashed, network died).
+      // (v5.5.4: 6 s. School Wi-Fi stalls for longer than that and then
+      // recovers by itself - the link was fine - and every one of those was
+      // turning into a full reconnect.)
+      if (now - this.lastHeard > 10000) this._lost('silent');
     }
 
     _lost(why) {

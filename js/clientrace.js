@@ -134,6 +134,11 @@
         this.pred.body = (e.wear && e.wear.body) || 0;
         this.hist = [];
         this.seq = 0;
+        // v5.5.4: this race session's input stream. A player who drops and
+        // rejoins mid-race starts a new ClientRace counting from 0 again; the
+        // host still remembered the old count and threw every new input away
+        // as "already had that" - the car ignored them for the rest of the race.
+        this.sid = Math.floor(Math.random() * 1e9);
         this.blockT = TPI; // forces a new block on the first tick
         this.cur = { s: 0, t: 0, b: 0, hb: 0, n: 0 };
         this.acc = 0;
@@ -259,7 +264,7 @@
             const h = this.hist[k];
             red.push([h.seq, h.inp.s, h.inp.t, h.inp.b, h.inp.hb, h.inp.n]);
           }
-          this.net.sendFast({ t: 'i', q: this.seq, s: this.cur.s, th: this.cur.t, b: this.cur.b, hb: this.cur.hb, n: this.cur.n, rs: input.rs ? 1 : 0, p: red });
+          this.net.sendFast({ t: 'i', sid: this.sid, q: this.seq, s: this.cur.s, th: this.cur.t, b: this.cur.b, hb: this.cur.hb, n: this.cur.n, rs: input.rs ? 1 : 0, p: red });
           input.rs = 0;
           this.blockT = 0;
         }

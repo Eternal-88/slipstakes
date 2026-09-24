@@ -509,7 +509,7 @@
         if (welcomed) this._onCtrl(m);
       });
       const welcome = await new Promise((res, rej) => {
-        let to = setTimeout(() => rej(new Error('The host did not answer.')), 8000);
+        let to = setTimeout(() => rej(new Error('The host did not answer.')), 12000); // (v5.5.4: 8 s - short for a rejoin through a slow relay)
         const done = () => {
           clearTimeout(to);
           off();
@@ -546,7 +546,7 @@
       this.myPid = welcome.id;
       G.Client.connectRemote(net, welcome.id);
       net.on('fast', (m) => {
-        if (m.t === 's' && this.clientRace) this.clientRace.onSnap(m);
+        if (m.t === 's' && this.clientRace && !this.clientRace.stale) this.clientRace.onSnap(m);
       });
       net.on('lost', (why) => this._lost(why));
       this.lost = null;
@@ -596,7 +596,11 @@
       if (this.role !== 'client' || this.lost || this.roomClosed) return;
       if (this.kicked) return this.leave();
       this.lost = { since: Date.now(), why, tries: 0 };
-      this.clientRace = null;
+      // (v5.5.4: keep the race on screen, frozen, while we get back in. Dropping
+      // it switched the view to the menu's background race - a whole other
+      // track to build - and then back again: two long freezes per hiccup on
+      // a Chromebook, each one long enough to drop a weak link again.)
+      if (this.clientRace) this.clientRace.stale = true;
       try {
         if (this.net) this.net.close();
       } catch (e) {}
@@ -701,7 +705,7 @@
         this._hostChores(now);
       } else {
         if (this.net && this.net.pump) this.net.pump(performance.now()); // keep-alive, works when hidden
-        if (this.clientRace && G.App.mode === 'session') {
+        if (this.clientRace && !this.clientRace.stale && G.App.mode === 'session') {
           const inp = G.Input.read();
           if (G.Input.hitAction('reset')) inp.rs = 1;
           this.clientRace.update(dt, inp);
@@ -719,9 +723,13 @@
       const st = G.Client.state;
       if (!st) return;
       if (this.role === 'client') {
-        if (st.phase === 'race' && st.race && (!this.clientRace || this.clientRace.no !== st.race.no) && this.net && !this.lost) {
+        if (st.phase === 'race' && st.race && (!this.clientRace || this.clientRace.no !== st.race.no || this.clientRace.stale) && this.net && !this.lost) {
           this.clientRace = new G.ClientRace(st.race, G.Client.meId, this.net);
-          this._enterRaceView(st.race);
+          // (v5.5.4: back in after a drop, the track is still built - building
+          // it again froze a Chromebook for seconds, long enough on a weak
+          // link to drop it all over again)
+          const w = G.App.world;
+          if (this.viewNo !== st.race.no || !w.track || w.track.id !== st.race.trackId) this._enterRaceView(st.race);
         } else if (st.phase !== 'race' && this.clientRace) this.clientRace = null;
       } else if (this.role === 'host') {
         if (this.hostRace && this.viewNo !== this.hostRace.no) this._enterRaceView(st.race || { trackId: this.hostRace.track.id, entrants: this.hostRace.sim.cars.map((c) => c.entrant), no: this.hostRace.no });

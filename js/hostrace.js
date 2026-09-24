@@ -78,7 +78,11 @@
     onInput(pid, m) {
       if (!this.sim.byId[pid]) return; // spectators can't drive
       let I = this.inputs[pid];
-      if (!I) I = this.inputs[pid] = { q: [], cur: null, seq: -1, ticks: 0, rs: 0 };
+      // v5.5.4: a new input stream (the player rejoined mid-race and their
+      // count starts again from 0): start their buffer over, or every input
+      // would look older than the last one and be dropped
+      if (I && m.sid !== I.sid) I = null;
+      if (!I) I = this.inputs[pid] = { q: [], cur: null, seq: -1, ticks: 0, rs: 0, sid: m.sid };
       if (typeof m.q !== 'number') return;
       if (m.th || m.s || m.b || m.hb || m.n) this.session.lastActive = Date.now(); // someone is actually driving (idle rooms close)
       this._insert(I, m.q, m.s, m.th, m.b, m.hb, m.n);

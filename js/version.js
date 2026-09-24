@@ -3,8 +3,13 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.5.3';
+  G.VERSION = '5.5.4';
   G.CHANGELOG = [
+    {
+      v: '5.5.4', name: 'Stay Connected', items: [
+        ['🔌', 'Dropped players get back in properly', 'When a player’s connection dropped mid-race, three things went wrong at once. Back in the room, their game started counting its controls from zero again while the host still remembered the old count, so the host threw every new input away and a stand-in drove their car for the rest of the race. While it reconnected, the screen swapped to the menu’s background race and back, building two whole tracks - a long freeze on a Chromebook, and on a weak connection long enough to drop out all over again: the disconnect-and-rejoin loop. And any stall over 6 seconds counted as a disconnect, although school Wi-Fi often recovers from those by itself. Now the race stays on screen while you get back in, your car answers to you the moment you’re back, and a connection gets 10 seconds to come back on its own before the game reconnects.'],
+      ],
+    },
     {
       v: '5.5.3', name: 'Who’s On', items: [
         ['👥', 'Online players and messages', 'The 👥 button in the top corner shows everyone playing SLIPSTAKES right now, anywhere, and what they’re doing: on the menu, in the garage, racing solo, or in a room. If their room is public you can join it straight from the list. The 💬 button sends them a direct message; new messages pop up wherever you are and the 👥 button counts the ones you haven’t read. Messages are end-to-end encrypted, so only the person you send them to can read them, and nobody can send one pretending to be someone else. They vanish when you close the game. You can hide yourself from the list or turn messages off right in the panel, and Block stops someone messaging you for the rest of the session.'],
