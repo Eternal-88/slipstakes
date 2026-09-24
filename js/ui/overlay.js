@@ -11,7 +11,7 @@
   const U = G.U, UI = G.UI;
   const S = () => G.Settings;
   const opt = (v, cur, label) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${label}</option>`;
-  const TABS = [['graphics', '🖥 Graphics'], ['audio', '🔊 Audio'], ['controls', '⌨ Controls'], ['camera', '🎥 Camera & HUD']];
+  const TABS = [['graphics', '🖥 Graphics'], ['audio', '🔊 Audio'], ['controls', '⌨ Controls'], ['voice', '🎤 Voice'], ['camera', '🎥 Camera & HUD']];
 
   function fullscreen() {
     const d = document;
@@ -55,6 +55,7 @@
         S().set(k, v);
         const out = el.closest('.ov-row') && el.closest('.ov-row').querySelector('output');
         if (out) out.textContent = v + (el.dataset.unit || '');
+        if (k === 'sttMode' && e.type === 'change') this.render();
         if (k === 'quality' && e.type === 'change') UI.toast('Graphics quality: ' + v + '. Antialiasing changes apply after a reload.', 'info');
         if (k === 'scenery' && e.type === 'change') UI.toast('Scenery detail applies from the next track load.', 'info');
       };
@@ -111,6 +112,7 @@
 
     hide() {
       this.isOpen = false;
+      if (G.Chat && G.Chat.Talk) G.Chat.Talk.stopTest();
       this.capturing = null;
       G.Input.captureNext(null);
       G.Input.blocked = false;
@@ -200,11 +202,39 @@
           row('Bot difficulty', sel('botLevel', G.BotKit.LEVEL_ORDER.map((k) => [k, G.BotKit.LEVELS[k].name])), 'Quick race and practice bots. Higher levels take better lines, bring better cars and parts, and sometimes play dirty.') +
           row('Race weather', sel('raceWeather', [['auto', 'Changeable (showers sometimes)'], ['dry', 'Always dry'], ['rain', 'Rain']]), 'Quick races. In the rain dry roads lose grip: narrow tyres cope best, wide slicks can aquaplane.') +
           row('Touch controls', sel('touch', [['auto', 'Auto (appear once you touch the screen)'], ['on', 'Always show'], ['off', 'Off']]), 'On-screen steer, gas, brake and handbrake buttons for touchscreen Chromebooks.') +
-          row('Speech to text', chk('stt', s.stt ? 'On' : 'Off'), G.Chat && G.Chat.Talk && G.Chat.Talk.supported
-            ? `In multiplayer, hold ${S().keyName(K.talk)} (or tap 🎤 by the chat) and speak: your words are typed into the chat. The game goes quiet while you talk. Your browser turns the speech into text using its own online service, and the first time it asks to use the microphone.`
-            : 'Not supported in this browser. Use Chrome or Edge.') +
+          row('Speech to text', `<button class="btn small" data-oact="stab" data-t="voice">🎤 Voice settings →</button>`, 'Push to talk, tap to talk or voice activated, the language, sensitivity and a microphone test.') +
           `<div class="ov-row"><label></label><div class="ov-ctl"><button class="btn small ghost" data-oact="resetKeys">Reset keys to default</button></div></div>` +
           `<p class="muted small">Fixed keys: <b>Esc</b> menu · <b>M</b> sound · <b>F3</b> fps · spectating: <b>1–8</b>/<b>Tab</b> follow a car, <b>WASD Q E</b> free camera, mouse wheel zoom.<br>Gamepad: left stick steer · RT throttle · LT brake · A handbrake · Y reset · RB camera · Start menu.</p>`;
+      } else if (this.tab === 'voice') {
+        const T = G.Chat && G.Chat.Talk, ok = !!(T && T.supported), m = s.sttMode || 'ptt';
+        const kn = s.keys.talk ? S().keyName(s.keys.talk) : 'the talk key';
+        const bind = `<button class="key ${this.capturing === 'talk' ? 'cap' : ''}" data-oact="bind" data-a="talk">${this.capturing === 'talk' ? 'Press a key…' : S().keyName(s.keys.talk)}</button>`;
+        const how = {
+          ptt: `Hold ${kn} (or click 🎤) and speak; letting go sends it.`,
+          tap: `Tap ${kn} or 🎤 once and speak; it sends when you pause. Tap again to send straight away.`,
+          voice: `Always listening while you are in a multiplayer session: each sentence goes into the chat when you pause. ${kn} or 🎤 mutes and unmutes it.`,
+          off: 'No microphone at all, and no 🎤 buttons.',
+        }[m];
+        const on = m !== 'off';
+        body =
+          (ok ? '' : `<p class="ov-warn">This browser has no speech recognition. Speech to text works in Chrome and Edge.</p>`) +
+          row('Speech to text', sel('sttMode', [['ptt', 'Push to talk'], ['tap', 'Tap to talk'], ['voice', 'Voice activated'], ['off', 'Off']]), how) +
+          (on
+            ? row(m === 'voice' ? 'Mute key' : 'Talk key', bind, 'The same key as in Controls.') +
+              row('When you finish', sel('sttSend', [['auto', 'Send it'], ['review', 'Put it in the chat box to check first']]), 'Checking first lets you fix a word it misheard; Enter sends it.') +
+              row('Language', sel('sttLang', T ? T.LANGS : [['auto', 'Same as the browser']]), `The language you speak. “Same as the browser” is ${U.esc(navigator.language || 'en-US')} here.`) +
+              (m !== 'ptt' ? row('Pause before sending', rng('sttPause', 0.6, 3, 0.1, ' s'), 'How long a silence ends a message. Shorter sends sooner; longer lets you stop and think mid-sentence.') : '') +
+              (m === 'voice'
+                ? row('Voice sensitivity', rng('sttSens', 0, 100, 5, '%'), 'Lower ignores quieter voices and the room around you; higher picks up quiet speech. Set it with the test below.') +
+                  row('Listen during', sel('sttWhere', [['all', 'The whole session'], ['race', 'Races only'], ['menus', 'Everything but races']]))
+                : '') +
+              row('Game volume while talking', rng('sttDuck', 0, 100, 5, '%'), 'Turns the game down while you talk, so laptop speakers don’t drown you out. 100% leaves it alone.') +
+              row('Live captions', chk('sttBar'), 'Shows what it is hearing while you talk.') +
+              row('Mark spoken messages', chk('sttMark'), 'Puts 🎤 in front of them, so everyone knows a misheard word wasn’t typed.') +
+              row('Listening sounds', chk('sttBeep'), 'A short blip when it starts and stops listening.')
+            : '') +
+          `<div class="ov-row"><label>Test your microphone</label><div class="ov-ctl"><button class="btn small" data-oact="stttest" ${ok ? '' : 'disabled'}>${T && T.test ? '■ Stop test' : '▶ Test'}</button></div><div class="ov-hint"><div class="stt-meter"><i></i><b style="left:${T ? (T.gate01() * 100).toFixed(1) : 50}%"></b></div><span class="stt-heard"></span><br>The bar is your voice and the line is where voice activation starts listening. Nothing is sent while you test.</div></div>` +
+          `<p class="muted small">Speech to text works in multiplayer. Your browser does the listening with its own online speech service (Chrome and Edge send the audio to it); SLIPSTAKES never records anything. The first time, the browser asks to use your microphone.</p>`;
       } else {
         body =
           row('Camera', sel('cam', [['follow', 'Chase'], ['near', 'Close chase'], ['far', 'High chase'], ['fixed', 'Fixed north']]), `Also the ${S().keyName(s.keys.cam)} key while driving.`) +
@@ -242,10 +272,19 @@
         return this.render();
       }
       if (a === 'stab') {
+        if (G.Chat && G.Chat.Talk) G.Chat.Talk.stopTest();
         this.tab = el.dataset.t;
         return this.render();
       }
+      if (a === 'stttest') {
+        const T = G.Chat && G.Chat.Talk;
+        if (!T) return;
+        if (T.test) T.stopTest();
+        else T.startTest();
+        return setTimeout(() => this.render(), 60);
+      }
       if (a === 'back') {
+        if (G.Chat && G.Chat.Talk) G.Chat.Talk.stopTest();
         if (this.fromPause) {
           this.view = 'pause';
           return this.render();
