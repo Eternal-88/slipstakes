@@ -91,6 +91,24 @@
     return { hpub: b64(await crypto.subtle.exportKey('raw', mine.publicKey)), iv: b64(iv), ct: b64(ct) };
   }
 
+  // v5.5.3 direct messages (ui/online.js). Each tab has a key pair; the AES
+  // key between two players is ECDH of one's private key and the other's
+  // public key, so a message that opens with it can only have come from the
+  // owner of that public key.
+  const DM = {
+    keyPair,
+    exportPub: async (k) => b64(await crypto.subtle.exportKey('raw', k)),
+    key: aesKey,
+    async seal(key, text) {
+      const iv = crypto.getRandomValues(new Uint8Array(12));
+      const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(text));
+      return { iv: b64(iv), ct: b64(ct) };
+    },
+    async open(key, o) {
+      return dec.decode(await crypto.subtle.decrypt({ name: 'AES-GCM', iv: unb64(o.iv) }, key, unb64(o.ct)));
+    },
+  };
+
   // ------------------------------------------------ minimal MQTT 3.1.1 client
   // Just what we need: CONNECT, SUBSCRIBE, PUBLISH (QoS 0), PING, DISCONNECT.
   function mstr(s) {
@@ -696,5 +714,5 @@
     }
   }
 
-  G.Relay = { BROKERS, Mqtt, RelayHost, RelayJoin, RoomBoard, sealFor, OPS };
+  G.Relay = { BROKERS, Mqtt, RelayHost, RelayJoin, RoomBoard, sealFor, OPS, DM };
 })(window.G);

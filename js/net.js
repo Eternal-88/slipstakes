@@ -409,13 +409,18 @@
         this.relayJ = relay;
         let settled = false;
         let found = false; // matchmaking server answered, and no "room not found"
-        const fail = (msg) => {
+        // code 'gone': the matchmaking server says the room's host no longer
+        // exists and it didn't answer on the relay either - the one failure
+        // that means the room is really gone, not that OUR network is bad
+        const fail = (msg, code) => {
           if (settled) return;
           settled = true;
           clearTimeout(to);
           clearTimeout(knockT);
           this.close();
-          reject(new Error(msg));
+          const e = new Error(msg);
+          e.code = code || 'net';
+          reject(e);
         };
         const why = () => {
           const relayOk = relay && relay.reached > 0;
@@ -524,10 +529,10 @@
           if (settled) return console.warn('[net client] peer error', err.type);
           if (err.type === 'peer-unavailable') {
             found = false;
-            if (!relay) return fail('Room not found');
+            if (!relay) return fail('Room not found', 'gone');
             // A host that couldn't reach the matchmaking server may still be on the relay.
             knock();
-            setTimeout(() => fail('Room not found'), 5000);
+            setTimeout(() => fail('Room not found', 'gone'), 5000);
           } else {
             if (!relay) return fail('Network error: ' + (err.type || 'unknown'));
             knock(); // matchmaking trouble: the relay may still get through

@@ -45,6 +45,9 @@
     sttBar: true, // live captions while you talk
     sttMark: true, // 🎤 in front of spoken messages
     sttBeep: true, // a blip when it starts and stops listening
+    // v5.5.3 online players list (ui/online.js)
+    showOnline: true, // show me on everyone's "online now" list
+    allowDM: true, // let other players message me
     keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH', talk: 'KeyV' },
   };
   const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn', talk: 'Speech to text' };

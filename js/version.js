@@ -3,8 +3,14 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.5.2';
+  G.VERSION = '5.5.3';
   G.CHANGELOG = [
+    {
+      v: '5.5.3', name: 'Who’s On', items: [
+        ['👥', 'Online players and messages', 'The 👥 button in the top corner shows everyone playing SLIPSTAKES right now, anywhere, and what they’re doing: on the menu, in the garage, racing solo, or in a room. If their room is public you can join it straight from the list. The 💬 button sends them a direct message; new messages pop up wherever you are and the 👥 button counts the ones you haven’t read. Messages are end-to-end encrypted, so only the person you send them to can read them, and nobody can send one pretending to be someone else. They vanish when you close the game. You can hide yourself from the list or turn messages off right in the panel, and Block stops someone messaging you for the rest of the session.'],
+        ['🔌', 'No more join-and-drop loops', 'The first player to join a room is next in line to host if the host leaves. When THEIR Wi-Fi dropped for a few seconds, the game decided the host had gone and made them host of a copy of the room, while the real host carried on. The room split in two, each half saw the other as disconnected, and in a two-player room the real host then moved into the copy - so every hiccup bounced the room back and forth and players kept dropping out and rejoining. Now a player who loses the host simply reconnects to the same room, and the next in line only takes over when the host really has gone (it said so, the room no longer exists, or nobody has reached it for 40 seconds). If a copy ever does get made, it notices the original is still running and moves back into it.'],
+      ],
+    },
     {
       v: '5.5.2', name: 'Steady', items: [
         ['🏎', 'Other cars stop wobbling', 'On a joiner’s screen, other cars - people’s especially - swayed from side to side in a way the real cars never did. Three causes, all fixed. Every car was guessed ahead from the moment each update ARRIVED, so on jittery Wi-Fi the point it was guessed to jumped back and forth by up to a metre with every update; it is now timed from the host’s own clock. A person on a keyboard changes their rate of turn several times a second, and carrying each one a third of a second ahead swung the drawn nose from side to side; the guessed turn now fades the way a real car’s does. And the smoothing that hides each correction slid cars sideways without turning them, a crab-walk that read as a wobble; it now takes sideways corrections gently. Measured against where the cars really were, a keyboard player’s side-to-side movement is 2 to 3 times smaller and their nose sways about as much as the real car’s does, with no return of the old stutter.'],

@@ -214,6 +214,7 @@
         }
       }
       this._aloneCheck(now);
+      this._splitCheck();
       this._idleCheck();
     },
 
@@ -304,8 +305,10 @@
     },
 
     // Did MY internet drop? Then every player timed out together and has
-    // moved to the heir's new room. Check once whether that room exists; if
-    // it does, rejoin it as a player in our own seat (car and money kept).
+    // moved to the heir's new room. Check whether that room exists; if it
+    // does, rejoin it as a player in our own seat (car and money kept).
+    // (v5.5.3: every 10 s for two minutes, not once at 7 s - an heir now
+    // waits to be sure the host is gone, so its room can open later.)
     async _aloneCheck(now) {
       const st = this.session.state;
       const others = Object.values(st.players).filter((p) => !p.isBot && p.connected && p.id !== st.hostId).length;
@@ -315,11 +318,21 @@
         return;
       }
       if (!this._hadOthers || this._probing) return;
-      if (this._aloneSince == null) this._aloneSince = now;
-      if (now - this._aloneSince < 7000) return;
-      this._hadOthers = false;
+      if (this._aloneSince == null) {
+        this._aloneSince = now;
+        this._probeAt = now + 7000;
+      }
+      if (now < this._probeAt) return;
+      if (now - this._aloneSince > 120000) {
+        this._hadOthers = false;
+        return;
+      }
+      this._probeAt = now + 10000;
       const d = this._lastDrop;
-      if (!d || !['timeout', 'close', 'error'].includes(d.why)) return; // they were kicked / replaced: nothing moved
+      if (!d || !['timeout', 'close', 'error'].includes(d.why)) {
+        this._hadOthers = false; // they were kicked / replaced: nothing moved
+        return;
+      }
       this._probing = true;
       const code = deriveCode(st.rid, (st.epoch || 0) + 1);
       const probe = new G.Net.NetClient(code);
@@ -345,6 +358,46 @@
       }
     },
 
+    // v5.5.3: we took over as host because the old host seemed gone - but if
+    // nobody has followed us and the old room turns out to be still there
+    // (it was OUR connection that dropped), go back into it as a player.
+    async _splitCheck() {
+      const sp = this._split;
+      if (!sp || this._probing || this.role !== 'host') return;
+      if (Date.now() - sp.at > 180000) return (this._split = null);
+      if (Date.now() < sp.next) return;
+      sp.next = Date.now() + 10000;
+      const st = this.session.state;
+      const others = Object.values(st.players).filter((p) => !p.isBot && p.connected && p.id !== st.hostId).length;
+      if (others) return (this._split = null); // people are here: this IS the room now
+      this._probing = true;
+      let found = null;
+      for (const c of sp.codes) {
+        const probe = new G.Net.NetClient(c);
+        try {
+          await probe.connect();
+          found = c;
+        } catch (e) {}
+        try {
+          probe.close();
+        } catch (e) {}
+        if (found) break;
+      }
+      this._probing = false;
+      if (!found || this.role !== 'host' || this.session.state !== st || this._split !== sp) return;
+      this._split = null;
+      const me = st.players[st.hostId];
+      const tok = this.token;
+      G.UI.toast('The room is still going under another host — joining it…', 'info');
+      this._closeHost();
+      try {
+        await this.join(found, me ? me.name : G.App.name(), tok);
+      } catch (e) {
+        G.UI.toast('Could not get back in: ' + e.message, 'bad');
+        this.leave();
+      }
+    },
+
     _closeHost() {
       if (this.net) this.net.close();
       this.net = null;
@@ -358,8 +411,12 @@
     // HOST MIGRATION, client side: I'm the heir and the host is gone. Rebuild
     // the session from my copy and host it under the next room code; the
     // others work out the same code and rejoin with their seat tokens.
-    async _takeOver(epoch, code, left) {
+    async _takeOver(epoch, code, left, prevCodes) {
       const pkg = this.heirPkg, me = G.Client.meId;
+      // (if it turns out the old host - or an heir ahead of us - has the room
+      // after all, _splitCheck puts us back in with them)
+      this._split = { codes: left ? (prevCodes || []).slice(1) : prevCodes || [], at: Date.now(), next: Date.now() + 8000 };
+      if (!this._split.codes.length) this._split = null;
       this.heirPkg = null;
       try {
         if (this.net) this.net.close();
@@ -547,15 +604,33 @@
       const rid = st.rid || this.code, epoch = st.epoch || 0, heirs = st.heirs || [], me = this.myPid;
       const oldCode = this.code;
       const next1 = deriveCode(rid, epoch + 1), next2 = deriveCode(rid, epoch + 2);
-      if (heirs[0] === me && this.heirPkg) return this._takeOver(epoch + 1, next1, why === 'host-left');
-      G.UI.toast(why === 'host-left' ? 'The host left — finding the new host…' : 'Connection to the host lost — reconnecting…', 'bad');
+      const left = why === 'host-left';
+      // v5.5.3: the heir takes over AT ONCE only when the host said it was
+      // leaving. Losing the host can just as well be OUR Wi-Fi hiccuping, and
+      // taking over then split the room in two: the heir alone in a copy of
+      // it while the real host carried on - and in a two-player room the host
+      // then found the copy and moved into it as a player, so every hiccup
+      // bounced the room between them. Now the heir first tries to get back
+      // to the host like anyone else, and takes over only once the room is
+      // really gone (the matchmaking server says so) or the host has been
+      // out of reach for 40 s.
+      if (heirs[0] === me && this.heirPkg && left) return this._takeOver(epoch + 1, next1, true, [oldCode]);
+      G.UI.toast(left ? 'The host left — finding the new host…' : 'Connection to the host lost — reconnecting…', 'bad');
       const t0 = Date.now();
+      let gone = false; // the old room is confirmed gone
       while (this.role === 'client' && this.lost) {
         await sleep(heirs.length ? 1500 : 3000);
         if (this.role !== 'client' || !this.lost) return;
         this.lost.tries++;
-        if (heirs[1] === me && this.heirPkg && Date.now() - t0 > 20000) return this._takeOver(epoch + 2, next2);
-        const codes = !heirs.length ? [oldCode] : Date.now() - t0 > 20000 ? [next2, next1, oldCode] : [next1, oldCode];
+        const el = Date.now() - t0;
+        if (heirs[0] === me && this.heirPkg && (gone || el > 40000)) return this._takeOver(epoch + 1, next1, false, [oldCode]);
+        // (the second in line gives the first long enough to have done it -
+        // over a minute when all it has is the relay, which can't tell it the
+        // room is gone and takes 22 s to give up on each try)
+        if (heirs[1] === me && this.heirPkg && (gone ? el > 75000 : el > 90000)) return this._takeOver(epoch + 2, next2, false, [next1, oldCode]);
+        // (everyone else: the room we were in first - it is almost always
+        // still there - and a new host's room only once there can be one)
+        const codes = !heirs.length ? [oldCode] : left || gone ? (el > 25000 ? [next1, next2, oldCode] : [next1, oldCode]) : el > 40000 ? [oldCode, next1, next2] : [oldCode];
         for (const c of codes) {
           if (this.role !== 'client' || !this.lost) return;
           this.code = c;
@@ -566,7 +641,9 @@
             U.store.set(CLIENT_KEY, { code: c, name: this.name, token: this.token, at: Date.now() });
             this.lastScreen = null;
             return;
-          } catch (e) {}
+          } catch (e) {
+            if (c === oldCode && e && e.code === 'gone') gone = true;
+          }
         }
         if (Date.now() - this.lost.since > 5 * 60 * 1000) {
           G.UI.toast('Could not get back into the session.', 'bad');
