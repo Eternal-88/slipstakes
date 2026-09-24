@@ -195,6 +195,7 @@ What changed:
   - **The autosave is gone.** Nothing is stored between visits.
 - **Join any time.** A late joiner spectates the race in progress, races from the next one, and starts with 80% of the poorest connected driver's net worth (never below the normal $3,000).
 - **Chat on every screen** (`js/ui/chat.js`). T or Enter opens it, even mid-race. Lines fade in the corner, and an unread badge counts what you missed. The host allows one line per 0.6 s per player.
+  - v5.5 **speech to text** (`Chat.Talk`): hold V (rebindable) or tap a 🎤, speak, and the words go in as a 🎤 line. The browser's `SpeechRecognition` does the work (Chrome and Edge send the audio to their speech service), game audio ducks to 22% while listening (`Audio.duck`), and a 15 s cap means a stuck key can't leave the microphone open. Settings → Controls switches it off.
 - **Fixes:**
   - Test drives end when the round starts (the entry phase), not when the race does. Players used to miss the race-or-sit-out choice and the betting.
   - Name tags are drawn above the car model, so they follow hills.
@@ -322,6 +323,9 @@ All driving keys are rebindable in **Settings → Controls**. The arrow keys alw
 | Shift | Nitrous (needs a Nitrous part) |
 | R | Reset to track |
 | C | Cycle camera (chase / close / high / fixed-north) |
+| H | Horn |
+| T / Enter | Chat (multiplayer) |
+| V (hold) | Speech to text: say it and it goes into the chat (multiplayer; Chrome or Edge) |
 | **Esc** | **Menu: resume, restart, garage, change car, settings, controls, fullscreen, leave** |
 | M | Sound on/off (off by default) |
 | F3 | FPS and netcode stats |
