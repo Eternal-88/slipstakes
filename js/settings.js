@@ -34,16 +34,29 @@
     botLevel: 'normal', // rookie | easy | normal | hard | pro | legend (single-player bots; bot.js LEVELS)
     catchup: 'mild', // off | mild | wild (single-player quick races; the host picks for multiplayer)
     raceWeather: 'auto', // v5 auto (sometimes a shower mid-race) | dry | rain (single-player quick races)
-    stt: true, // v5.5 speech to text in multiplayer chat (hold the talk key or tap the mic)
+    // v5.5.1 speech to text in multiplayer chat (Settings -> Voice)
+    sttMode: 'ptt', // ptt (hold the talk key) | tap (tap, speak, it sends on a pause) | voice (voice activated) | off
+    sttSend: 'auto', // auto (send it) | review (put it in the chat box to check first)
+    sttLang: 'auto', // a BCP-47 code, or auto = the browser's language
+    sttSens: 50, // voice activation: how quiet a voice still counts (0-100)
+    sttPause: 1.2, // s of silence that ends a message (tap to talk, voice activation)
+    sttWhere: 'all', // voice activation during: all | race | menus
+    sttDuck: 25, // % game volume while you talk (100 = leave it alone)
+    sttBar: true, // live captions while you talk
+    sttMark: true, // 🎤 in front of spoken messages
+    sttBeep: true, // a blip when it starts and stops listening
     keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH', talk: 'KeyV' },
   };
-  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn', talk: 'Speech to text (hold)' };
+  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn', talk: 'Speech to text' };
   // Catch-up strength per setting: the most extra power a car far behind gets.
   const CATCHUP = { off: 0, mild: 0.1, wild: 0.25 };
 
   const saved = U.store.get('ss.settings', null) || {};
   const s = Object.assign({}, DEF, saved);
   s.keys = Object.assign({}, DEF.keys, saved.keys || {});
+  // (v5.5.1: v5.5 had one on/off switch for speech to text)
+  if (saved.stt === false && !saved.sttMode) s.sttMode = 'off';
+  delete s.stt;
   // (v5.5: someone who already put V on another control keeps it; talk
   //  starts unbound for them and they can pick a key in Controls)
   if (!(saved.keys && saved.keys.talk) && Object.keys(s.keys).some((a) => a !== 'talk' && s.keys[a] === s.keys.talk)) s.keys.talk = '';

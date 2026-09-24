@@ -202,8 +202,9 @@
 
     // v5.5: speech to text turns the game down while you talk, so laptop
     // speakers don't drown your voice out in the microphone
+    // (v5.5.1: or a number, the share of the volume to keep - Settings -> Voice)
     duck(on) {
-      this.duckK = on ? 0.22 : 1;
+      this.duckK = typeof on === 'number' ? Math.max(0, Math.min(1, on)) : on ? 0.22 : 1;
       this.applyVolumes();
     },
 
@@ -211,7 +212,7 @@
       if (!this.ctx) return;
       const s = S();
       const t = this.ctx.currentTime;
-      this.master.gain.setTargetAtTime(vol(s.vMaster) * 0.9 * (this.duckK || 1), t, this.duckK ? 0.12 : 0.05);
+      this.master.gain.setTargetAtTime(vol(s.vMaster) * 0.9 * (this.duckK == null ? 1 : this.duckK), t, this.duckK != null ? 0.12 : 0.05);
       this.bus.engine.gain.setTargetAtTime(vol(s.vEngine), t, 0.05);
       this.bus.others.gain.setTargetAtTime(vol(s.vOthers == null ? 70 : s.vOthers), t, 0.05);
       this.bus.sfx.gain.setTargetAtTime(vol(s.vSfx), t, 0.05);

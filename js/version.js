@@ -3,8 +3,15 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.5';
+  G.VERSION = '5.5.1';
   G.CHANGELOG = [
+    {
+      v: '5.5.1', name: 'Say It Your Way', items: [
+        ['🎤', 'Voice settings', 'Speech to text has its own tab in Settings, with four ways to use it. Push to talk: hold V and speak, and letting go sends it. Tap to talk: tap V or the microphone once, and it sends when you pause. Voice activated: it listens the whole time you are in a session and sends each sentence when you pause, and V or the microphone mutes it (the microphone button goes grey while muted and gets a green ring while listening). Or Off, which also removes the microphone buttons.'],
+        ['🎚', 'Tune it to your room', 'Voice activation has a sensitivity slider, so a classroom behind you doesn’t end up in the chat, and it ignores lone “uh”s and mumbles the recogniser itself wasn’t sure of. Test your microphone right in the settings: a live level meter shows your voice against the point where voice activation starts listening, with what it heard underneath, and nothing is sent. You can also pick the language you speak, how long a pause ends a message, whether voice activation runs all session, in races only or everywhere but races, and how far the game turns down while you talk.'],
+        ['✍', 'Check it before it goes', 'Choose “Put it in the chat box to check first” and your words land in the chat box instead of going straight out, so you can fix a misheard word and press Enter. Live captions, the 🎤 mark in front of spoken messages and the listening blips can each be switched off.'],
+      ],
+    },
     {
       v: '5.5', name: 'Clean Air', items: [
         ['🤖', 'Bots that keep it on the island', 'Measured over 45 Hard races on fifteen tracks, the bots now hit the walls less than half as often (264 times down to 115), need a reset less than half as often, and bump into each other 40% less, and they finish a little quicker for it. The main fault was their braking: the pedal came in late and soft, so they reached every corner a metre or two a second too fast and slid wide into the barrier. They brake a moment sooner and firmer now. A bot that feels itself running wide lifts, and remembers the corner, so next lap it arrives slower there. Nose-first against a wall or a fallen rock, it backs out and goes round instead of pushing until it gets reset. After the finish of a point-to-point race it stops short of the barrier at the end of the road instead of nosing into it.'],
