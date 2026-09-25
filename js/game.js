@@ -144,9 +144,13 @@
       net.on('request', (r) => this._listRequest(r));
       net.on('ctrl', (pid, m) => s.handle(pid, m));
       net.on('fast', (pid, m) => {
-        if (m.t === 'i' && this.hostRace) this.hostRace.onInput(pid, m);
+        if (m.t !== 'i') return;
+        if (G.NetDiag) G.NetDiag.input(pid, performance.now());
+        if (this.hostRace) this.hostRace.onInput(pid, m);
       });
       net.on('leave', (pid, why) => {
+        const p = s.player(pid);
+        if (G.NetDiag) G.NetDiag.dropped(pid, p && p.name, why);
         s.leave(pid, why);
         this._lastDrop = { t: performance.now(), why };
       });
@@ -161,7 +165,8 @@
       const r = s.join(String(d.name || 'Driver'), String(d.token || ''));
       if (!r.ok) return net.reject(L, r.reason);
       net.bind(L, r.pid);
-      net.sendCtrl(r.pid, { t: 'welcome', id: r.pid, code: this.code });
+      if (G.NetDiag) G.NetDiag.joined(r.pid, String(d.name || 'Driver').slice(0, 16), L.ver, net.route(r.pid), r.rejoin);
+      net.sendCtrl(r.pid, { t: 'welcome', id: r.pid, code: this.code, v: G.VERSION });
       net.sendCtrl(r.pid, { t: 'state', s: s.publicState() });
       s.touch();
     },
@@ -292,12 +297,20 @@
     },
 
     // HOST MIGRATION, host side: the first two heirs (session.heirList) get
-    // the full state — seat tokens included — every 2 s while it changes.
+    // the full state — seat tokens included — when it changes.
+    // (v5.5.5: at most every 5 s, not 2 - plus at once when the phase moves
+    // on, so a race's payouts are never lost to a host change. It is 20 KB+
+    // each time: over a session that was nearly 4 MB of school Wi-Fi, and a
+    // big parse every 2 s on the heirs' Chromebooks.)
     _sendHeirs(now, force) {
       const st = this.session.state;
       if (!(st.heirs || []).length) return;
-      if (!force && now - (this._heirT || 0) < 2000) return;
-      if (!force && this._heirSeq === st.seq && now - this._heirT < 15000) return;
+      const phase = st.phase + ':' + st.raceNo + ':' + st.heirs.join(',');
+      if (!force && phase === this._heirPhase) {
+        if (now - (this._heirT || 0) < 5000) return;
+        if (this._heirSeq === st.seq && now - this._heirT < 30000) return;
+      }
+      this._heirPhase = phase;
       this._heirT = now;
       this._heirSeq = st.seq;
       const copy = JSON.parse(JSON.stringify(st));
@@ -413,6 +426,7 @@
     // others work out the same code and rejoin with their seat tokens.
     async _takeOver(epoch, code, left, prevCodes) {
       const pkg = this.heirPkg, me = G.Client.meId;
+      if (G.NetDiag) G.NetDiag.note(`Took over as host (${left ? 'the host left' : 'the host was gone'}) under ${code}`);
       // (if it turns out the old host - or an heir ahead of us - has the room
       // after all, _splitCheck puts us back in with them)
       this._split = { codes: left ? (prevCodes || []).slice(1) : prevCodes || [], at: Date.now(), next: Date.now() + 8000 };
@@ -449,7 +463,26 @@
       this.roomClosed = false;
       this.rejoinToken = token || null;
       await this._connectClient();
+      if (G.NetDiag) G.NetDiag.note(`Joined room ${code} (${this.net && this.net.via === 'relay' ? 'backup relay' : 'direct'})`);
       U.store.set(CLIENT_KEY, { code, name, token: this.token, at: Date.now() });
+      // v5.5.5: show the room once we have its state. Entering straight away
+      // showed our own menu state for a moment, and that built a whole
+      // background track on the spot - a freeze on a Chromebook, just as
+      // the new connection is at its most fragile.
+      if (!this._gotState) {
+        await new Promise((res) => {
+          const off = G.Client.on('state', () => {
+            off();
+            clearTimeout(to);
+            res();
+          });
+          const to = setTimeout(() => {
+            off();
+            res();
+          }, 10000);
+        });
+      }
+      if (this.role !== 'client') return; // (left while we waited)
       G.App.enterSession();
       // Bring the player's car choice and paint from single-player. Paint is
       // free any time; the car only before race 1 (it's a paid swap later).
@@ -505,16 +538,29 @@
       // Attach the general handler BEFORE hello so the state that follows the
       // welcome can't slip past us.
       let welcomed = null;
+      // (v5.5.5: messages that arrive in the same moment as the welcome - the
+      // relay delivers the welcome and the room's state in one batch - used
+      // to be dropped, and the game showed its own menu state until the
+      // host's next update. They wait here and are handled once we're in.)
+      const early = [];
       const offCtrl = net.on('ctrl', (m) => {
         if (welcomed) this._onCtrl(m);
+        else if (m.t !== 'welcome' && m.t !== 'reject' && m.t !== 'wait' && early.length < 50) early.push(m);
       });
       const welcome = await new Promise((res, rej) => {
         let to = setTimeout(() => rej(new Error('The host did not answer.')), 12000); // (v5.5.4: 8 s - short for a rejoin through a slow relay)
         const done = () => {
           clearTimeout(to);
           off();
+          offLost();
           G.UI.clearNotice();
         };
+        // v5.5.5: the link can close while we wait - say so at once instead
+        // of waiting out the 12 s
+        const offLost = net.on('lost', () => {
+          done();
+          rej(new Error('The link to the host closed.'));
+        });
         const off = net.on('ctrl', (m) => {
           if (m.t === 'welcome') {
             done();
@@ -535,25 +581,56 @@
             });
           }
         });
-        net.sendCtrl({ t: 'hello', proto: G.Net.PROTO, name: this.name, token });
+        // (v5.5.5: our version, and that we can take a big message in parts)
+        net.sendCtrl({ t: 'hello', proto: G.Net.PROTO, name: this.name, token, v: G.VERSION, parts: 1 });
       }).catch((e) => {
         offCtrl();
         net.close();
         throw e;
       });
+      // v5.5.5: the link can close in the same moment the welcome arrives, and
+      // the 'lost' below would then never fire: the game sat on a dead link
+      // for good, showing a room that had moved on without it.
+      if (!net.open) {
+        offCtrl();
+        net.close();
+        throw new Error('The link to the host closed.');
+      }
       welcomed = welcome;
       this.net = net;
+      this._noteHostVersion(welcome.v);
       this.myPid = welcome.id;
       G.Client.connectRemote(net, welcome.id);
       net.on('fast', (m) => {
-        if (m.t === 's' && this.clientRace && !this.clientRace.stale) this.clientRace.onSnap(m);
+        if (m.t !== 's') return;
+        if (G.NetDiag) G.NetDiag.snap(performance.now());
+        if (this.clientRace && !this.clientRace.stale) this.clientRace.onSnap(m);
       });
       net.on('lost', (why) => this._lost(why));
       this.lost = null;
+      this._gotState = false;
+      for (const m of early.splice(0)) this._onCtrl(m);
       // Present any skins we were granted. They are signed, so this host can
       // check them without being the one who handed them out.
       const toks = G.App.myGrants ? G.App.myGrants() : [];
       if (toks.length) setTimeout(() => G.Client.act({ t: 'skins', toks }), 400);
+    },
+
+    // v5.5.5: tell a player whose game is older than the host's to reload.
+    // (Pages are cached for up to 10 minutes, and a tab left open keeps
+    // whatever it loaded: after an update, a room can hold two versions.)
+    _noteHostVersion(v) {
+      this.hostVer = v || '';
+      const num = (x) => String(x || '0').split('.').map((n) => +n || 0);
+      const a = num(G.VERSION), b = num(v || '5.5.4');
+      let cmp = 0;
+      for (let i = 0; i < 4 && !cmp; i++) cmp = (a[i] || 0) - (b[i] || 0);
+      if (cmp && this._verTold !== (v || '?')) {
+        this._verTold = v || '?';
+        if (G.NetDiag) G.NetDiag.note(`Version: mine ${G.VERSION}, the host's ${v || '5.5.4 or older'}`);
+        if (cmp < 0) G.UI.toast(`The host is on a newer version (${v}). Reload the page when you get a moment (Ctrl+Shift+R).`, 'info');
+        else G.UI.toast(`The host's game is an older version${v ? ' (' + v + ')' : ''}. If you keep dropping out, ask them to reload the page.`, 'info');
+      }
     },
 
     _onCtrl(m) {
@@ -566,6 +643,7 @@
       if (m.t === 'migrate') return this._lost('host-left'); // the host is leaving on purpose: hand over now
       if (m.t === 'closed') {
         // the room was closed (idle timeout): leave, don't hunt for a new host
+        if (G.NetDiag) G.NetDiag.note('The room was closed: ' + (m.reason || ''));
         this.roomClosed = true;
         this.leave();
         G.UI.modal('Room closed', `<p>${U.esc(m.reason || 'The host closed the room.')}</p>`, [{ label: 'OK', value: 1, cls: 'primary' }]);
@@ -575,10 +653,14 @@
         // Our seat was claimed by a newer connection with the same token
         // (the player reopened the game elsewhere). Don't fight over it.
         this.kicked = true;
+        if (G.NetDiag) G.NetDiag.note('Removed by the host: ' + (m.reason || 'joined from somewhere else'));
         G.UI.toast(m.reason || 'You joined from somewhere else.', 'bad');
         return;
       }
-      if (m.t === 'state') G.Client._state(m.s);
+      if (m.t === 'state') {
+        this._gotState = true;
+        G.Client._state(m.s);
+      }
       else if (m.t === 'ev') {
         // filterEv drops the host's copy of a shunt we already predicted
         if (this.clientRace && m.no === this.clientRace.no) G.RaceView.events(this.clientRace.filterEv(m.e), G.Client.meId, G.App.hud, G.App.world, G.Audio);
@@ -596,6 +678,10 @@
       if (this.role !== 'client' || this.lost || this.roomClosed) return;
       if (this.kicked) return this.leave();
       this.lost = { since: Date.now(), why, tries: 0 };
+      if (G.NetDiag) {
+        G.NetDiag.lost++;
+        G.NetDiag.note(`Lost the host: ${G.NetDiag.why(why)} (${this.net && this.net.via === 'relay' ? 'backup relay' : 'direct'} link)`);
+      }
       // (v5.5.4: keep the race on screen, frozen, while we get back in. Dropping
       // it switched the view to the menu's background race - a whole other
       // track to build - and then back again: two long freezes per hiccup on
@@ -639,14 +725,17 @@
           if (this.role !== 'client' || !this.lost) return;
           this.code = c;
           this.rejoinToken = this.token; // the same seat, whatever the code
+          const tries = this.lost.tries;
           try {
             await this._connectClient();
+            if (G.NetDiag) G.NetDiag.note(`Back in after ${Math.round((Date.now() - t0) / 1000)} s, try ${tries} (${this.net && this.net.via === 'relay' ? 'backup relay' : 'direct'}${c !== oldCode ? ', new host' : ''})`);
             G.UI.toast(c === oldCode ? 'Reconnected!' : 'Back in — the room has a new host.', 'good');
             U.store.set(CLIENT_KEY, { code: c, name: this.name, token: this.token, at: Date.now() });
             this.lastScreen = null;
             return;
           } catch (e) {
             if (c === oldCode && e && e.code === 'gone') gone = true;
+            if (G.NetDiag && (tries <= 3 || tries % 5 === 0)) G.NetDiag.note(`Try ${tries} (${c === oldCode ? 'same room' : 'next host ' + c}): ${e && e.message}`);
           }
         }
         if (Date.now() - this.lost.since > 5 * 60 * 1000) {

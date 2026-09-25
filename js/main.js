@@ -211,10 +211,17 @@
       G.UI.show('menu', arg);
     },
 
+    // v5.5.5: the background race runs on the track already on screen when
+    // there is one (the race just finished, or the menu's own). It used to
+    // build a random new one: after every race, and on entering a room -
+    // a freeze of a second or more on a Chromebook each time, at the very
+    // moments a connection is most fragile.
     startAttract() {
+      const cur = this.world.track;
+      const reuse = cur && cur.id !== 'proving' && cur.format !== 'drag';
       const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag');
-      const track = G.getTrack(ids[Math.floor(Math.random() * ids.length)]);
-      this.world.loadTrack(track);
+      const track = reuse ? cur : G.getTrack(ids[Math.floor(Math.random() * ids.length)]);
+      if (!reuse) this.world.loadTrack(track);
       const ents = [];
       for (let k = 0; k < 6; k++) ents.push({ id: 'a' + k, name: G.BOT_NAMES[k], carId: G.Parts.CAR_ORDER[k % 4], color: G.CarModel.PALETTE[k], parts: ATTRACT_BUILDS[k], wear: {}, look: botLook('a' + k), bot: { skill: 0.86 + 0.025 * k } });
       this.attract = new G.RaceSim(track, ents, { countdown: 0.3, practice: true });
@@ -288,7 +295,7 @@
     // ------------------------------------------------------------- session
     enterSession() {
       this.mode = 'session';
-      this.attract = null;
+      // (the menu's background race carries on behind the lobby: v5.5.5)
       this.sim = null;
       this.drive = null;
       this.paused = false;

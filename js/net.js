@@ -76,6 +76,67 @@
   // so waiting longer costs the race nothing.
   const SILENT_MS = 20000;
 
+  // v5.5.5 BIG MESSAGES. PeerJS refuses any JSON message of 16,300 bytes or
+  // more on a direct link: it reports 'message-too-big' as a link ERROR and
+  // sends nothing. A full room's state (eight players, their garages and
+  // stats, fifty lines of chat) is over 20 KB, and the heirs' copy is bigger
+  // still. So once a session had grown, every state update dropped every
+  // player on a direct link; they reconnected, were sent the state, and
+  // dropped again - the "lost connection / is back" loop. (Relayed players
+  // were fine: that is why it hit some players and not others.)
+  // Now a big control message goes as numbered parts, each well under the
+  // limit, and the other end puts it back together. The control channel is
+  // reliable and ordered, so the parts arrive complete and in order.
+  const PART_MAX = 12000; // bytes of one part on the wire (PeerJS's limit is 16,300)
+  const enc = new TextEncoder();
+  const bytes = (s) => enc.encode(s).length;
+  let partId = 0;
+  const partsCache = new WeakMap(); // one split per message, however many players it goes to
+  function split(msg) {
+    if (partsCache.has(msg)) return partsCache.get(msg);
+    const s = JSON.stringify(msg);
+    // (a character is at most 4 bytes: short messages can't be over)
+    let out = null;
+    if (s.length * 4 >= PART_MAX && bytes(s) >= PART_MAX) {
+      const ds = [];
+      for (let i = 0; i < s.length; ) {
+        let n = Math.min(s.length - i, 6000);
+        while (n > 64 && bytes(JSON.stringify(s.substr(i, n))) > PART_MAX - 200) n = Math.floor(n * 0.7);
+        const c = s.charCodeAt(i + n - 1);
+        if (c >= 0xd800 && c <= 0xdbff && i + n < s.length) n--; // keep an emoji's two halves together
+        ds.push(s.substr(i, n));
+        i += n;
+      }
+      const id = ++partId;
+      out = ds.map((d, k) => ({ t: 'part', id, i: k, n: ds.length, d }));
+    }
+    partsCache.set(msg, out);
+    return out;
+  }
+  // Collects parts on `holder` (one link); returns the whole message once the
+  // last part is in, else null. Never trusts the wire: bad or oversized
+  // parts are dropped.
+  function joinPart(holder, m) {
+    if (typeof m.d !== 'string' || !(m.n > 1 && m.n <= 256) || !(m.i >= 0 && m.i < m.n)) return null;
+    let b = holder._part;
+    if (!b || b.id !== m.id || b.n !== m.n) b = holder._part = { id: m.id, n: m.n, got: 0, len: 0, d: new Array(m.n) };
+    if (b.d[m.i] == null) {
+      b.d[m.i] = m.d;
+      b.got++;
+      b.len += m.d.length;
+    }
+    if (b.len > 4e6) holder._part = null;
+    if (b.got < b.n || holder._part !== b) return null;
+    holder._part = null;
+    try {
+      return JSON.parse(b.d.join(''));
+    } catch (e) {
+      return null;
+    }
+  }
+  // A player whose game predates parts can't be sent a big message at all.
+  const OUTDATED = "This room has grown past what your version of the game can receive. Reload the page (Ctrl+Shift+R) to get the latest version, then rejoin.";
+
   function peerAvailable() {
     return typeof window.Peer === 'function';
   }
@@ -219,20 +280,36 @@
         const alt = L.conns.find((c) => c !== conn && c.label === label && !c._ssGone && c.open);
         if (alt) L[label] = alt;
         else if (L.pid) this._drop(L, why);
+        // (v5.5.5: a link that never got a player and has nothing left open -
+        // a relay route the joiner didn't pick - goes now, not after 25 s)
+        else if (!L.conns.some((c) => !c._ssGone)) this._drop(L, why);
         else L[label] = L.conns.find((c) => c !== conn && c.label === label && !c._ssGone) || null; // still connecting: tick() times it out
       };
       conn.on('close', () => gone('close'));
-      conn.on('error', () => gone('error'));
+      conn.on('error', (e) => {
+        // (a message PeerJS refused to send is not a dead link - see split)
+        if (e && e.type === 'message-too-big') return console.warn('[net host] message too big', L.pid);
+        gone('error');
+      });
     }
 
     _onData(L, label, d) {
       if (!d || typeof d !== 'object' || typeof d.t !== 'string') return; // never trust the wire
       if (label === 'ctrl') {
+        if (d.t === 'part') {
+          const whole = joinPart(L, d);
+          if (whole) this._onData(L, label, whole);
+          return;
+        }
         if (d.t === 'hello') {
           if (d.proto !== PROTO) {
             this._sendRaw(L.ctrl, { t: 'reject', reason: 'Version mismatch — reload the page.' });
             return;
           }
+          // v5.5.5: which version they run, and whether they can take a big
+          // message in parts (5.5.4 and older can't)
+          L.parts = !!d.parts;
+          L.ver = typeof d.v === 'string' ? d.v.slice(0, 12) : '';
           this.emit('hello', L, d); // game layer answers with bind()+welcome or reject
           return;
         }
@@ -283,7 +360,24 @@
     }
     sendCtrl(pid, msg) {
       const L = this.byPid.get(pid);
-      return L ? this._sendRaw(L.ctrl, msg) : false;
+      if (!L) return false;
+      const c = L.ctrl;
+      const ps = c && !c.relay ? split(msg) : null; // (the relay carries any size)
+      if (!ps) return this._sendRaw(c, msg);
+      if (!L.parts) {
+        // an older game: it can't put parts back together, and PeerJS won't
+        // send the message whole. Tell them to reload rather than let them
+        // drop and rejoin for ever.
+        if (!L.outdated) {
+          L.outdated = true;
+          this._sendRaw(c, { t: 'kicked', reason: OUTDATED });
+          setTimeout(() => this._drop(L, 'outdated'), 400);
+        }
+        return false;
+      }
+      let ok = true;
+      for (const part of ps) ok = this._sendRaw(c, part) && ok;
+      return ok;
     }
     sendFast(pid, msg) {
       const L = this.byPid.get(pid);
@@ -457,6 +551,17 @@
         // with both open wins; every other channel is closed.
         const routes = {};
         const all = [];
+        // v5.5.5: two direct channels with one label can open - our own call
+        // and the host's reverse call (NetHost._onConn) - and each end took
+        // whichever opened first ON ITS OWN SIDE. They could take different
+        // ones: the host then sent the welcome and the room's state down a
+        // channel this end ignored and closed, so a slow device (a handshake
+        // over 5 s is what brings the reverse call) waited out the welcome,
+        // gave up, tried again, and again. Now every open channel of the
+        // route we use is listened to, a second one stays open as a spare,
+        // and if the one we send on closes we move to the spare.
+        this._alts = [];
+        const spare = (label) => this._alts.find((x) => x.label === label && x.open && x !== this[label]);
         const win = (kind) => {
           settled = true;
           clearTimeout(to);
@@ -464,12 +569,19 @@
           const r = routes[kind];
           this.ctrl = r.ctrl;
           this.fast = r.fast;
+          this._alts = (r.spares || []).slice();
           this.via = kind === 'direct' ? 'direct' : 'relay';
           try {
             sessionStorage.setItem(hintKey, this.via);
           } catch (e) {}
           for (const c of all) {
-            if (c === r.ctrl || c === r.fast) continue;
+            if (c === r.ctrl || c === r.fast || this._alts.includes(c)) continue;
+            // (a channel of this same route still opening - the host's
+            // reverse call - is kept: it becomes the spare when it opens)
+            if (c._route === kind && !c.open) {
+              this._alts.push(c);
+              continue;
+            }
             try {
               c.close();
             } catch (e) {}
@@ -495,14 +607,20 @@
           const label = c.label;
           if (label !== 'ctrl' && label !== 'fast') return c.close();
           all.push(c);
+          c._route = kind;
           const r = (routes[kind] = routes[kind] || { ctrl: null, fast: null });
           c.on('open', () => {
-            if (settled || r[label]) return c.close();
+            if (settled) {
+              // a late channel on the route we're using: keep it as a spare
+              if (this.open && this.via === 'direct' && kind === 'direct') return this._alts.includes(c) || this._alts.push(c);
+              return c.close();
+            }
+            if (r[label]) return (r.spares = r.spares || []).push(c);
             r[label] = c;
             if (r.ctrl && r.fast) win(kind);
           });
           c.on('data', (d) => {
-            if (this[label] !== c) return;
+            if (this[label] !== c && !this._alts.includes(c)) return;
             simDeliver(label === 'fast', () => {
               this.lastHeard = performance.now();
               if (!d || typeof d !== 'object') return;
@@ -510,11 +628,23 @@
                 this.rtt = U.lerp(this.rtt || performance.now() - d.c, performance.now() - d.c, 0.3);
                 return;
               }
+              if (label === 'ctrl' && d.t === 'part') {
+                const whole = joinPart(this, d);
+                if (whole) this.emit('ctrl', whole);
+                return;
+              }
               this.emit(label, d);
             });
           });
-          c.on('close', () => this[label] === c && this._lost('closed'));
-          c.on('error', () => this[label] === c && this._lost('error'));
+          const gone = (why) => {
+            if (this[label] !== c) return;
+            const alt = spare(label);
+            if (alt) this[label] = alt;
+            else this._lost(why);
+          };
+          c.on('close', () => gone('closed'));
+          // (a message PeerJS refused to send is not a dead link)
+          c.on('error', (e) => (e && e.type === 'message-too-big' ? console.warn('[net client] message too big') : gone('error')));
         };
 
         if (relay) {
@@ -625,6 +755,11 @@
       try {
         if (this.fast) this.fast.close();
       } catch (e) {}
+      for (const c of this._alts || []) {
+        try {
+          c.close();
+        } catch (e) {}
+      }
       if (this.relayJ) this.relayJ.close(); // after the channels, so their goodbyes go out first
       try {
         if (this.peer) this.peer.destroy();
@@ -635,5 +770,5 @@
   // Can we go online at all? (PeerJS loaded, or at least the relay.)
   const available = () => peerAvailable() || !!G.Relay;
 
-  G.Net = { NetHost, NetClient, PREFIX, PROTO, peerAvailable, available, SIMNET };
+  G.Net = { NetHost, NetClient, PREFIX, PROTO, peerAvailable, available, SIMNET, split, joinPart, PART_MAX };
 })(window.G);

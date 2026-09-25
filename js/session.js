@@ -247,7 +247,7 @@
     // The player's link closed. v4.5: a 'bye' just before it (they left from
     // the menu, or closed the tab: game.js) means they left on purpose;
     // otherwise their connection dropped. Either way the seat is kept.
-    leave(pid) {
+    leave(pid, why) {
       const p = this.player(pid);
       if (!p || p.isBot) return;
       p.connected = false;
@@ -255,6 +255,7 @@
       const bye = p.bye && Date.now() - p.bye < 15000;
       delete p.bye;
       if (bye) this.sys(`${p.name} left the game.`, 'leave');
+      else if (why === 'outdated') this.sys(`${p.name} needs to reload the page: their game is an older version (their seat is saved).`, 'drop');
       else this.sys(`${p.name} lost connection — their seat is saved if they come back.`, 'drop');
       this.touch();
     }

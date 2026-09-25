@@ -254,6 +254,9 @@
       this.lightsState = -1;
       this.fx.clear();
       this.skids.clear();
+      this._loadAt = performance.now(); // (the governor lets the next few seconds go: shaders compile)
+      this._unshareMaterials();
+      this._precompile();
     }
 
     // list: [{id, carId, color, parts, look, tune}] — (re)builds models whose look changed.
@@ -297,6 +300,63 @@
           this.models.delete(id);
         }
       }
+      this._unshareMaterials();
+    }
+
+    // v5.5.5: build the shaders for things that are hidden at the start - the
+    // lamps and neon that light up at dusk, the rain - now, while the track
+    // loads, instead of the first time they appear: that was a hitch of a
+    // second or more mid-race on a slow machine, at nightfall or when the
+    // shower started.
+    _precompile() {
+      const shown = [];
+      this.scene.traverse((o) => {
+        if (!o.visible && (o.isMesh || o.isPoints || o.isLine || o.isSprite)) {
+          o.visible = true;
+          shown.push(o);
+        }
+      });
+      try {
+        this.renderer.compile(this.scene, this.camera);
+      } catch (e) {}
+      for (const o of shown) o.visible = false;
+    }
+
+    // v5.5.5: one material drawn by different KINDS of mesh (plain, instanced,
+    // instanced with per-instance colour, with or without vertex colours)
+    // makes three.js re-pick its shader on every draw that switches kind -
+    // all of that work is thrown away and redone next frame. The track's
+    // scenery shared one such material across 28 meshes, and the shadow pass
+    // shares one depth material between instanced and plain casters: about
+    // a tenth of a Chromebook's frame. Each kind now gets its own copy (made
+    // once, reused), and instanced casters their own depth material.
+    _unshareMaterials() {
+      const kinds = new Map(); // material -> first kind seen
+      const copies = (this._matCopies = this._matCopies || new WeakMap());
+      // (instanced casters with and without per-instance colour are two more kinds)
+      const dm = () => new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+      const depth = (this._depthI = this._depthI || { i: dm(), ic: dm() });
+      // (materials something animates stay shared: a copy wouldn't follow)
+      const live = new Set(((this.trackGroup && this.trackGroup.userData.nightMats) || []).map((it) => it.mat));
+      this.scene.traverse((o) => {
+        if (!o.isMesh || Array.isArray(o.material) || !o.material) return;
+        if (o.isInstancedMesh && o.castShadow && !o.customDepthMaterial) o.customDepthMaterial = o.instanceColor ? depth.ic : depth.i;
+        const m = o.material, g = o.geometry, col = g && g.attributes && g.attributes.color;
+        if (m.transparent || live.has(m)) return;
+        const kind = (o.isInstancedMesh ? (o.instanceColor ? 'ic' : 'i') : 'm') + (m.vertexColors ? (col ? col.itemSize : 0) : '');
+        const first = kinds.get(m);
+        if (first == null) return kinds.set(m, kind);
+        if (first === kind) return;
+        let per = copies.get(m);
+        if (!per) copies.set(m, (per = {}));
+        let c = per[kind];
+        if (!c) {
+          c = per[kind] = m.clone();
+          c.onBeforeCompile = m.onBeforeCompile; // (clone() drops these: the grain shader lives here)
+          if (m.customProgramCacheKey !== THREE.Material.prototype.customProgramCacheKey) c.customProgramCacheKey = m.customProgramCacheKey;
+        }
+        o.material = c;
+      });
     }
 
     removeCar(id) {
@@ -904,31 +964,58 @@
       this._calls = ri.calls; // (kept: stats() can be read between frames)
       this._tris = ri.triangles;
       this.frameMs = U.lerp(this.frameMs, performance.now() - t0, 0.1);
-      this._governor(dt);
+      this._governor();
     }
 
-    // Adaptive quality: if we average under ~52 fps for 2 s, step down
-    // (resolution -> shadows -> particle budget). Steps back up if we have headroom.
-    _governor(dt) {
-      this.fpsT += dt;
-      this.fpsN++;
-      if (this.fpsT >= 1) {
-        this.fps = this.fpsN / this.fpsT;
-        this.fpsT = 0;
-        this.fpsN = 0;
-        if (this.quality !== 'auto' || document.hidden) return;
-        if (this.fps < 52) this.slowT++;
-        else if (this.fps > 58.5) this.slowT = Math.min(0, this.slowT - 0.25);
-        else this.slowT = 0;
-        if (this.slowT >= 2 && this.level < 5) {
-          this.level++;
-          this.slowT = 0;
+    // Adaptive quality (resolution -> shadows -> particle budget).
+    // v5.5.5: it only ever went down on a weak machine. Any two slow seconds
+    // took a step - every track build, a garbage-collection hiccup - and
+    // coming back needed 48 s above 58.5 fps, which a 60 Hz screen hardly
+    // shows. A Chromebook finished a session at the lowest level (pixel
+    // ratio 0.55, blurry) whatever its real frame rate. Now it judges the
+    // MEDIAN frame of each second (a hitch doesn't count), ignores the few
+    // seconds after a track loads, steps down after 3 slow seconds, back up
+    // after 10 good ones - and undoes a step that didn't help (a machine
+    // held back by its processor gains nothing from fewer pixels), then
+    // leaves quality alone for a while.
+    _governor() {
+      const now = performance.now();
+      if (this._gLast != null) this._gFrames.push(now - this._gLast);
+      else this._gFrames = [];
+      this._gLast = now;
+      if (!this._gT) this._gT = now;
+      if (now - this._gT < 1000) return;
+      const f = this._gFrames.sort((a, b) => a - b);
+      const n = f.length;
+      this.fps = n ? 1000 / f[n >> 1] : 60;
+      this._gFrames = [];
+      this._gT = now;
+      if (this.quality !== 'auto' || document.hidden || n < 5) return;
+      if (now - (this._loadAt || -1e9) < 3000) return (this.slowT = 0); // a track just loaded
+      const tr = this._trial;
+      if (tr && now - tr.at > 4000) {
+        this._trial = null;
+        if (this.fps - tr.fps < 2) {
+          // that step bought nothing: put it back and stop trying for a while
+          this.level = tr.from;
           this._applyLevel();
-        } else if (this.slowT <= -12 && this.level > 0) {
-          this.level--;
+          this._holdUntil = now + 45000;
           this.slowT = 0;
-          this._applyLevel();
+          return;
         }
+      }
+      if (this.fps < 50) this.slowT = Math.max(0, this.slowT) + 1;
+      else if (this.fps >= 57) this.slowT = Math.min(0, this.slowT) - 1;
+      else this.slowT = 0;
+      if (this.slowT >= 3 && this.level < 5 && !this._trial && now > (this._holdUntil || 0)) {
+        this._trial = { from: this.level, fps: this.fps, at: now };
+        this.level++;
+        this.slowT = 0;
+        this._applyLevel();
+      } else if (this.slowT <= -10 && this.level > 0) {
+        this.level--;
+        this.slowT = 0;
+        this._applyLevel();
       }
     }
 

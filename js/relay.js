@@ -694,7 +694,10 @@
         if (id === bid) continue;
         for (const l of Object.keys(R.conns)) R.conns[l].close();
         R.flush();
-        R.m.close();
+        // (v5.5.5: a moment for the goodbye to reach the host before the
+        // connection goes: closing at once lost it, and the host kept the
+        // unused route open for 25 s)
+        setTimeout(() => R.m.close(), 1500);
         this.routes.delete(id);
       }
     }

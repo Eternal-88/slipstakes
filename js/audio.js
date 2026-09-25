@@ -156,6 +156,46 @@
     return c;
   }
 
+  // v5.5.5: every voice re-sends its ramp targets every frame, and most of
+  // them haven't moved (a gain sitting at 0, a filter that only changes with
+  // the car's parts, an engine note held on a straight). A joiner's page
+  // made 15,000-18,000 of these calls a second, each one handed to the audio
+  // thread. A target already on its way to (nearly) the same value is now
+  // left alone: within 0.2% (a few cents of pitch, a hundredth of a
+  // decibel), same time constant. Anything else that touches the parameter
+  // (a set value, a ramp, a cancel, .value =) clears the memory, so those
+  // keep working exactly as before.
+  if (typeof AudioParam !== 'undefined' && !AudioParam.prototype._ssOnce) {
+    const AP = AudioParam.prototype, setT = AP.setTargetAtTime;
+    AP._ssOnce = true;
+    AP.setTargetAtTime = function (v, t, tc) {
+      const l = this._ssV;
+      if (l !== undefined && tc === this._ssC && Math.abs(v - l) <= Math.abs(l) * 0.002 + 1e-5) return this;
+      this._ssV = v;
+      this._ssC = tc;
+      return setT.call(this, v, t, tc);
+    };
+    for (const k of ['setValueAtTime', 'linearRampToValueAtTime', 'exponentialRampToValueAtTime', 'cancelScheduledValues', 'cancelAndHoldAtTime', 'setValueCurveAtTime']) {
+      const f = AP[k];
+      if (f)
+        AP[k] = function () {
+          this._ssV = undefined;
+          return f.apply(this, arguments);
+        };
+    }
+    const d = Object.getOwnPropertyDescriptor(AP, 'value');
+    if (d && d.set && d.configurable)
+      Object.defineProperty(AP, 'value', {
+        configurable: true,
+        enumerable: d.enumerable,
+        get: d.get,
+        set(v) {
+          this._ssV = undefined;
+          d.set.call(this, v);
+        },
+      });
+  }
+
   const Audio = {
     modSound, // pure: tools/audit.js checks every sound option changes something
     enabled: false,
@@ -243,7 +283,27 @@
     ok() {
       if (!this.enabled) return false;
       if (!this._init()) return false;
-      if (this.ctx.state === 'suspended') this.ctx.resume();
+      // v5.5.5: sound is scheduled only while the audio is really RUNNING.
+      // Before the first click or key (the browser's autoplay rule), or when
+      // the audio device goes away, the context sits suspended and plays
+      // nothing - but the engine, tyre and wind voices kept scheduling a few
+      // thousand ramps a second into it. Nothing ever used them up, so each
+      // new one cost more than the last: a few minutes in, a Chromebook
+      // spent whole seconds per frame on sound it wasn't playing, froze, and
+      // the host timed it out. (A context can also say "running" with its
+      // clock stuck: that counts as not running.)
+      const c = this.ctx, now = performance.now();
+      if (c.state !== 'running') {
+        if (c.state === 'suspended' && now - (this._resumeT || 0) > 1000) {
+          this._resumeT = now; // (at most once a second: each call is a promise)
+          c.resume().catch(() => {});
+        }
+        return false;
+      }
+      if (c.currentTime !== this._ctT) {
+        this._ctT = c.currentTime;
+        this._ctAt = now;
+      } else if (now - this._ctAt > 1000) return false;
       return true;
     },
 
@@ -809,7 +869,7 @@
     // Other cars: the two nearest to the listener (camera focus).
     // cars: [{rs, carId}], lx/lz/lyaw = listener position + facing.
     silenceOthers() {
-      if (!this.ctx) return;
+      if (!this.ctx || this.ctx.state !== 'running') return; // (v5.5.5: see ok() - nothing to silence in a stopped context)
       this._silenceAmb();
       if (this.env) for (const k of ['tread', 'water', 'grain']) this.env[k].g.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
       const t = this.ctx.currentTime;
@@ -1785,6 +1845,7 @@
   // Unlock on the first gesture if sound was left enabled last time.
   Audio.enabled = !!(G.Settings && G.Settings.s.sound);
   const unlock = () => {
+    Audio._resumeT = 0; // (resume right now, inside the click or key)
     if (Audio.enabled) Audio.ok();
     window.removeEventListener('pointerdown', unlock);
     window.removeEventListener('keydown', unlock);
