@@ -115,8 +115,25 @@
       const all = bets.concat(sides);
       return all.length ? `<div class="pub"><h3>On the book</h3>${all.join('')}</div>` : '';
     },
-    chips(sel, act) {
-      return [50, 100, 250, 500, 1000].map((v) => `<button class="chip ${sel === v ? 'on' : ''}" data-act="${act}" data-v="${v}">$${v}</button>`).join('');
+    // v5.5.5: only stakes the rules accept (bets $50-$400, side bets
+    // $100-$700: it used to offer $500 and $1,000 bets and $50 side bets that
+    // the host then refused), and anything you can't afford greyed out
+    chips(sel, act, vals, max) {
+      return vals.map((v) => `<button class="chip ${sel === v ? 'on' : ''}" data-act="${act}" data-v="${v}" ${v > max ? 'disabled title="More than you can stake right now"' : ''}>$${v}</button>`).join('');
+    },
+    betChips() {
+      const E_ = E();
+      return [E_.BET_MIN, 100, 200, 300, E_.BET_MAX];
+    },
+    sideChips() {
+      const E_ = E();
+      return [E_.SIDE_MIN, 200, 300, 500, E_.SIDE_MAX];
+    },
+    // keep the chosen stake one the chips offer
+    fixStakes() {
+      const b = this.betChips(), s = this.sideChips();
+      if (!b.includes(this.stake)) this.stake = b.reduce((a, v) => (Math.abs(v - this.stake) < Math.abs(a - this.stake) ? v : a), b[0]);
+      if (!s.includes(this.side.stake)) this.side.stake = s.reduce((a, v) => (Math.abs(v - this.side.stake) < Math.abs(a - this.side.stake) ? v : a), s[0]);
     },
     slipHtml(st, me) {
       const E_ = E();
@@ -131,8 +148,9 @@
         pick = `<div class="pick"><b>${U.esc(r.name)}</b> to ${this.sel.type === 'win' ? 'WIN' : 'finish on the PODIUM'} @ ${odds.toFixed(2)}x<br><span class="muted">Stake ${U.fmtMoney(this.stake)} → returns ${U.fmtMoney(this.stake * odds)}</span></div>
           <button class="btn primary" data-act="place" ${ok ? '' : 'disabled'}>Place bet</button>${ok ? '' : `<p class="bad small">${this.stake > me.money - E_.FLOOR ? 'That would take you below the ' + U.fmtMoney(E_.FLOOR) + ' repair floor.' : 'Over the per-race limit.'}</p>`}`;
       }
+      this.fixStakes();
       return `<h3>Bet slip</h3><div class="money-line">Cash <b>${U.fmtMoney(me.money)}</b> · stakeable <b>${U.fmtMoney(maxOk)}</b></div>
-        <div class="chips">${this.chips(this.stake, 'stake')}</div>${pick}
+        <div class="chips">${this.chips(this.stake, 'stake', this.betChips(), maxOk)}</div>${pick}
         <h3 style="margin-top:14px">Your bets</h3>${mine.length ? mine.map((b) => `<div class="mybet">${U.fmtMoney(b.stake)} · ${U.esc(b.racerName)} ${b.type} @${b.odds.toFixed(2)}x → ${U.fmtMoney(b.stake * b.odds)}</div>`).join('') : '<p class="muted small">None yet.</p>'}`;
     },
     sideHtml(st, me) {
@@ -147,22 +165,34 @@
       const myBets = st.bets.filter((b) => b.pid === me.id);
       const staked = myBets.reduce((a, b) => a + b.stake, 0);
       const maxOk = Math.max(0, Math.min(E_.BET_MAX, E_.BET_TOTAL - staked, me.money - E_.FLOOR));
+      this.fixStakes();
       const can = this.stake >= E_.BET_MIN && this.stake <= maxOk;
+      const why = can ? '' : maxOk < E_.BET_MIN ? (staked ? `You've staked the ${U.fmtMoney(E_.BET_TOTAL)} limit for this race.` : `You must keep ${U.fmtMoney(E_.FLOOR)} for repairs.`) : `You can stake up to ${U.fmtMoney(maxOk)} more on this race.`;
       const back = mo
         ? `<h3>Back yourself</h3><p class="muted small">Bet on your own result at the bookie's odds — paid on top of your prize.</p>
-          <div class="chips">${this.chips(this.stake, 'stake')}</div>
+          <div class="chips">${this.chips(this.stake, 'stake', this.betChips(), maxOk)}</div>
           <div class="side-row"><button class="btn primary small" data-act="backme" data-type="win" ${can ? '' : 'disabled'}>WIN @ ${mo.win.toFixed(2)}x → ${U.fmtMoney(this.stake * mo.win)}</button>${mo.podium ? `<button class="btn small" data-act="backme" data-type="podium" ${can ? '' : 'disabled'}>PODIUM @ ${mo.podium.toFixed(2)}x → ${U.fmtMoney(this.stake * mo.podium)}</button>` : ''}</div>
+          ${why ? `<p class="muted small">${why}</p>` : ''}
           ${myBets.map((b) => `<div class="mybet">${U.fmtMoney(b.stake)} on yourself to ${b.type} @${b.odds.toFixed(2)}x</div>`).join('')}`
         : '';
+      // side bets: what you can put up, and what a bot will take
+      const sideMax = Math.min(E_.SIDE_MAX, me.money - E_.FLOOR);
+      const tp = this.side.to && st.players[this.side.to];
+      const botMax = tp && tp.isBot ? Math.min(E_.SIDE_MAX, Math.floor(tp.money * 0.2), tp.money - E_.FLOOR) : null;
+      const sideOk = !!this.side.to && this.side.stake >= E_.SIDE_MIN && this.side.stake <= sideMax;
+      const sideWhy = !this.side.to ? '' : sideMax < E_.SIDE_MIN ? `You must keep ${U.fmtMoney(E_.FLOOR)} for repairs.` : this.side.stake > sideMax ? `You can put up to ${U.fmtMoney(sideMax)}.` : botMax != null ? (botMax < E_.SIDE_MIN ? `${U.esc(tp.name)} can't cover a side bet right now.` : `Bots take side bets up to a fifth of their cash (${U.fmtMoney(botMax)} for ${U.esc(tp.name)}), and not always.`) : '';
       return `<h3>You're racing</h3>${back}<h3 style="margin-top:12px">Side bet</h3><p class="muted small">Challenge a rival: whoever finishes ahead takes both stakes.</p>
         ${inc}
         <div class="side-row"><select data-input="sideTo">${racers.map((p) => `<option value="${p.id}" ${p.id === this.side.to ? 'selected' : ''}>${U.esc(p.name)}</option>`).join('')}</select></div>
-        <div class="chips">${this.chips(this.side.stake, 'sstake')}</div>
-        <button class="btn pink" data-act="challenge" ${me.money - this.side.stake < E_.FLOOR || !this.side.to ? 'disabled' : ''}>"I'll beat you, ${U.fmtMoney(this.side.stake)}"</button>
+        <div class="chips">${this.chips(this.side.stake, 'sstake', this.sideChips(), sideMax)}</div>
+        <button class="btn pink" data-act="challenge" ${sideOk ? '' : 'disabled'}>"I'll beat you, ${U.fmtMoney(this.side.stake)}"</button>${sideWhy ? `<p class="muted small">${sideWhy}</p>` : ''}
         <h3 style="margin-top:14px">Your side bets</h3>${mine.length ? mine.map((s) => `<div class="mybet">vs ${U.esc(s.from === me.id ? s.toName : s.fromName)} ${U.fmtMoney(s.stake)} — ${s.status}</div>`).join('') : '<p class="muted small">None.</p>'}`;
     },
     input(k, el) {
-      if (k === 'sideTo') this.side.to = el.value;
+      if (k === 'sideTo') {
+        this.side.to = el.value;
+        UI.refresh(true); // (what that driver will take)
+      }
     },
     update() {
       if (Math.floor(performance.now() / 500) !== this._t) {

@@ -124,7 +124,7 @@
 
     render() {
       if (!this.isOpen) return;
-      const html = this.view === 'settings' ? this.settingsHtml() : this.pauseHtml();
+      const html = this.view === 'settings' ? this.settingsHtml() : this.view === 'conn' && G.NetDiag ? G.NetDiag.html() : this.pauseHtml();
       this.root.innerHTML = `<div class="ov-bg">${html}</div>`;
     },
 
@@ -149,6 +149,7 @@
       if (carOk) btns += b('car', '🚗 Change car');
       if (sess && st && ['lobby', 'carselect'].includes(st.phase) && mode === 'session') btns += b('paint', '🎨 Tune & paint');
       btns += b('settings', '⚙ Settings') + b('controls', '⌨ Controls');
+      if (G.NetDiag) btns += b('conn', sess ? '📶 Connection' : '📶 Connection & device');
       btns += b('fullscreen', document.fullscreenElement ? '🗗 Exit fullscreen' : '⛶ Fullscreen');
       if (drive) btns += b('leaveDrive', test ? '← Back to garage' : sess ? '← Back to the session' : '← Leave practice', 'ghost');
       // host: who can get in, room size and bots — any time (bots not mid-race)
@@ -160,7 +161,7 @@
       }
       if (sess) btns += b('leaveSession', G.Game.role === 'host' ? '✖ Leave room' : '✖ Leave session', 'red');
       if (!sess && mode !== 'menu') btns += b('mainMenu', '⌂ Main menu', 'ghost');
-      return `<div class="ov-card pause"><h1>${title}</h1>${sub ? `<p class="muted">${U.esc(sub)}</p>` : ''}<div class="ov-btns">${btns}</div><p class="muted small ov-foot">Esc closes · M sound · F3 frame-rate · <span class="ver">v${G.VERSION}</span></p></div>`;
+      return `<div class="ov-card pause"><h1>${title}</h1>${sub ? `<p class="muted">${U.esc(sub)}</p>` : ''}<div class="ov-btns">${btns}</div><p class="muted small ov-foot">Esc closes · M sound · frame rate: Settings → Graphics → Show FPS · <span class="ver">v${G.VERSION}</span></p></div>`;
     },
 
     settingsHtml() {
@@ -205,7 +206,7 @@
           row('Touch controls', sel('touch', [['auto', 'Auto (appear once you touch the screen)'], ['on', 'Always show'], ['off', 'Off']]), 'On-screen steer, gas, brake and handbrake buttons for touchscreen Chromebooks.') +
           row('Speech to text', `<button class="btn small" data-oact="stab" data-t="voice">🎤 Voice settings →</button>`, 'Push to talk, tap to talk or voice activated, the language, sensitivity and a microphone test.') +
           `<div class="ov-row"><label></label><div class="ov-ctl"><button class="btn small ghost" data-oact="resetKeys">Reset keys to default</button></div></div>` +
-          `<p class="muted small">Fixed keys: <b>Esc</b> menu · <b>M</b> sound · <b>F3</b> fps · spectating: <b>1–8</b>/<b>Tab</b> follow a car, <b>WASD Q E</b> free camera, mouse wheel zoom.<br>Gamepad: left stick steer · RT throttle · LT brake · A handbrake · Y reset · RB camera · Start menu.</p>`;
+          `<p class="muted small">Fixed keys: <b>Esc</b> menu · <b>M</b> sound · <b>F3</b> fps (no F-keys on a Chromebook: Graphics → Show FPS) · spectating: <b>1–8</b>/<b>Tab</b> follow a car, <b>WASD Q E</b> free camera, mouse wheel zoom.<br>Gamepad: left stick steer · RT throttle · LT brake · A handbrake · Y reset · RB camera · Start menu.</p>`;
       } else if (this.tab === 'voice') {
         const T = G.Chat && G.Chat.Talk, ok = !!(T && T.supported), m = s.sttMode || 'ptt';
         const kn = s.keys.talk ? S().keyName(s.keys.talk) : 'the talk key';
@@ -272,6 +273,19 @@
         this.tab = a === 'controls' ? 'controls' : this.tab === 'controls' ? 'graphics' : this.tab;
         return this.render();
       }
+      if (a === 'conn') {
+        // v5.5.5 connection report (ui/netdiag.js), refreshed while it's open
+        this.view = 'conn';
+        this.render();
+        clearInterval(this._connT);
+        this._connT = setInterval(() => {
+          if (!this.isOpen || this.view !== 'conn') return clearInterval(this._connT);
+          const pre = this.root.querySelector('pre.diag');
+          if (pre) pre.textContent = G.NetDiag.lines().join('\n');
+        }, 1000);
+        return;
+      }
+      if (a === 'copyDiag') return G.NetDiag.copy();
       if (a === 'stab') {
         if (G.Chat && G.Chat.Talk) G.Chat.Talk.stopTest();
         this.tab = el.dataset.t;
