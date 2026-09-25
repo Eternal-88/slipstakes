@@ -283,6 +283,35 @@ body:not(.stt) .stt-mic { display: none !important; }
 .stt-heard { color: #fff; font-style: italic; }
 .stt-heard.bad { color: #ffb3b7; }
 .ov-warn { margin: 0 0 10px; padding: 8px 12px; border-radius: 10px; background: rgba(216,50,60,.2); color: #ffd0d3; font-size: 13px; }
+/* v5.5.5 the menu fits a 1366x768 screen (it was 828 px tall in a 768 px
+   window: the logo cut off at the top, the controls line and Free
+   practice's Drive button below the bottom edge). Tighter spacing, and if a
+   window is shorter still the menu scrolls instead of clipping. */
+.menu { align-items: safe center; overflow-y: auto; overscroll-behavior: contain; }
+.logo { font-size: 68px; }
+.tagline { margin: 6px 0 12px; }
+.m-grid { gap: 7px; margin-top: 10px; }
+.m-grid .btn.big { padding: 11px 20px; }
+.m-grid .btn:not(.big) { padding: 8px 16px; }
+.m-help { margin-top: 12px; }
+.m-card.wide .trk-grid { max-height: calc(45vh / var(--uiz)); }
+/* v5.5.5 garage at 1366x768: the tab row spilled under the next-race map,
+   and the chat buttons sat on top of the left panel's text */
+.garage .g-title { flex: none; }
+.garage:has(.g-itabs:not(:empty)) .g-head { gap: 10px; }
+.garage:has(.g-itabs:not(:empty)) .g-btns .btn { padding-left: 12px; padding-right: 12px; }
+.garage .g-extra { min-width: 88px; white-space: normal; line-height: 1.25; }
+.garage .g-next b, .garage .g-btns .btn { white-space: nowrap; }
+.garage:has(.g-itabs:not(:empty)) .g-next .g-map { width: 84px; height: 54px; }
+.garage:has(.g-itabs:not(:empty)) .g-car { display: none; } /* (between races it never had room; the car is on the Car tab) */
+body:has(#ui .garage) #chatbox { left: 378px; }
+@media (max-width: 1250px) { body:has(#ui .garage) #chatbox { left: 328px; } }
+@media (max-width: 1000px) { body:has(#ui .garage) #chatbox { left: 14px; } }
+/* v5.5.5 connection report (ui/netdiag.js, Esc -> Connection) */
+.ov-card.conn { width: min(760px, calc(96vw / var(--uiz))); }
+.ov-card.conn .ov-head { display: flex; align-items: center; gap: 10px; }
+.ov-card.conn .ov-head h1 { margin: 0; flex: 1; }
+.ov-card.conn pre.diag { margin: 8px 0 0; padding: 10px 12px; max-height: calc(62vh / var(--uiz)); overflow: auto; border-radius: 10px; background: rgba(0,0,0,.35); color: #d7def0; font: 12px/1.45 ui-monospace, Consolas, 'Cascadia Mono', monospace; white-space: pre-wrap; overflow-wrap: anywhere; -webkit-user-select: text; user-select: text; }
 /* v5.5.3 online players and direct messages (ui/online.js) */
 #corner .on-cbtn { position: relative; width: auto; min-width: 38px; padding: 0 9px; display: flex; align-items: center; gap: 4px; }
 #corner .on-cbtn b { font-size: 12px; font-weight: 900; color: #c9d3ea; }
