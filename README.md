@@ -2,6 +2,53 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.5.5 — Stick Around
+
+Networking (each fix has a test in `tools/harness/test_net.py`, dev only):
+- **Big messages in parts** (`js/net.js` `split` / `joinPart`). PeerJS 1.5.4
+  refuses any JSON message of 16,300 bytes or more on a direct link and
+  reports it as a link error (`message-too-big`). A full room's state is
+  18-23 KB (the heirs' copy more), so once a session grew, every state update
+  dropped every direct player and they rejoined for ever - the reported
+  loop. Control messages over 12 KB now go to direct links as numbered parts
+  and are reassembled; the relay is unchanged. `hello` carries the version
+  and `parts: 1`; an older game in a room too big to send whole is told once
+  to reload. `welcome` carries the host's version (joiners are told who
+  should reload).
+- **Dead link after the welcome** (`game.js` `_connectClient`): a link closing
+  as the welcome arrived left the game on a dead link for good; now that
+  attempt fails and the reconnect loop carries on.
+- **Reverse-dial channels**: the joiner's call and the host's reverse call
+  could both open and each end picked a different one, so the welcome went
+  down a channel the joiner ignored. The joiner now hears every open channel
+  of its route and keeps a spare.
+- Messages that arrive with the welcome (the relay batches welcome + state)
+  were dropped; now kept. Join waits for the room state before showing it.
+- Heirs' state copies at most every 5 s (and on every phase change); relay
+  routes the joiner didn't pick are closed promptly.
+- **Connection report** (`js/ui/netdiag.js`, Esc -> 📶 Connection): version,
+  role, route, ping, update delivery, drops and reconnects with reasons,
+  errors, device; "Copy debug info". Local only.
+
+Performance (harness `profjoin`: a 4x-throttled joiner, 8-car race, frame
+CPU 9.2 -> 5.3 ms):
+- **Sound into a suspended audio context** (`audio.js` `ok()`,
+  `silenceOthers`): thousands of `setTargetAtTime` ramps a second piled up in
+  a context that never consumed them, each call slower than the last, until
+  the page froze and the host timed the player out. Sound is now scheduled
+  only while the context runs; repeated identical targets are skipped.
+- **Governor** (`world.js`): median frame per second, ignores 3 s after a
+  track load, recovers after 10 good seconds, undoes steps that didn't help.
+- **Shader thrash**: materials shared by plain/instanced meshes (and the
+  shadow pass's shared depth material) made three.js recompute program
+  parameters on nearly every draw; each kind now has its own copy.
+- Hidden night/rain shaders compile during the track load; the background
+  race reuses the track on screen instead of building a random one.
+
+Screens: the menu and the between-races garage fit 1366x768; betting only
+offers stakes the rules allow; inline favicon; a clear message when a script
+fails to download.
+
 ## v5.3 — Know Your Car II
 
 Verification-led: `tools/audit.js` (new, dev only) measures every part on every
