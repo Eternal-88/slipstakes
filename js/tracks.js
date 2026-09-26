@@ -349,7 +349,7 @@
         { k: 'ice', x: 470, z: 1390, len: 30, hw: 5 },
         { k: 'rockfall', x: 520, z: 1680, len: 120, spread: 4, every: 6.5, stay: 4.5, r: 1.1, count: 3, off: 2.2 },
         { k: 'rock', x: 670, z: 1990, lat: -3.2, r: 1.1 },
-        { k: 'rockfall', x: 680, z: 2200, len: 170, spread: 4.5, every: 6, stay: 4.5, r: 1.2, count: 4, off: 4.1 },
+        { k: 'rockfall', x: 668, z: 2196, len: 170, spread: 4.5, every: 6, stay: 4.5, r: 1.2, count: 4, off: 4.1 },
       ],
     },
     {
@@ -464,7 +464,7 @@
       hazards: [
         { k: 'wind', x: 150, z: 345, len: 170, str: 5, period: 4.8 },
         { k: 'ice', x: 330, z: 40, lat: 1.5, len: 12, hw: 2.6 },
-        { k: 'ice', x: -180, z: 250, lat: -1.5, len: 12, hw: 2.6 },
+        { k: 'ice', x: -187, z: 249, lat: -1.5, len: 12, hw: 2.6 },
         { k: 'boost', x: 170, z: 0, lat: -2.2 },
       ],
     },
@@ -490,7 +490,7 @@
         { k: 'train', x: 110, z: 0, cars: 9, speed: 21, every: 17, off: 6 },
         { k: 'train', x: 80, z: 380, cars: 9, speed: 21, every: 19, off: 11, dir: -1 },
         { k: 'oil', x: 180, z: 310, lat: 1.2, len: 10, hw: 2.4 },
-        { k: 'water', x: -100, z: 190, len: 16, hw: 8 },
+        { k: 'water', x: -91, z: 196, len: 16, hw: 8 },
         { k: 'boost', x: 210, z: 0, lat: 2.2 },
       ],
     },

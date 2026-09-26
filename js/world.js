@@ -213,22 +213,37 @@
       });
     }
 
+    // v5.5.6: a track that is already built is not built again. The one on
+    // screen stays when it is asked for again (the betting board's background
+    // race runs on the next race's track, so the race starts on it with
+    // nothing to build), and the garage's Proving Ground is kept once built:
+    // it comes back every round, and it was a fresh build every time the
+    // garage opened (0.15 s on a Chromebook, each round).
     loadTrack(track) {
-      if (this.trackGroup) {
+      const opts = this._buildOpts(), key = track.id + '|' + opts.detail + '|' + opts.tier;
+      const same = !!this.trackGroup && this.track === track && this._groupKey === key;
+      if (this.trackGroup && !same) {
         this.scene.remove(this.trackGroup);
-        this.trackGroup.traverse((o) => {
-          if (o.geometry && !o.userData.sharedGeo) o.geometry.dispose();
-        });
+        if (this._groupKey && this._groupKey.startsWith('proving|')) (this._kept || (this._kept = new Map())).set(this._groupKey, this.trackGroup);
+        else this._dispose(this.trackGroup);
       }
       this.track = track;
-      const sc = ST().scenery;
-      const detail = sc === 'auto' || !sc ? this.tier : sc; // Chromebooks (medium tier) get medium scenery
-      this.trackGroup = G.TrackMesh.build(track, { detail, tier: this.tier });
-      this.trackGroup.traverse((o) => {
-        if (o.isMesh && o.userData.castShadow == null) o.userData.castShadow = o.castShadow;
-      });
-      this._trackShadows();
-      this.scene.add(this.trackGroup);
+      if (!same) {
+        const kept = this._kept && this._kept.get(key);
+        if (kept) this._kept.delete(key);
+        for (const [k, g] of this._kept || []) if (k.split('|')[0] === track.id) (this._dispose(g), this._kept.delete(k)); // (a different quality level: no longer any use)
+        const p = this._prep;
+        if (p && p.id === track.id) this._prep = null;
+        if (kept) this.trackGroup = kept;
+        else if (p && p.key === key && this._finishPrep(p)) this.trackGroup = p.group;
+        else this.trackGroup = G.TrackMesh.build(track, opts);
+        this._groupKey = key;
+        this.trackGroup.traverse((o) => {
+          if (o.isMesh && o.userData.castShadow == null) o.userData.castShadow = o.castShadow;
+        });
+        this._trackShadows();
+        this.scene.add(this.trackGroup);
+      }
       this.trackGroup.userData.env = this.env; // v5: moving hazards follow race time
       this.trackGroup.userData.fx = this.fx;
       this.trackGroup.userData.cam = this.cam; // v5: hazard sounds by distance
@@ -257,6 +272,92 @@
       this._loadAt = performance.now(); // (the governor lets the next few seconds go: shaders compile)
       this._unshareMaterials();
       this._precompile();
+    }
+
+    _dispose(g) {
+      g.traverse((o) => {
+        if (o.geometry && !o.userData.sharedGeo) o.geometry.dispose();
+      });
+    }
+
+    _buildOpts() {
+      const sc = ST().scenery;
+      return { detail: sc === 'auto' || !sc ? this.tier : sc, tier: this.tier }; // Chromebooks (medium tier) get medium scenery
+    }
+
+    // v5.5.6: the next race's track is built ahead, a few ms per frame
+    // (pumpPrep, from the main loop) while everyone is in the garage and on
+    // the betting board, and loadTrack picks it up. Built all at once as the
+    // race started, it froze a Chromebook for up to a second and a half.
+    // then: more work for the same wait, run a frame after the build is done
+    prepareTrack(track, then) {
+      const opts = this._buildOpts(), key = track.id + '|' + opts.detail + '|' + opts.tier;
+      if (this._prep && this._prep.key === key) return;
+      if (this.trackGroup && this.track === track && this._groupKey === key) {
+        // (already on screen - the background race took it: nothing to build,
+        // but the host's bots still want their racing line)
+        if (then && !this._thenDone) {
+          this._thenDone = key;
+          try {
+            then();
+          } catch (e) {}
+        }
+        return;
+      }
+      this._thenDone = null;
+      this._prep = { id: track.id, key, it: G.TrackMesh.steps(track, opts), group: null, then };
+    }
+    pumpPrep(ms) {
+      const p = this._prep;
+      if (!p) return;
+      if (p.group) {
+        const f = p.then;
+        p.then = null;
+        try {
+          if (f) f();
+        } catch (e) {
+          console.warn('track pre-build failed', e);
+        }
+        return;
+      }
+      const end = performance.now() + ms;
+      try {
+        do {
+          const r = p.it.next();
+          if (r.done) p.group = r.value;
+        } while (!p.group && performance.now() < end);
+      } catch (e) {
+        console.warn('track pre-build failed', e);
+        this._prep = null; // (loadTrack builds it the old way)
+      }
+    }
+    // is this track built (on screen or kept)? (game.js: the garage's
+    // Proving Ground is built on the results screen, before the garage opens)
+    hasTrack(id) {
+      if (this.track && this.track.id === id) return true;
+      for (const k of (this._kept || new Map()).keys()) if (k.split('|')[0] === id) return true;
+      return !!(this._prep && this._prep.id === id && this._prep.group);
+    }
+    // is the next race's track built and waiting? (game.js: the betting
+    // board then shows it, so its first draw is not on the grid)
+    prepReady(id) {
+      const p = this._prep;
+      return !!(p && p.id === id && p.group && !p.then);
+    }
+    dropPrep() {
+      this._prep = null;
+    }
+    _finishPrep(p) {
+      try {
+        while (!p.group) {
+          const r = p.it.next();
+          if (r.done) p.group = r.value;
+        }
+        return true;
+      } catch (e) {
+        console.warn('track pre-build failed', e);
+        return false;
+      }
     }
 
     // list: [{id, carId, color, parts, look, tune}] — (re)builds models whose look changed.

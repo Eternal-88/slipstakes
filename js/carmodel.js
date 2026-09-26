@@ -1061,6 +1061,12 @@
     if (B.flush) gb.box(0, ry + 0.06, rz - 0.01, rS.wm * 2 - 0.25, 0.03, 0.03, C(0x8a1010)); // light bar
     const tailStart = gb.n;
     for (const sx of [-1, 1]) {
+      if (SK && SK.id === 'gtd') {
+        // the fastback's three tall bars a side, drawn here so the brakes
+        // light them like any tail lamp (the skin adds the panel round them)
+        for (const d of [-0.11, 0, 0.11]) gb.box(sx * 0.56 + d, ry, rz + 0.01, 0.075, 0.17, 0.06, C(0x8a1010));
+        continue;
+      }
       gb.box(sx * 0.56, ry, rz + 0.02, 0.42, 0.12, 0.06, C(0x8a1010));
       if (car.body === 'muscle') gb.box(sx * 0.2, ry, rz + 0.02, 0.2, 0.1, 0.06, C(0x8a1010));
     }
@@ -1305,14 +1311,11 @@
         gb.box(sx * (qx0 - 0.015), qS.ym + 0.16, qz, 0.03, 0.13, 0.26, C(0x14161a));
         for (let i = 0; i < 2; i++) gb.box(sx * (qx0 - 0.005), qS.ym + 0.13 + i * 0.055, qz, 0.02, 0.022, 0.24, dark, 0);
       }
-      // Three-bar lamps at both ends. The stock tail block is already there
-      // and is what the brake lights animate, so the bars are cut into it with
-      // dark separators rather than replacing it - the lights still work.
-      gb.box(0, ry - 0.01, rz - 0.012, rS.wb * 2 - 0.16, 0.24, 0.02, C(0x15171b)); // the panel they sit in
-      for (const sx of [-1, 1]) {
-        for (const d of [-0.13, 0.13]) gb.box(sx * 0.56 + d, ry, rz - 0.032, 0.035, 0.14, 0.03, black);
-        gb.box(sx * 0.56, ry - 0.09, rz - 0.03, 0.44, 0.04, 0.03, black); // under-shadow
-      }
+      // Three-bar lamps at both ends. The tail bars are drawn with the stock
+      // tail lamps (so the brakes still light them); this is the black panel
+      // they sit in, its face 1.2 cm behind theirs. (v5.5.6: it used to
+      // stand 1 cm proud of the lamps and hid them, brake lights and all.)
+      gb.box(0, ry - 0.01, rz + 0.002, rS.wb * 2 - 0.16, 0.24, 0.02, C(0x15171b));
       // and at the front: three slim bars set into a blunt, wide nose
       for (const sx of [-1, 1]) {
         for (let i = 0; i < 3; i++) gb.box(sx * 0.58, fS.ym + 0.16 + i * 0.055, fz + 0.022, 0.4, 0.028, 0.03, C(0xf2efe2));

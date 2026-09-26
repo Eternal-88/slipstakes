@@ -73,6 +73,58 @@
     }
     const SLOPE = 1.0, R = maxW + reach + 30; // beyond ~30 m the 1:1 slope never binds
     const nb = Math.ceil(R / BS), R2 = R * R, cover2 = (nb * BS) ** 2;
+    // v5.5.6: far from every road (most of the ground) the nearest sample is
+    // found in a coarse grid, ring by ring outwards, instead of a scan of every
+    // other sample on the track for each point. Same sample, same tie-break
+    // (the lowest index); that scan was a third of a track load.
+    const FB = 50;
+    let fx0 = Infinity, fz0 = Infinity, fx1 = -Infinity, fz1 = -Infinity;
+    for (let k = 0; k < N; k += 2) {
+      fx0 = Math.min(fx0, track.X[k]);
+      fx1 = Math.max(fx1, track.X[k]);
+      fz0 = Math.min(fz0, track.Z[k]);
+      fz1 = Math.max(fz1, track.Z[k]);
+    }
+    const fw = Math.floor((fx1 - fx0) / FB) + 1, fh = Math.floor((fz1 - fz0) / FB) + 1;
+    const cells = new Array(fw * fh);
+    for (let k = 0; k < N; k += 2) {
+      const c = Math.floor((track.X[k] - fx0) / FB) + fw * Math.floor((track.Z[k] - fz0) / FB);
+      (cells[c] || (cells[c] = [])).push(k);
+    }
+    let eBest = Infinity, eK = -1;
+    const scan = (x, z, i, j) => {
+      const a = cells[i + fw * j];
+      if (!a) return;
+      for (let n = 0; n < a.length; n++) {
+        const k = a[n];
+        const ddx = x - track.X[k], ddz = z - track.Z[k];
+        const d2 = ddx * ddx + ddz * ddz;
+        if (d2 < eBest || (d2 === eBest && k < eK)) {
+          eBest = d2;
+          eK = k;
+        }
+      }
+    };
+    const nearestFar = (x, z) => {
+      eBest = Infinity;
+      eK = -1;
+      const qi = Math.floor((x - fx0) / FB), qj = Math.floor((z - fz0) / FB);
+      const rMax = Math.max(Math.abs(qi), Math.abs(fw - 1 - qi), Math.abs(qj), Math.abs(fh - 1 - qj));
+      for (let r = 0; r <= rMax; r++) {
+        // every sample in ring r is more than (r - 1) cells away (1 m spare)
+        if (r > 1 && eBest < ((r - 1) * FB - 1) ** 2) break;
+        const i0 = Math.max(0, qi - r), i1 = Math.min(fw - 1, qi + r);
+        const j0 = Math.max(0, qj - r), j1 = Math.min(fh - 1, qj + r);
+        for (let i = i0; i <= i1; i++) {
+          if (i === qi - r || i === qi + r) {
+            for (let j = j0; j <= j1; j++) scan(x, z, i, j);
+          } else {
+            if (qj - r >= 0 && qj - r < fh) scan(x, z, i, qj - r);
+            if (qj + r >= 0 && qj + r < fh) scan(x, z, i, qj + r);
+          }
+        }
+      }
+    };
     const fn = (x, z) => {
       // one pass over the nearby buckets: the nearest sample (for the base
       // height) and the cap; far from any road, fall back to a full search
@@ -98,13 +150,10 @@
         }
       }
       if (bk < 0 || best > cover2) {
-        for (let k = 0; k < N; k += 2) {
-          const ddx = x - track.X[k], ddz = z - track.Z[k];
-          const d2 = ddx * ddx + ddz * ddz;
-          if (d2 < best) {
-            best = d2;
-            bk = k;
-          }
+        nearestFar(x, z);
+        if (eBest < best) {
+          best = eBest;
+          bk = eK;
         }
       }
       const d = Math.sqrt(best);
@@ -213,9 +262,22 @@
   // smooth 2-D value noise from sines (deterministic, cheap) in ~[-1, 1]
   const vnoise = (x, z) => Math.sin(x * 0.021 + Math.sin(z * 0.013) * 1.7) * 0.5 + Math.sin(z * 0.027 - x * 0.011 + 1.3) * 0.35 + Math.sin((x + z) * 0.061) * 0.15;
 
+  // v5.5.6: the build is a generator that pauses between pieces, so the next
+  // race's track can be built a few ms per frame while everyone is in the
+  // garage and on the betting board (world.js prepareTrack); build() still
+  // runs it in one go. After each pause it puts back the two module globals
+  // it set, since another track may have been built in between.
   function build(track, opts) {
+    const it = steps(track, opts);
+    for (;;) {
+      const r = it.next();
+      if (r.done) return r.value;
+    }
+  }
+
+  function* steps(track, opts) {
     opts = opts || {};
-    _grainOn = opts.tier !== 'low';
+    const grainOn = (_grainOn = opts.tier !== 'low');
     const detail = opts.detail === 'low' ? 0.4 : opts.detail === 'medium' ? 0.62 : 1;
     const group = new THREE.Group();
     group.userData.animFns = [];
@@ -239,6 +301,10 @@
 
     // ---------------- Terrain (faceted, hills rising away from the track) ----
     const gH = (_gH = groundFn(track, seaAt));
+    const resume = () => {
+      _grainOn = grainOn;
+      _gH = gH;
+    };
     {
       const { x0, z0, nx, nz, dx, dz } = gH.grid;
       const H = [];
@@ -247,11 +313,29 @@
       // (v5: corners near the road stay on the grid, so no triangle there is
       // longer than groundFn's reach; faceted jitter only further out)
       const calm = gH.reach * 2 + 20;
+      // v5.5.6: all that matters below is whether the road (every 4th sample)
+      // comes within calm / clear of the point, so only the 3x3 cells around
+      // it are searched (cells wider than both) instead of the whole track for
+      // each of ~16000 points: the same ground, and most of a track load.
+      const CB = Math.max(calm, clear) + 1, cw = Math.floor((nx * dx) / CB) + 1, ch = Math.floor((nz * dz) / CB) + 1;
+      const near = new Array(cw * ch);
+      for (let k = 0; k < N; k += 4) {
+        const ci = Math.floor((track.X[k] - x0) / CB), cj = Math.floor((track.Z[k] - z0) / CB);
+        if (ci < 0 || cj < 0 || ci >= cw || cj >= ch) continue; // (off the ground grid: never within calm of it)
+        const c = ci + cw * cj;
+        (near[c] || (near[c] = [])).push(k);
+      }
       for (let j = 0; j <= nz; j++) {
         for (let i = 0; i <= nx; i++) {
           const gx = x0 + i * dx, gz = z0 + j * dz;
           let best = 1e9;
-          for (let k = 0; k < N; k += 4) best = Math.min(best, (gx - track.X[k]) ** 2 + (gz - track.Z[k]) ** 2);
+          const ci = Math.floor((gx - x0) / CB), cj = Math.floor((gz - z0) / CB);
+          for (let a = Math.max(0, ci - 1); a <= Math.min(cw - 1, ci + 1); a++) {
+            for (let e = Math.max(0, cj - 1); e <= Math.min(ch - 1, cj + 1); e++) {
+              const ks = near[a + cw * e];
+              if (ks) for (let n = 0; n < ks.length; n++) best = Math.min(best, (gx - track.X[ks[n]]) ** 2 + (gz - track.Z[ks[n]]) ** 2);
+            }
+          }
           const far = Math.sqrt(best) - calm > 0;
           const rj = rng(), rk = rng();
           const x = gx + (far && i > 0 && i < nx ? (rj - 0.5) * dx * 0.5 : 0);
@@ -262,7 +346,13 @@
           if (Math.sqrt(best) > clear && far) h += jit;
           H.push([x, h - 0.05, z]);
         }
+        if (j % 16 === 15) {
+          yield 'ground rows';
+          resume();
+        }
       }
+      yield 'ground';
+      resume();
       const pos = [], col = [];
       const g1 = C(th.ground), g2 = C(th.ground2), g3 = C(th.hill), gp = C(th.patch || th.ground2), rock = C(th.mtn || th.hill).multiplyScalar(0.9);
       const beach = C(0xe6d3a0), snow = C(0xf4f6f8);
@@ -285,11 +375,19 @@
             pushQuadTri(pos, col, p, q, r, cc);
           }
         }
+        if (j % 40 === 39) {
+          yield 'ground colour rows';
+          resume();
+        }
       }
+      yield 'ground colour';
+      resume();
       const terrain = meshFrom(pos, col, grainMat(0.045, 0.22));
       terrain.name = 'terrain';
       group.add(terrain);
     }
+    yield 'terrain mesh';
+    resume();
 
     // ---------------- Water (harbour) -----------------------------------------
     if (seaAt) {
@@ -323,6 +421,8 @@
     }
 
     // ---------------- Road ribbon ------------------------------------------
+    yield 'water';
+    resume();
     {
       const pos = [], col = [];
       // smoothed racing line offset: the rubbered-in groove hugs the inside
@@ -334,6 +434,10 @@
       }
       for (let s = 0; s < segCount; s++) {
         const i = s, j = track.idx(s + 1);
+        if (s % 300 === 299) {
+          yield 'road rows';
+          resume();
+        }
         const sid = G.SURF[track.S[i]].id;
         // (v5.4: a theme can recolour a surface - volcanic gravel is ash-black)
         const pal = (th.surfCol && th.surfCol[sid]) || SURF_COL[sid] || SURF_COL.tarmac;
@@ -452,9 +556,13 @@
     }
 
     // ---------------- Hazards (v4): patches, speed pads, obstacles ----------
+    yield 'road';
+    resume();
     buildHazards(track, group, P);
 
     // ---------------- Walls ------------------------------------------------
+    yield 'hazards';
+    resume();
     {
       const pos = [], col = [];
       const q = {};
@@ -473,6 +581,10 @@
       for (const side of [1, -1]) {
         for (let s = 0; s < segCount; s++) {
           const i = s, j = track.idx(s + 1);
+          if (s % 300 === 299) {
+            yield 'walls rows';
+            resume();
+          }
           if (xg.length && (atXing(i) || atXing(j))) continue; // (the rails cross here)
           const la = side * track.wallD[i], lb = side * track.wallD[j];
           // Skip where the offset curve folds (tight inside of a hairpin): the
@@ -522,9 +634,15 @@
     }
 
     // ---------------- Boards: sponsors on straights, 3-2-1 before corners ---
+    yield 'walls';
+    resume();
     buildBoards(track, group, th);
     // ---------------- Scenery ----------------------------------------------
+    yield 'boards';
+    resume();
     buildScenery(track, group, detail, seaAt);
+    yield 'scenery';
+    resume();
     if (th.mtn) group.add(mountains(track, th));
     group.userData.anim = (t, dt) => {
       for (const f of group.userData.animFns) f(t, dt);
@@ -1830,5 +1948,5 @@
     return m;
   }
 
-  G.TrackMesh = { build };
+  G.TrackMesh = { build, steps };
 })(window.G);

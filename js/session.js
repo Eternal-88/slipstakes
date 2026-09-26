@@ -135,8 +135,12 @@
     // anything in public state can be read by any client's dev tools.
     publicState() {
       const s = U.deepClone(this.state);
-      for (const id in s.players) delete s.players[id].token;
+      for (const id in s.players) {
+        delete s.players[id].token;
+        delete s.players[id].th; // (a token's hash, after a host change: see seatOf)
+      }
       delete s.banned; // tokens again
+      delete s.bannedH;
       if (s.casino && s.casino.bj) {
         delete s.casino.bj.shoe;
         delete s.casino.bj.hole;
@@ -169,14 +173,37 @@
     }
 
     // ------------------------------------------------------ joining / leaving
+    // v5.5.6: after a host change the seats hold a HASH of their token (th:
+    // the heirs are sent hashes, never tokens - game.js _sendHeirs). The first
+    // time the right token comes back, the seat gets it again.
+    seatOf(token) {
+      if (!token) return null;
+      const all = Object.values(this.state.players).filter((p) => !p.isBot);
+      let p = all.find((q) => q.token === token);
+      if (!p && all.some((q) => q.th)) {
+        const h = U.seatHash(token);
+        p = all.find((q) => q.th === h);
+        if (p) {
+          p.token = token;
+          delete p.th;
+        }
+      }
+      return p || null;
+    }
+    isBanned(token) {
+      const st = this.state;
+      if (!token) return false;
+      return (st.banned || []).includes(token) || (!!(st.bannedH || []).length && st.bannedH.includes(U.seatHash(token)));
+    }
+
     // A token that matches an existing human = the same person coming back
     // (crash, reload, network drop): they get their car, parts and money back.
     join(name, token) {
       const st = this.state;
       this.lastActive = Date.now();
       name = String(name || 'Driver').trim().slice(0, 16) || 'Driver';
-      if (token && (st.banned || []).includes(token)) return { ok: false, reason: 'The host removed you from this room.' };
-      const ex = token ? Object.values(st.players).find((p) => !p.isBot && p.token === token) : null;
+      if (this.isBanned(token)) return { ok: false, reason: 'The host removed you from this room.' };
+      const ex = this.seatOf(token);
       if (ex) {
         ex.connected = true;
         ex.name = name;
@@ -205,8 +232,8 @@
     needsApproval(token) {
       const st = this.state;
       if (st.settings.vis !== 'private') return false;
-      if (token && (st.banned || []).includes(token)) return false;
-      return !(token && Object.values(st.players).some((p) => !p.isBot && p.token === token));
+      if (this.isBanned(token)) return false;
+      return !this.seatOf(token);
     }
 
     // All 8 seats taken but some are offline: free the one gone longest.

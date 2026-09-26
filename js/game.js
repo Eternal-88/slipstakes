@@ -5,7 +5,7 @@
 // test-driving) and render() when the session view is on screen.
 'use strict';
 (function (G) {
-  const U = G.U, P = G.Physics;
+  const U = G.U, P = G.Physics, NP = G.NetPack;
   const HOST_PID = 'h'; // the ORIGINAL host's player id (after a migration the host is whoever took over: Game.myPid)
   const CLIENT_KEY = 'ss.client';
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -110,8 +110,12 @@
 
     _wireHost() {
       const s = this.session, net = this.net;
+      this._sdPrev = null; // the last room state sent, and which version each player has (_sendState)
+      this._sdAt = new Map();
+      this._hdPrev = null; // the same for the heirs' package (_sendHeirs)
+      this._hdAt = new Map();
       s.on('state', (st) => {
-        if (net) net.broadcastCtrl({ t: 'state', s: st });
+        if (net) this._sendState(st);
       });
       s.on('toPlayer', (pid, m) => {
         if (pid !== this.myPid && net) net.sendCtrl(pid, m);
@@ -142,7 +146,7 @@
       // given the code.
       net.on('hello', (L, d) => this._admit(L, d));
       net.on('request', (r) => this._listRequest(r));
-      net.on('ctrl', (pid, m) => s.handle(pid, m));
+      net.on('ctrl', (pid, m) => (m.t === 'resync' ? this._resync(pid, m) : s.handle(pid, m)));
       net.on('fast', (pid, m) => {
         if (m.t !== 'i') return;
         if (G.NetDiag) G.NetDiag.input(pid, performance.now());
@@ -168,6 +172,8 @@
       if (G.NetDiag) G.NetDiag.joined(r.pid, String(d.name || 'Driver').slice(0, 16), L.ver, net.route(r.pid), r.rejoin);
       net.sendCtrl(r.pid, { t: 'welcome', id: r.pid, code: this.code, v: G.VERSION });
       net.sendCtrl(r.pid, { t: 'state', s: s.publicState() });
+      this._sdAt.delete(r.pid); // (that copy may be ahead of the last flush: their next one goes whole)
+      this._hdAt.delete(r.pid);
       s.touch();
     },
 
@@ -302,6 +308,56 @@
     // on, so a race's payouts are never lost to a host change. It is 20 KB+
     // each time: over a session that was nearly 4 MB of school Wi-Fi, and a
     // big parse every 2 s on the heirs' Chromebooks.)
+    // v5.5.6: the room state went to every player, whole, on every change -
+    // 20 KB+ each time in a full room. A game that says sd (net.js cap) now
+    // gets only what changed since the version it has (NetPack.diff), with a
+    // fingerprint of the result; if its copy doesn't match it asks for the
+    // whole thing again (resync). Older games get it whole, as before.
+    _sendState(st) {
+      const net = this.net, prev = this._sdPrev, full = { t: 'state', s: st };
+      let delta = null;
+      for (const pid of net.connectedPids()) {
+        if (prev && net.cap(pid, 'sd') && this._sdAt.get(pid) === prev.seq) {
+          if (delta === null) {
+            const m = { t: 'sd', b: prev.seq, d: NP.diff(prev, st) || {}, h: NP.chash(st) };
+            delta = JSON.stringify(m.d).length < JSON.stringify(st).length * 0.6 ? m : false; // (a big change goes whole)
+          }
+          if (delta) {
+            net.sendCtrl(pid, delta);
+            this._sdAt.set(pid, st.seq);
+            continue;
+          }
+        }
+        net.sendCtrl(pid, full);
+        this._sdAt.set(pid, st.seq);
+      }
+      this._sdPrev = U.deepClone(st); // (our own copy: the host's screen gets `st` too)
+    },
+
+    // a token's hash, remembered (it is sent every few seconds)
+    _th(token) {
+      const m = this._thc || (this._thc = new Map());
+      let h = m.get(token);
+      if (!h) m.set(token, (h = U.seatHash(token)));
+      return h;
+    },
+
+    // A player's copy didn't match a change (m.h: their heir package): send
+    // it whole. (At most every 2 s each: it's 20 KB.)
+    _resync(pid, m) {
+      const now = performance.now(), rt = (this._rsT = this._rsT || new Map());
+      if (now - (rt.get(pid) || -1e9) < 2000) return;
+      rt.set(pid, now);
+      if (m.h) {
+        this._hdAt.delete(pid);
+        return this._sendHeirs(now, true);
+      }
+      const st = this._sdPrev;
+      if (!st) return;
+      this.net.sendCtrl(pid, { t: 'state', s: st });
+      this._sdAt.set(pid, st.seq);
+    },
+
     _sendHeirs(now, force) {
       const st = this.session.state;
       if (!(st.heirs || []).length) return;
@@ -314,7 +370,38 @@
       this._heirT = now;
       this._heirSeq = st.seq;
       const copy = JSON.parse(JSON.stringify(st));
-      for (const pid of st.heirs) this.net.sendCtrl(pid, { t: 'heir', s: copy, code: this.code });
+      // v5.5.6: every seat's token goes as its hash (U.seatHash). The heir
+      // needs to recognise each player coming back after a host change, not
+      // to know their tokens - with them, an heir could take anyone's seat
+      // (and money) by joining with that token.
+      for (const id in copy.players) {
+        const p = copy.players[id];
+        if (p.token) {
+          p.th = this._th(p.token);
+          delete p.token;
+        }
+      }
+      if (copy.banned && copy.banned.length) copy.bannedH = (copy.bannedH || []).concat(copy.banned.map((t) => this._th(t)));
+      delete copy.banned;
+      // (v5.5.6: as changes too, to games that say sd - see _sendState)
+      const n = (this._hdN = (this._hdN || 0) + 1), prev = this._hdPrev;
+      let delta = null;
+      for (const pid of st.heirs) {
+        if (prev && this.net.cap(pid, 'sd') && this._hdAt.get(pid) === prev.n) {
+          if (delta === null) {
+            const m = { t: 'hd', b: prev.n, n, d: NP.diff(prev.s, copy) || {}, h: NP.chash(copy), code: this.code };
+            delta = JSON.stringify(m.d).length < JSON.stringify(copy).length * 0.6 ? m : false;
+          }
+          if (delta) {
+            this.net.sendCtrl(pid, delta);
+            this._hdAt.set(pid, n);
+            continue;
+          }
+        }
+        this.net.sendCtrl(pid, { t: 'heir', s: copy, code: this.code, n });
+        this._hdAt.set(pid, n);
+      }
+      this._hdPrev = { n, s: copy };
     },
 
     // Did MY internet drop? Then every player timed out together and has
@@ -442,6 +529,11 @@
       G.UI.toast(left ? "The host left — you're the new host. The room carries on." : "The host dropped out — you're the new host. The room carries on.", 'info');
       const s = G.HostSession.fromMigration(pkg.s, me, epoch, code, left);
       const seat = s.state.players[me];
+      // (v5.5.6: the package holds hashes; our own seat gets our own token)
+      if (seat && !seat.token && this.token) {
+        seat.token = this.token;
+        delete seat.th;
+      }
       if (seat && seat.token) this.token = seat.token;
       await this._startHost(s, code);
     },
@@ -567,7 +659,15 @@
             res(m);
           } else if (m.t === 'reject') {
             done();
-            rej(new Error(m.reason || 'Rejected by host.'));
+            // v5.5.6: a version mismatch says who should reload. (A host
+            // that doesn't send its version is 5.5.5 or older: behind us.)
+            let why = m.reason || 'Rejected by host.';
+            if (/^Version mismatch/.test(why)) {
+              why = typeof m.proto === 'number' && m.proto > G.Net.PROTO
+                ? 'The host has a newer version of the game. Reload the page (Ctrl+Shift+R) and join again.'
+                : `The host's game is an older version${m.v ? ' (' + String(m.v).slice(0, 12) + ')' : ''}. Ask them to reload the page (Ctrl+Shift+R), then join again.`;
+            }
+            rej(new Error(why));
           } else if (m.t === 'wait') {
             // private room: the host has to let us in (we wait up to 2 min)
             clearTimeout(to);
@@ -582,7 +682,7 @@
           }
         });
         // (v5.5.5: our version, and that we can take a big message in parts)
-        net.sendCtrl({ t: 'hello', proto: G.Net.PROTO, name: this.name, token, v: G.VERSION, parts: 1 });
+        net.sendCtrl({ t: 'hello', proto: G.Net.PROTO, name: this.name, token, v: G.VERSION, parts: 1, sp: 1, sd: 1 }); // (sp: compact snapshots - hostrace.js _compact; sd: the room as changes - _sendState)
       }).catch((e) => {
         offCtrl();
         net.close();
@@ -633,11 +733,45 @@
       }
     },
 
+    // a copy of `base` with the change m.d applied, if it comes out exactly as
+    // the host's (m.h); null if not
+    _patched(base, m) {
+      try {
+        const s = NP.patch(U.deepClone(base), m.d);
+        return NP.chash(s) === m.h ? s : null;
+      } catch (e) {
+        return null;
+      }
+    },
+    _askResync(heir) {
+      const now = performance.now();
+      if (now - (this._rsAsk || -1e9) < 2000 || !this.net) return;
+      this._rsAsk = now;
+      this.resyncs = (this.resyncs || 0) + 1;
+      if (G.NetDiag) G.NetDiag.note(heir ? 'Asked the host again for the backup copy of the room' : 'Asked the host again for the whole room');
+      this.net.sendCtrl(heir ? { t: 'resync', h: 1 } : { t: 'resync' });
+    },
+
     _onCtrl(m) {
       if (m.t.slice(0, 4) === 'ops_') return G.Ops && G.Ops.onMsg(m);
       if (m.t === 'heir') {
         // I'm next in line to host: keep the full state in case the host drops
-        this.heirPkg = { s: m.s, code: m.code, at: Date.now() };
+        this.heirPkg = { s: m.s, code: m.code, at: Date.now(), n: m.n };
+        return;
+      }
+      if (m.t === 'hd') {
+        // v5.5.6: what changed in it (host: _sendHeirs)
+        const H = this.heirPkg, s = H && H.n === m.b ? this._patched(H.s, m) : null;
+        if (!s) return this._askResync(true);
+        this.heirPkg = { s, code: m.code, at: Date.now(), n: m.n };
+        return;
+      }
+      if (m.t === 'sd') {
+        // v5.5.6: what changed in the room (host: _sendState)
+        const cur = G.Client.state, s = cur && cur.seq === m.b ? this._patched(cur, m) : null;
+        if (!s) return this._askResync(false);
+        this._gotState = true;
+        G.Client._state(s);
         return;
       }
       if (m.t === 'migrate') return this._lost('host-left'); // the host is leaving on purpose: hand over now
@@ -893,6 +1027,23 @@
         if (app.hud.root.style.display !== 'none') {
           app.hud.show(false);
           app.hud.clearTags();
+        }
+        // v5.5.6: build the next race's track now, a little each frame
+        // (world.js prepareTrack), not all at once when the race starts; the
+        // host also works out its bots' racing line for it (trackbuild.js)
+        const nid = st.phase !== 'final' && st.schedule && st.schedule[st.raceNo];
+        // (on the results screen the garage's Proving Ground comes first: the
+        // garage opens next and it is kept once built; the next race's track
+        // has the whole garage time after that)
+        if (st.phase === 'results' && !app.world.hasTrack('proving')) app.world.prepareTrack(G.getTrack('proving'));
+        else if (nid) {
+          const tr = G.getTrack(nid);
+          app.world.prepareTrack(tr, this.role === 'host' ? () => tr.racingLine() : null);
+          // ...and once it is built, the betting board's background race
+          // moves onto it: its first draw (the graphics card setting up its
+          // shaders, a one-off few hundred ms on a Chromebook) happens here
+          // rather than on the grid, and the race then starts on it as it is
+          if (st.phase === 'betting' && tr.format !== 'drag' && app.world.track && app.world.track !== tr && app.world.prepReady(nid) && G.UI.curName !== 'garage') app.startAttract(tr);
         }
         if (G.UI.curName === 'garage') G.Preview.update(dt); // intermission, or tune/paint before race 1
         else {

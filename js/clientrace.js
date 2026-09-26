@@ -166,6 +166,18 @@
         this.stats.snapsDropped++;
         return; // arrived out of order: we already have something newer
       }
+      // v5.5.6 compact snapshot (hostrace.js _compact): the same numbers,
+      // packed. A car sent no data this time is null in m.cr (see below).
+      if (m.sp) {
+        try {
+          m.cr = NP.unpackRows(m.cb, this.rs.length, NP.FAST_M);
+          if (m.sb) m.sl = NP.unpackRows(m.sb, this.rs.length, NP.SLOW_M);
+          if (m.mb) m.me = NP.unpackMe(m.mb, NP.FULL_LEN);
+        } catch (e) {
+          this.stats.snapsDropped++;
+          return;
+        }
+      }
       this.lastK = m.k;
       this.stats.snaps++;
       const now = performance.now();
@@ -181,7 +193,25 @@
       for (const q of this.osamp) if (q.s > mx) mx = q.s;
       if (this.offset == null || mx > this.offset) this.offset = mx;
       else this.offset += (mx - this.offset) * 0.08;
-      this.snaps.push({ ts: m.ts, c: m.c, rt: now, k: m.k });
+      // A far car that got no data this time: keep the last one we had, and
+      // WHEN it was taken (cts), so it is guessed forward from its own time
+      // and doesn't jump back.
+      let c = m.c, cts = null;
+      if (m.sp) {
+        const prev = this.snaps.length ? this.snaps[this.snaps.length - 1] : null;
+        c = new Array(m.cr.length);
+        cts = new Array(m.cr.length);
+        for (let j = 0; j < c.length; j++) {
+          if (m.cr[j]) {
+            c[j] = m.cr[j];
+            cts[j] = m.ts;
+          } else if (prev && prev.c[j]) {
+            c[j] = prev.c[j];
+            cts[j] = prev.cts ? prev.cts[j] : prev.ts;
+          } else c[j] = null; // (not heard of yet: it stays where it is)
+        }
+      }
+      this.snaps.push({ ts: m.ts, c, cts, rt: now, k: m.k });
       while (this.snaps.length > 3 && this.snaps[0].ts < m.ts - KEEP_MS) this.snaps.shift();
       if (m.sl) {
         this.slow = m.sl.map(NP.unpackSlow);
@@ -315,7 +345,8 @@
       // from the host's clock the target moves smoothly, and a late snapshot
       // is simply guessed further.
       const hNow = now + (this.offset || 0);
-      const leadOf = (snap) => Math.min(Math.min(Math.max(0, hNow - snap.ts), STALE_MS) + rttL, LEAD_TOTAL) / 1000;
+      // (j: that car's own time in a thinned snapshot - see onSnap)
+      const leadOf = (snap, j) => Math.min(Math.min(Math.max(0, hNow - (snap.cts && j != null ? snap.cts[j] : snap.ts)), STALE_MS) + rttL, LEAD_TOTAL) / 1000;
       const lead = leadOf(A);
       this.lead = lead;
       const kAl = Math.exp(-dt / EASE_TAU), kLat = Math.exp(-dt / EASE_LAT_TAU);
@@ -323,9 +354,10 @@
       for (let j = 0; j < this.rs.length; j++) {
         if (j === this.meIdx) continue;
         const o = this.rs[j];
+        if (!A.c[j]) continue;
         NP.unpackFast(A.c[j], o);
         const E = this.ease[j];
-        this._guess(o, lead, E, T);
+        this._guess(o, A.cts ? leadOf(A, j) : lead, E, T);
         const tx = T.x, tz = T.z, th = T.h;
         o.vx = T.vx;
         o.vz = T.vz;
@@ -352,12 +384,12 @@
         // car stood still for one frame each time a snapshot landed.
         if (E.k !== A.k) {
           let bx = E.x, bz = E.z, bh = E.h;
-          if (E.has && E.base && E.base !== A) {
+          if (E.has && E.base && E.base !== A && E.base.c[j]) {
             const B = this._pjOld || (this._pjOld = { slip: [0, 0, 0, 0], surf: [0, 0, 0, 0] });
             NP.unpackFast(E.base.c[j], B);
             const T2 = this._pj2 || (this._pj2 = { x: 0, z: 0, h: 0, vx: 0, vz: 0, hint: -1 });
             T2.hint = E.hint;
-            this._guess(B, leadOf(E.base), T2, T2);
+            this._guess(B, leadOf(E.base, j), T2, T2);
             bx = T2.x + E.ox;
             bz = T2.z + E.oz;
             bh = U.wrapAngle(T2.h + E.oh);

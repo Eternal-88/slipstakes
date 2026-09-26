@@ -53,6 +53,7 @@
   const CATCHUP = 1.0; // s of host hitch simulated afterwards instead of dropped (six cars ≈ 3 ms per simulated second on a desktop, ~10x that on a Chromebook)
   const STALE = 30; // ticks (0.25 s) of missing input before a stand-in bot takes the wheel
   const HOLD_MAX = 8; // s the countdown will wait for slow loaders
+  const FAR_M = 160, FAR_EVERY = 3; // v5.5.6: cars further than this from yours come every 3rd snapshot (_compact)
   const BRAKE = { s: 0, t: 0, b: 1, hb: 1 }; // "park": brake + handbrake never engages reverse
 
   class HostRace {
@@ -213,7 +214,7 @@
         t: 's', no: this.no, k: sim.tick, ts: Math.round(performance.now() * 10) / 10, // (0.1 ms is plenty; the raw clock was 16 digits a packet)
         ph: NP.PH[sim.phase], cd: Math.max(0, +sim.countdown.toFixed(3)),
         rt: sim.raceStartT != null ? +(sim.t - sim.raceStartT).toFixed(3) : 0,
-        c: sim.cars.map(NP.packFast),
+        c: (this._packed = sim.cars.map(NP.packFast)),
       };
       if (this.snapN % 4 === 0) base.sl = sim.cars.map((c) => NP.packSlow(c, sim));
       if (sim.holdN) base.hw = sim.holdN; // countdown held: this many racers still loading
@@ -225,13 +226,57 @@
         if (!base.sl && this.snapN % 3 === 0 && relay && relay.route(pid) === 'relay') continue;
         const c = sim.byId[pid];
         let msg = base;
-        if (c) {
+        if (this.net.cap && this.net.cap(pid, 'sp')) msg = this._compact(pid, c, base);
+        else if (c) {
           const I = this.inputs[pid];
           msg = Object.assign({}, base, { me: NP.packFull(c.st), ack: I ? I.seq : -1, at: I ? I.ticks : 0 });
         }
         this.net.sendFast(pid, msg);
         this.stats.snaps++;
       }
+    }
+
+    // v5.5.6: the same snapshot, compact, for a game that says sp (net.js
+    // cap). The numbers go packed (netpack.js packRows: exactly the same
+    // values, well under half the bytes), and a racer gets the cars near
+    // their own every time but the ones further than FAR_M away only every
+    // FAR_EVERY-th time (a 0 bit in cb; clientrace.js keeps the last one and
+    // when it was taken). A car that far off can't touch you, can't be heard
+    // and is a speck on screen. Before the start, once you've finished (you
+    // watch the others) and as a spectator, you get everyone every time.
+    _compact(pid, me, base) {
+      const sim = this.sim, cars = sim.cars;
+      if (this._rowsN !== this.snapN) {
+        this._rowsN = this.snapN;
+        this._rows = this._packed.map((a) => NP.rowBytes(a, NP.FAST_M));
+        this._slowB = base.sl ? NP.packRows(base.sl.map((a) => NP.rowBytes(a, NP.SLOW_M))) : null;
+      }
+      const msg = { t: 's', no: base.no, k: base.k, ts: base.ts, ph: base.ph, cd: base.cd, rt: base.rt, sp: 1 };
+      if (base.hw) msg.hw = base.hw;
+      if (this._slowB) msg.sb = this._slowB;
+      let rows = this._rows;
+      if (me && sim.phase === 'race' && !me.finished && !me.dnf) {
+        const seen = this.farAt || (this.farAt = new Map());
+        let last = seen.get(pid);
+        if (!last || last.length !== cars.length) seen.set(pid, (last = new Int32Array(cars.length).fill(-1e6)));
+        rows = new Array(cars.length);
+        for (let j = 0; j < cars.length; j++) {
+          const o = cars[j], dx = o.st.x - me.st.x, dz = o.st.z - me.st.z;
+          if (o === me || dx * dx + dz * dz < FAR_M * FAR_M || this.snapN - last[j] >= FAR_EVERY) {
+            rows[j] = this._rows[j];
+            last[j] = this.snapN;
+          } else rows[j] = 0;
+        }
+      }
+      msg.cb = NP.packRows(rows);
+      if (me) {
+        const I = this.inputs[pid], full = NP.packFull(me.st), mb = NP.packMe(full);
+        if (mb) msg.mb = mb;
+        else msg.me = full;
+        msg.ack = I ? I.seq : -1;
+        msg.at = I ? I.ticks : 0;
+      }
+      return msg;
     }
   }
 

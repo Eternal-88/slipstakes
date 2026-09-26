@@ -32,7 +32,7 @@
 (function (G) {
   const U = G.U;
   const PREFIX = 'slipstakes-v1-';
-  const PROTO = 11; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup; 7: v4.4 private-room asks via the list, "room closed"; 8: v5 fuel/tyre/pit state in snapshots, stops, weather + endurance race info; 9: v5.1 car physics and parts changed, and the schedule says which races are endurance races; 10: v5.3 revCut joins the car's core state, so the full-state packet is a field longer; 11: v5.3.3 aero is sized to the car and the Mule's power changed - an old client would predict its own car against different numbers)
+  const PROTO = 12; // bump when message formats change; mismatched clients are rejected (4: tuning/looks, brake temp; 5: v4 nitrous input, slipstream/catch-up state, 4-bit surfaces; 6: v4.3 join requests, host migration, traction control in the setup; 7: v4.4 private-room asks via the list, "room closed"; 8: v5 fuel/tyre/pit state in snapshots, stops, weather + endurance race info; 9: v5.1 car physics and parts changed, and the schedule says which races are endurance races; 10: v5.3 revCut joins the car's core state, so the full-state packet is a field longer; 11: v5.3.3 aero is sized to the car and the Mule's power changed - an old client would predict its own car against different numbers; 12: v5.5.6 the Sting's power and Serpent Pass's last rockfall moved - the same again)
   // ICE servers: how two devices find a path to each other.
   //  * STUN tells each device its public address so a direct path can be
   //    punched through both networks' routers.
@@ -303,13 +303,16 @@
         }
         if (d.t === 'hello') {
           if (d.proto !== PROTO) {
-            this._sendRaw(L.ctrl, { t: 'reject', reason: 'Version mismatch — reload the page.' });
+            // (v5.5.6: with our version, so their game can say who should reload)
+            this._sendRaw(L.ctrl, { t: 'reject', reason: 'Version mismatch — reload the page.', proto: PROTO, v: G.VERSION });
             return;
           }
           // v5.5.5: which version they run, and whether they can take a big
           // message in parts (5.5.4 and older can't)
           L.parts = !!d.parts;
           L.ver = typeof d.v === 'string' ? d.v.slice(0, 12) : '';
+          // v5.5.6: what else their game understands (see cap())
+          L.caps = { sp: d.sp === 1, sd: d.sd === 1 };
           this.emit('hello', L, d); // game layer answers with bind()+welcome or reject
           return;
         }
@@ -389,6 +392,13 @@
     }
     connectedPids() {
       return Array.from(this.byPid.keys());
+    }
+    // v5.5.6: does this player's game take sp (snapshots that send far cars
+    // less often, hostrace.js) / sd (room state as changes, game.js)? Older
+    // games don't say, and get what they always got.
+    cap(pid, k) {
+      const L = this.byPid.get(pid);
+      return !!(L && L.caps && L.caps[k]);
     }
     rtt(pid) {
       const L = this.byPid.get(pid);

@@ -80,5 +80,170 @@
     return st;
   }
 
-  G.NetPack = { packFast, unpackFast, packSlow, unpackSlow, packFull, unpackFull, PH, PH_NAMES };
+  // ---- v5.5.6 compact snapshots (hostrace.js, for games that say sp) -----
+  // Every number above is already rounded to its own unit (cm, mrad, ...),
+  // so each one goes as a whole number of those units - a zigzag varint, one
+  // to three bytes for most - and the lot as base64 text. The far end divides
+  // back and gets exactly the numbers the JSON carried, in well under half
+  // the bytes (a car's FAST array: ~82 characters of JSON, ~36 here).
+  const FAST_M = [100, 100, 1000, 100, 100, 1000, 1000, 10, 10, 100, 1, 100, 100, 1, 1, 1, 10];
+  const SLOW_M = [1, 1, 1, 1, 1, 1, 1, 1000, 1000, 1000, 1, 1];
+  const FULL_M = 1e4; // (packFull's q4; the hint is a whole number anyway)
+  function putV(out, v) {
+    let z = Number.isFinite(v) ? Math.round(v) : 0;
+    z = z >= 0 ? z * 2 : -z * 2 - 1; // (arithmetic, not bit ops: odometers pass 2^31 in 1e-4 m)
+    while (z >= 128) {
+      out.push((z % 128) | 128);
+      z = Math.floor(z / 128);
+    }
+    out.push(z);
+  }
+  function getV(b, p) {
+    let z = 0, mul = 1, c;
+    do {
+      if (p.i >= b.length) throw new Error('short');
+      c = b.charCodeAt(p.i++);
+      z += (c & 127) * mul;
+      mul *= 128;
+    } while (c & 128);
+    return z % 2 ? -(z + 1) / 2 : z / 2;
+  }
+  const b64 = (bytes) => {
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 4096) s += String.fromCharCode.apply(null, bytes.slice(i, i + 4096));
+    return btoa(s);
+  };
+  // one row of numbers in its units -> bytes (cached per snapshot by the host)
+  function rowBytes(a, M) {
+    const out = [];
+    for (let i = 0; i < M.length; i++) putV(out, a[i] * M[i]);
+    return out;
+  }
+  // rows: byte arrays (rowBytes) or 0 for "not this time"; one bit per row says which
+  function packRows(rows) {
+    const out = [];
+    for (let i = 0; i < rows.length; i += 8) {
+      let m = 0;
+      for (let k = 0; k < 8 && i + k < rows.length; k++) if (rows[i + k]) m |= 1 << k;
+      out.push(m);
+    }
+    for (const r of rows) if (r) for (let i = 0; i < r.length; i++) out.push(r[i]);
+    return b64(out);
+  }
+  // -> n rows of numbers (null where the host sent none); throws on junk
+  function unpackRows(str, n, M) {
+    if (typeof str !== 'string' || n < 0 || n > 64) throw new Error('bad');
+    const b = atob(str), p = { i: Math.ceil(n / 8) }, rows = new Array(n);
+    if (b.length < p.i) throw new Error('short');
+    for (let j = 0; j < n; j++) {
+      if (!(b.charCodeAt(j >> 3) & (1 << (j & 7)))) {
+        rows[j] = null;
+        continue;
+      }
+      const a = new Array(M.length);
+      for (let i = 0; i < M.length; i++) a[i] = getV(b, p) / M[i];
+      rows[j] = a;
+    }
+    return rows;
+  }
+  // FULL core state: only when every entry is a plain number (else null: send JSON)
+  function packMe(a) {
+    const out = [];
+    for (let i = 0; i < a.length; i++) {
+      if (typeof a[i] !== 'number' || !Number.isFinite(a[i])) return null;
+      putV(out, a[i] * FULL_M);
+    }
+    return b64(out);
+  }
+  function unpackMe(str, n) {
+    const b = atob(str), p = { i: 0 }, a = new Array(n);
+    for (let i = 0; i < n; i++) a[i] = getV(b, p) / FULL_M;
+    return a;
+  }
+
+  // ---- v5.5.6 room state as changes (game.js, for games that say sd) -----
+  // diff(a, b) -> a patch that turns a copy of a into b, or undefined when
+  // they are the same. Plain JSON data only (the room state is). A patch is
+  //   {r: v}                 replace with v
+  //   {o: {k: patch}, d: [k]} an object's (or same-length array's) changed / gone keys
+  //   {x: n, a: [...]}       an array with n items gone from the front and
+  //                          these added at the end (the chat log)
+  const isObj = (v) => v !== null && typeof v === 'object';
+  function eq(a, b) {
+    if (a === b) return true;
+    if (!isObj(a) || !isObj(b) || Array.isArray(a) !== Array.isArray(b)) return false;
+    const ka = Object.keys(a), kb = Object.keys(b);
+    if (ka.length !== kb.length) return false;
+    for (const k of ka) if (!(k in b) || !eq(a[k], b[k])) return false;
+    return true;
+  }
+  function diff(a, b) {
+    if (a === b) return undefined;
+    if (!isObj(a) || !isObj(b) || Array.isArray(a) !== Array.isArray(b)) return eq(a, b) ? undefined : { r: b };
+    if (Array.isArray(a) && a.length !== b.length) {
+      // the chat pattern: the oldest lines scrolled off, new ones on the end
+      for (let x = 0; x <= a.length && a.length - x <= b.length; x++) {
+        let ok = true;
+        for (let i = x; i < a.length && ok; i++) ok = eq(a[i], b[i - x]);
+        if (ok) return a.length - x || !b.length ? { x, a: b.slice(a.length - x) } : { r: b };
+      }
+      return { r: b };
+    }
+    let o = null, d = null;
+    for (const k of Object.keys(b)) {
+      const p = k in a ? diff(a[k], b[k]) : { r: b[k] };
+      if (p) (o || (o = {}))[k] = p;
+    }
+    if (!Array.isArray(a)) for (const k of Object.keys(a)) if (!(k in b)) (d || (d = [])).push(k);
+    if (!o && !d) return undefined;
+    const n = {};
+    if (o) n.o = o;
+    if (d) n.d = d;
+    return n;
+  }
+  // apply a patch to t (changed in place where it can be); returns the result
+  function patch(t, n) {
+    if (!isObj(n)) throw new Error('bad patch');
+    if ('r' in n) return n.r;
+    if (!isObj(t)) throw new Error('patch misses');
+    if (n.x != null || n.a) {
+      if (!Array.isArray(t) || n.x > t.length) throw new Error('patch misses');
+      if (n.x) t.splice(0, n.x);
+      if (n.a) for (const v of n.a) t.push(v);
+    }
+    if (n.o) for (const k in n.o) t[k] = patch(t[k], n.o[k]);
+    if (n.d) for (const k of n.d) delete t[k];
+    return t;
+  }
+  // a fingerprint of the data whatever order its keys are in: the far end
+  // checks its patched copy against it, and asks for the whole thing again
+  // if they differ
+  function chash(v) {
+    let h = 2166136261;
+    const mix = (s) => {
+      for (let i = 0; i < s.length; i++) {
+        h ^= s.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+    };
+    const walk = (x) => {
+      if (Array.isArray(x)) {
+        mix('[');
+        for (const y of x) walk(y);
+        mix(']');
+      } else if (isObj(x)) {
+        mix('{');
+        for (const k of Object.keys(x).sort()) {
+          mix(k + ':');
+          walk(x[k]);
+        }
+        mix('}');
+      } else mix(typeof x === 'string' ? '"' + x : String(x));
+      mix(',');
+    };
+    walk(v);
+    return h >>> 0;
+  }
+
+  G.NetPack = { packFast, unpackFast, packSlow, unpackSlow, packFull, unpackFull, PH, PH_NAMES, FAST_M, SLOW_M, rowBytes, packRows, unpackRows, packMe, unpackMe, FULL_LEN: P.CORE.length + 5, diff, patch, chash };
 })(window.G);

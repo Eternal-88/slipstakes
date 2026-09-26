@@ -207,6 +207,7 @@
       this.paused = false;
       this.hud.show(false);
       this.hud.clearTags();
+      this.world.dropPrep(); // (a next race that won't happen now)
       if (!this.attract || this.world.track !== this.attract.track) this.startAttract();
       G.UI.show('menu', arg);
     },
@@ -216,11 +217,19 @@
     // build a random new one: after every race, and on entering a room -
     // a freeze of a second or more on a Chromebook each time, at the very
     // moments a connection is most fragile.
-    startAttract() {
+    // (want: a particular track - game.js moves the betting board onto the next race's)
+    startAttract(want) {
       const cur = this.world.track;
-      const reuse = cur && cur.id !== 'proving' && cur.format !== 'drag';
+      const reuse = !want && cur && cur.id !== 'proving' && cur.format !== 'drag';
       const ids = G.TrackDefs.ROTATION.filter((id) => G.getTrack(id).format !== 'drag');
-      const track = reuse ? cur : G.getTrack(ids[Math.floor(Math.random() * ids.length)]);
+      // v5.5.6: in a room, coming out of the garage, the background race runs
+      // on the NEXT race's track - already built in the garage (world.js
+      // prepareTrack), so no freeze here, and the race then starts on it
+      // with nothing left to build. (It used to build a random track here:
+      // up to half a second on a Chromebook, every round.)
+      const st = G.Game.role && G.Client.state, nid = st && st.phase !== 'final' && st.schedule && st.schedule[st.raceNo];
+      const next = !reuse && nid ? G.getTrack(nid) : null;
+      const track = want || (reuse ? cur : next && next.format !== 'drag' ? next : G.getTrack(ids[Math.floor(Math.random() * ids.length)]));
       if (!reuse) this.world.loadTrack(track);
       const ents = [];
       for (let k = 0; k < 6; k++) ents.push({ id: 'a' + k, name: G.BOT_NAMES[k], carId: G.Parts.CAR_ORDER[k % 4], color: G.CarModel.PALETTE[k], parts: ATTRACT_BUILDS[k], wear: {}, look: botLook('a' + k), bot: { skill: 0.86 + 0.025 * k } });
@@ -611,6 +620,7 @@
         G.Audio.silenceOthers();
       }
       this.world.render(dt);
+      if (this.mode !== 'drive') this.world.pumpPrep(4); // (the next race's track: world.js prepareTrack; not while you drive)
       G.Input.endFrame();
     },
 

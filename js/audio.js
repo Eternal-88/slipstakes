@@ -114,9 +114,20 @@
     let loud = ex.loud * strip;
     let drone = ex.drone;
     // ---- sound tuning (free, cosmetic)
-    if (L.tone === 'deep') { sub *= 1.5; rasp *= 0.7; drone += 0.2; }
-    else if (L.tone === 'rasp') { rasp *= 1.55; sub *= 0.75; }
-    else if (L.tone === 'loud') { loud *= 1.3; rasp *= 1.15; sub *= 1.15; }
+    // v5.5.6: each one now moves what you would actually notice on a real
+    // car, by enough to hear it (tools/harness/soundlab.py measures them).
+    // Before, Deep / Raspy / Standard nudged a few gains that the filter
+    // after them mostly undid: they measured within 13 Hz of each other.
+    //   deep : a resonated, big-bore note - the filter closes right down, the
+    //          pipe rings an octave lower and harder, the half-order and the
+    //          drone come up, less combustion hiss
+    //   rasp : a hard, tinny note - the filter opens, the ring moves up, much
+    //          more distortion and combustion grit, less bass
+    //   loud : the same note, louder and freer everywhere (and on the overrun)
+    let cutK = 1, resK = 1, resG = 0, gritK = 1, noiseK = 1;
+    if (L.tone === 'deep') { sub *= 2.2; rasp *= 0.6; drone += 0.35; cutK = 0.6; resK = 0.58; resG = 5; gritK = 0.5; noiseK = 0.7; }
+    else if (L.tone === 'rasp') { rasp *= 2.3; sub *= 0.5; cutK = 1.6; resK = 1.75; resG = 3; gritK = 1.8; noiseK = 1.4; }
+    else if (L.tone === 'loud') { loud *= 1.45; rasp *= 1.15; sub *= 1.2; cutK = 1.18; resG = 2; gritK = 1.3; }
 
     let pops = Math.max(G.Parts.opt('exhaust', p.exhaust).pops || 0, p.ecu === 'stage2' ? 0.5 : 0);
     let bang = 0, burble = 0, crackle = 0;
@@ -132,7 +143,8 @@
     // nothing at all on the roadster, the mid-engine car or the EV.
     const lopeAbs = (prof.lope || 0) * lope + (L.idle === 'lope' ? 0.26 : 0);
     return {
-      loud, rasp, q: ex.q, cut: ex.cut, drone, sub, lope, lopeAbs,
+      loud, rasp, q: ex.q, cut: ex.cut, drone, sub, lope, lopeAbs, cutK, resK, resG, gritK, noiseK,
+      lopeCam: L.idle === 'lope', quiet: L.over === 'quiet',
       road: { w1: 1.3, w2: 1.6, w3: 2 }[p.weight] || 1,
       pops, bang, burble, crackle,
       bov: L.bov || 'stock',
@@ -661,31 +673,73 @@
       }
       e.f.Q.setTargetAtTime(ms.q, t, 0.1);
       e.g2.gain.setTargetAtTime(prof.sub * 0.5 * ms.sub, t, 0.1);
+      this._fxProf = prof; // (the overrun / valve one-shots are voiced for this engine)
       // firing frequency: crank revs per second * cylinders/2
       const crank = (rpm * car.redline) / 60;
       let f0 = crank * (prof.cyl / 2);
       if (prof.ev) f0 = 90 + crank * 3.2; // v5 EV: the motor's electrical order, climbing with speed
       // v4.5: a real idle hunts a little instead of sitting on one pitch
       if (rpm < 0.3) f0 *= 1 + (0.3 - rpm) * (Math.sin(this._limT * 2.3) * 0.05 + Math.sin(this._limT * 6.1) * 0.025);
+      // v5.5.6 lopey cam: an idle that goes "lump-lump-lump" - the note sags
+      // and drops in pitch once every third turn of the crank (3-6 times a
+      // second at idle; slower than a V8's own burble, so it is heard on top
+      // of it), by a different amount each time, then picks up again. It
+      // fades out as the revs come up.
+      let chop = 1;
+      if (ms.lopeCam && !prof.ev && rpm < 0.36 && thr < 0.35) {
+        this._lopePh = (this._lopePh || 0) + dt * (crank / 3);
+        if (this._lopePh >= 1) {
+          this._lopePh %= 1;
+          this._lopeK = 0.15 + Math.random() * 0.35;
+        }
+        const w = U.clamp((0.36 - rpm) / 0.14, 0, 1);
+        const dip = this._lopePh < 0.6 ? Math.sin((this._lopePh / 0.6) * Math.PI) : 0;
+        chop = 1 - w * dip * (1 - (this._lopeK || 0.4));
+        f0 *= 1 - w * dip * 0.08;
+      }
+      // v5.5.6 rev limiter, soft and hard now different things (they were the
+      // same 15 Hz wobble at two depths):
+      //   soft : fuel trim - a smooth "wah-wah" about 7 times a second, the
+      //          note hovering just under the limit
+      //   hard : ignition cut - dead-silent gaps about 11 times a second, the
+      //          note dropping in each gap and snapping back ("brap-brap"),
+      //          and a spit in the pipe on the cut if it flows
+      this._limT += dt;
+      let limG = 1;
+      if (rpm > 0.985 && thr > 0.5 && rs.gear > 0 && !prof.ev) {
+        if (ms.limHard) {
+          const cut = (this._limT * 11) % 1 < 0.42;
+          if (cut) {
+            limG = 0.02;
+            f0 *= 0.95;
+            if (!this._limCut && ms.pops > 0) this.snap(master * (0.35 + Math.random() * 0.3), prof);
+          }
+          this._limCut = cut;
+        } else {
+          const w = 0.5 + 0.5 * Math.sin(this._limT * 2 * Math.PI * 7);
+          limG = 0.5 + 0.5 * w;
+          f0 *= 0.991 + 0.009 * w;
+        }
+      }
       e.o1.frequency.setTargetAtTime(f0, t, 0.025);
       e.o2.frequency.setTargetAtTime(f0 * 0.5, t, 0.025);
       e.o3.frequency.setTargetAtTime(f0 * 2, t, 0.025);
       e.lfo.frequency.setTargetAtTime(f0 / (prof.lopeDiv || 4), t, 0.05);
       const loud = ms.loud;
-      e.f.frequency.setTargetAtTime((350 + rpm * 2300 * prof.cut + thr * 1300) * ms.cut, t, 0.04);
+      e.f.frequency.setTargetAtTime((350 + rpm * 2300 * prof.cut + thr * 1300) * ms.cut * ms.cutK, t, 0.04);
       const over = thr < 0.1 && rpm > 0.3; // lifted at speed: the overrun
-      let g = (0.04 + thr * 0.075) * loud * master * (rs.nosOn ? 1.25 : 1) * (over ? 0.8 : 1);
+      let g = (0.04 + thr * 0.075) * loud * master * (rs.nosOn ? 1.25 : 1) * (over ? (ms.quiet ? 0.55 : 0.8) : 1) * chop * limG * (this._gurgle || 1);
       // v4.5 combustion rasp (see _startEngine): gritty under load, a softer
       // burble on the overrun; stronger for rougher engines and freer pipes
-      const grit = prof.ev ? 0 : Math.min(1.6, (prof.grit == null ? 1 : prof.grit) * ms.rasp); // (v5: an EV has no combustion to rasp)
-      const rl = (0.14 + thr * 0.46 + (over ? 0.16 * ms.lope + ms.lopeAbs * 0.5 : 0)) * (0.4 + 0.6 * rpm) * grit;
+      const grit = prof.ev ? 0 : Math.min(1.6, (prof.grit == null ? 1 : prof.grit) * ms.rasp) * ms.gritK; // (v5: an EV has no combustion to rasp)
+      const rl = (0.14 + thr * 0.46 + (over ? (0.16 * ms.lope + ms.lopeAbs * 0.5) * (ms.quiet ? 0.3 : 1) : 0)) * (0.4 + 0.6 * rpm) * grit * chop * limG;
       e.cng.gain.setTargetAtTime(rl * 0.5, t, 0.04);
       e.amg.gain.setTargetAtTime(rl * 0.5, t, 0.04);
       e.am.frequency.setTargetAtTime(f0, t, 0.025);
-      e.cnf.frequency.setTargetAtTime(650 + rpm * 2400 * prof.cut + thr * 700, t, 0.05);
+      e.cnf.frequency.setTargetAtTime((650 + rpm * 2400 * prof.cut + thr * 700) * ms.noiseK, t, 0.05);
       // exhaust body: a freer pipe rings higher and harder
-      e.pk.frequency.setTargetAtTime((prof.res || 400) * (ms.q > 3 ? 1.15 : ms.q > 2 ? 1.05 : 0.9), t, 0.2);
-      e.pk.gain.setTargetAtTime(2.5 + ms.q * 1.1, t, 0.2);
+      e.pk.frequency.setTargetAtTime((prof.res || 400) * (ms.q > 3 ? 1.15 : ms.q > 2 ? 1.05 : 0.9) * ms.resK, t, 0.2);
+      e.pk.gain.setTargetAtTime(2.5 + ms.q * 1.1 + ms.resG, t, 0.2);
       // exhaust drone: a resonant band that follows the firing frequency,
       // strongest at part throttle / cruise (that's when a sport exhaust booms)
       e.dr.frequency.setTargetAtTime(f0 * 1.02, t, 0.05);
@@ -699,9 +753,7 @@
       // nitrous: a sharp "pssht" as it opens
       if (rs.nosOn && !this._nos) this.noiseHit(0.35, 2500, 0.14 * master, 'highpass', 'sfx', 0, 5000);
       this._nos = !!rs.nosOn;
-      // rev limiter: fuel-cut stutter (a race map bounces off it harder)
-      this._limT += dt;
-      if (rpm > 0.985 && thr > 0.5 && rs.gear > 0) g *= Math.sin(this._limT * 95) > 0 ? 1 : ms.limHard ? 0.08 : 0.25;
+      // (rev limiter: see above - v5.5.6)
       // shift: brief dip + click; boost dump on a turbo = blow-off
       if (rs.gear !== this._lastGear) {
         if (rs.gear > this._lastGear && this._lastGear > 0) {
@@ -712,7 +764,9 @@
         }
         this._lastGear = rs.gear;
       }
-      e.amp.gain.setTargetAtTime(g, t, 0.03);
+      // (a lope or a limiter cut has to land within a frame, or the 30 ms
+      // smoothing turns it back into a gentle wobble)
+      e.amp.gain.setTargetAtTime(g, t, chop < 1 || limG < 1 ? 0.005 : 0.03);
       e.lfoG.gain.setTargetAtTime(g * ms.lopeAbs, t, 0.05);
       // Forced induction — deliberately different characters:
       //  supercharger: whine LOCKED to engine speed (it's belt-driven), there
@@ -749,7 +803,16 @@
       const scg = kind === 'sc' ? (0.018 + thr * 0.062) * (0.3 + 0.7 * rpm) * master : 0;
       e.swg.gain.setTargetAtTime(scg, t, 0.03);
       e.sw2g.gain.setTargetAtTime(scg * 0.5, t, 0.03);
-      if (kind === 'turbo' && this._lastBoost > 0.45 && b < 0.25) this.bov(ms.bov, big, master);
+      // v5.5.6: the valve opens when you LIFT with boost up - the throttle
+      // closing is what makes a real one blow. It used to wait for boost to
+      // fall from 0.45 to 0.25 inside one frame, which it never does (it
+      // decays over a tenth of a second): the valve you picked was never
+      // heard at all, in the race or in the garage.
+      this._bPk = Math.max(b, (this._bPk || 0) * Math.exp(-dt / 0.35));
+      if (kind === 'turbo' && this._lastThr > 0.45 && thr < 0.15 && this._bPk > 0.28 && performance.now() - (this._bovT || 0) > 350) {
+        this._bovT = performance.now();
+        this.bov(ms.bov, big, master * (0.55 + 0.45 * Math.min(1, this._bPk)), null, prof);
+      }
       if (kind === 'sc' && this._lastThr > 0.6 && thr < 0.15 && rpm > 0.4) this.noiseHit(0.3, 1800, 0.08 * master, 'bandpass', 'sfx', 0, 600, 0.8);
       this._lastBoost = b;
       // overrun crackle (free-flowing exhausts), backfire pops on shifts
@@ -757,7 +820,7 @@
       const lifting = this._lastThr > 0.6 && thr < 0.15 && rpm > 0.5;
       if (lifting) this._ovT = performance.now(); // an overrun starts HERE and is over in a couple of seconds
       if (thr > 0.25) this._ovT = 0; // back on the throttle: it is over now
-      if (lifting && pops > 0) (ms.bang ? this.bangBurst(master) : this.crackle(pops, master, ms.crackle));
+      if (lifting && pops > 0 && !ms.crackle && !ms.burble) (ms.bang ? this.bangBurst(master, null, prof) : this.crackle(pops, master, false, null, prof));
       // SUSTAINED backfire (anti-lag keeps the flag up for as long as you are
       // off the throttle) cracks repeatedly while it lasts. The old edge test
       // gave a whole overrun of flames exactly one pop.
@@ -773,8 +836,8 @@
         if (now - (this._bfT || 0) > gap * (0.55 + Math.random() * 0.9)) {
           this._bfT = now;
           const amp = master * (0.32 + Math.random() * 0.68) * (0.45 + rpm * 0.55);
-          if (Math.random() < 0.22 + rpm * 0.3) this.bang(amp);
-          else this.pop(amp * 1.15);
+          if (Math.random() < 0.22 + rpm * 0.3) this.bang(amp, null, prof);
+          else this.pop(amp * 1.15, null, prof);
         }
       }
       this._bf = rs.backfire > 0;
@@ -792,15 +855,37 @@
         if (now - (this._bgT || 0) > gap * (0.6 + Math.random() * 1.1)) {
           this._bgT = now;
           const amp = master * (0.4 + Math.random() * 0.6) * (0.4 + rpm * 0.6) * (0.45 + 0.55 * fade);
-          if (Math.random() < 0.45 * fade) this.bang(amp);
-          else this.pop(amp * 1.2);
+          if (Math.random() < 0.45 * fade) this.bang(amp, null, prof);
+          else this.pop(amp * 1.2, null, prof);
         }
       }
-      // Burble tune: a lopey, uneven mutter off the throttle at low revs -
-      // the one you hear at a junction, not under braking.
-      if (ms.burble && thr < 0.08 && rpm < 0.45 && speed > 1 && now - (this._buT || 0) > 210 + Math.random() * 190) {
-        this._buT = now;
-        this.pop(master * (0.22 + Math.random() * 0.2));
+      // v5.5.6 crackle and burble tunes, both for the whole overrun and both
+      // voiced for THIS engine (a V8's burble is a deep gurgle, a four's a
+      // rattle). They were two slightly different handfuls of the same pop.
+      //   crackle: fast, dry, bright snaps like a fire catching - 15-35 a
+      //            second, often in twos and threes, thinning as it dies
+      //   burble : a low, wet "brap-ap-ap" - soft rounded thumps a few to a
+      //            dozen a second, and the engine note itself gurgles between
+      //            them - lasting longer, right down to near idle
+      this._gurgle = 1;
+      if (!prof.ev && thr < 0.12 && speed > 1 && this._ovT) {
+        if (ms.crackle && ovAge < OVERRUN && rpm > 0.3) {
+          const fade = 1 - ovAge / OVERRUN, rate = (15 + 20 * rpm) * fade;
+          if (Math.random() < rate * dt) {
+            const n = Math.random() < 0.4 ? 2 + Math.floor(Math.random() * 2) : 1;
+            for (let i = 0; i < n; i++) this.snap(master * (0.3 + Math.random() * 0.7) * (0.5 + 0.5 * fade), prof, null, i * (0.012 + Math.random() * 0.02));
+          }
+        }
+        if (ms.burble && ovAge < OVERRUN * 1.6 && rpm > 0.2) {
+          const fade = 1 - ovAge / (OVERRUN * 1.6);
+          if (now - (this._buT || 0) > (1000 / (5 + 9 * rpm)) * (0.5 + Math.random() * 1.1)) {
+            this._buT = now;
+            this.burble(master * (0.35 + Math.random() * 0.45) * (0.45 + 0.55 * fade), prof);
+            this._gurgleK = 0.35 + Math.random() * 0.4;
+          }
+          // the note ducks right after each thump and swells back
+          this._gurgle = 1 - (1 - (this._gurgleK || 1)) * Math.exp(-(now - (this._buT || 0)) / 45);
+        }
       }
       this._lastThr = thr;
       this._env(rs, speed, master, t);
@@ -1007,8 +1092,9 @@
         // lift used to fire another burst of pops)
         if (!prof.ev && oms.pops > 0.4 && v.lt > 0.5 && !rs.thr && fall > 0.2 && performance.now() - (v.crT || 0) > 700) {
           v.crT = performance.now();
-          if (oms.bang) this.bangBurst(fall * 0.8, 'others');
-          else this.crackle(oms.pops * 0.6, fall * 0.7, oms.crackle);
+          if (oms.bang) this.bangBurst(fall * 0.8, 'others', prof);
+          else if (oms.burble) this.burbleBurst(fall * 0.8, prof, 'others');
+          else this.crackle(oms.pops * 0.6, fall * 0.7, oms.crackle, 'others', prof);
         }
         // their anti-lag, banging away as they come past
         if (!prof.ev && rs.backfire > 0 && fall > 0.15) {
@@ -1016,10 +1102,11 @@
           if (performance.now() - (v.bfT || 0) > gap * (0.6 + Math.random() * 1.0)) {
             v.bfT = performance.now();
             const amp = fall * (0.4 + Math.random() * 0.6);
-            if (Math.random() < 0.3) this.bang(amp, 'others');
-            else this.pop(amp * 1.1, 'others');
+            if (Math.random() < 0.3) this.bang(amp, 'others', prof);
+            else this.pop(amp * 1.1, 'others', prof);
           }
         }
+        const liftNow = v.lt > 0.5 && !rs.thr; // (read before it's updated: the valve below needs it)
         v.lt = rs.thr ? 1 : 0;
         let slip = 0;
         if (rs.slip) for (let i = 0; i < 4; i++) {
@@ -1058,10 +1145,15 @@
           if (v.w.type !== 'sine') v.w.type = 'sine';
           v.w.frequency.setTargetAtTime(((ind === 't2' ? 1100 : 1750) + bst * (ind === 't2' ? 2300 : 3100)) * (0.85 + 0.15 * rpm) * dop, t, 0.08);
           v.wg.gain.setTargetAtTime(bst * 0.024 * fall, t, 0.06);
-          if (v.lb > 0.45 && bst < 0.25 && fall > 0.15) this.bov(oms.bov, ind === 't2', fall, 'others');
+          // (v5.5.6: on their lift with boost up - see update())
+          v.bPk = Math.max(bst, (v.bPk || 0) * 0.9);
+          if (liftNow && v.bPk > 0.28 && fall > 0.15 && performance.now() - (v.bovT || 0) > 500) {
+            v.bovT = performance.now();
+            this.bov(oms.bov, ind === 't2', fall, 'others');
+          }
         } else v.wg.gain.setTargetAtTime(0, t, 0.06);
         v.lb = bst;
-        if (rs.backfire > 0 && !v.bf && fall > 0.12) this.pop(fall * 0.8, 'others');
+        if (rs.backfire > 0 && !v.bf && fall > 0.12) this.pop(fall * 0.8, 'others', prof);
         v.bf = rs.backfire > 0;
       }
     },
@@ -1329,22 +1421,52 @@
       this.noiseHit(0.35, 2600, 0.22 * k, 'bandpass', 'sfx', 0, 900, 4);
       for (const f of [431, 587, 757]) this.tone(f * (0.9 + Math.random() * 0.2), 0.16, 'square', 0.03 * k, f * 0.6);
     },
-    pop(m, bus) {
-      this.noiseHit(0.07, 950, 0.34 * (m || 1), 'bandpass', bus || 'sfx', 0, 0, 1.2);
-      this.tone(90, 0.06, 'square', 0.12 * (m || 1), 50, bus || 'sfx');
+    // v5.5.6: the exhaust one-shots are voiced by the engine they come out of
+    // (prof = PROFILES): its exhaust ring sets how deep the body of a pop is
+    // and how bright a crackle snaps - a V8's pop is a thud, a small four's
+    // a crack. Without a profile they sound as they always did.
+    _fxv(prof) {
+      const r = (prof && prof.res) || 450;
+      return { body: U.clamp(r * 2.1, 380, 1900), thump: U.clamp(r / 3.2, 42, 150), snap: 1900 + r * 2.6 };
     },
-    // `dense` (the crackle tune): more cracks, spread over longer, and
-    // quieter individually - a rattle rather than a handful of bangs.
-    crackle(amount, m, dense) {
+    pop(m, bus, prof, when) {
+      const v = this._fxv(prof), k = m || 1;
+      this.noiseHit(0.07, v.body * (0.9 + Math.random() * 0.2), 0.34 * k, 'bandpass', bus || 'sfx', when, 0, 1.2);
+      this.tone(v.thump * 1.8, 0.06, 'square', 0.12 * k, v.thump, bus || 'sfx', when);
+    },
+    // one crack of an overrun crackle: 6-16 ms of dry, bright noise and no
+    // thump under it - many of these in a row is the "crackle"
+    snap(m, prof, bus, when) {
+      const v = this._fxv(prof), k = m || 1;
+      this.noiseHit(0.006 + Math.random() * 0.01, v.snap * (0.8 + Math.random() * 0.45), 0.42 * k, 'bandpass', bus || 'sfx', when, 0, 1.6);
+    },
+    // one lump of a burble: a soft, rounded, low thump (no sharp edge)
+    burble(m, prof, bus, when) {
+      const v = this._fxv(prof), k = m || 1;
+      this.noiseHit(0.09 + Math.random() * 0.05, v.body * 0.45, 0.5 * k, 'lowpass', bus || 'sfx', when, v.body * 0.18, 0.9);
+      this.tone(v.thump, 0.09, 'sine', 0.22 * k, v.thump * 0.7, bus || 'sfx', when);
+    },
+    // A burst of pops as you lift (a free-flowing exhaust with no tune), or,
+    // `dense`, a burst of crackle - used for the cars going past you.
+    crackle(amount, m, dense, bus, prof) {
       const now = performance.now();
       if (now - (this._crT || 0) < 150) return; // several cars lifting at once: one burst is plenty
       this._crT = now;
-      const n = dense ? 7 + Math.round(amount * 9) : 2 + Math.round(amount * 4);
-      const span = dense ? 0.8 : 0.49;
+      const n = dense ? 10 + Math.round(amount * 12) : 2 + Math.round(amount * 4);
+      const span = dense ? 0.9 : 0.49;
       for (let i = 0; i < n; i++) {
         const w = 0.04 + Math.random() * span;
-        const a = dense ? 0.2 + Math.random() * 0.35 : 0.35 + Math.random() * 0.5;
-        setTimeout(() => this.pop(a * (m || 1)), w * 1000);
+        if (dense) this.snap((0.3 + Math.random() * 0.6) * (m || 1) * (1 - w / (span + 0.1)), prof, bus, w);
+        else this.pop((0.35 + Math.random() * 0.5) * (m || 1), bus, prof, w);
+      }
+    },
+    // ...and of burble, for the cars going past you
+    burbleBurst(m, prof, bus) {
+      const n = 5 + Math.floor(Math.random() * 5);
+      let w = 0.03;
+      for (let i = 0; i < n; i++) {
+        this.burble((m || 1) * (0.4 + Math.random() * 0.5) * (1 - i / (n + 2)), prof, bus, w);
+        w += 0.07 + Math.random() * 0.12;
       }
     },
     // v4 garage "Listen": rev the engine with a given build for ~2.4 s —
@@ -1395,46 +1517,63 @@
       o.stop(t + 0.32);
       this.noiseHit(0.25, 3000, 0.08 * k, 'highpass', 'sfx', 0, 6000);
     },
+    // v5.5.6 the three valves, rebuilt so they are three different noises:
+    //   recirculated: the air goes back into the intake - a soft, muffled
+    //                 "whoosh", mostly heard as the whistle dropping away
+    //   atmospheric : vented to the air - a sharp "tsh" chirp as it snaps open
+    //                 and then a loud bright hiss that falls away
+    //   flutter     : no valve, the compressor surges - a fast "stu-tu-tu-tu",
+    //                 each chirp lower and further apart as the turbo slows
     blowoff(m, bus) {
-      this.noiseHit(0.38, 5200, 0.16 * (m || 1), 'highpass', bus || 'sfx', 0, 1400);
+      const k = m || 1;
+      this.noiseHit(0.32, 1900, 0.2 * k, 'bandpass', bus || 'sfx', 0, 520, 0.8);
+      this.noiseHit(0.22, 3400, 0.05 * k, 'highpass', bus || 'sfx', 0.02, 1800);
     },
-    // v5.3 vented to atmosphere: shorter, sharper, much louder than a recirc
     blowoffAtmo(m, bus) {
-      this.noiseHit(0.26, 4200, 0.34 * (m || 1), 'bandpass', bus || 'sfx', 0, 900, 1.8);
-      this.noiseHit(0.5, 6800, 0.15 * (m || 1), 'highpass', bus || 'sfx', 0.02, 2200);
+      const k = m || 1;
+      this.noiseHit(0.035, 5600, 0.5 * k, 'bandpass', bus || 'sfx', 0, 4200, 4);
+      this.noiseHit(0.5, 3400, 0.42 * k, 'highpass', bus || 'sfx', 0.012, 1500);
+      this.noiseHit(0.34, 7200, 0.16 * k, 'highpass', bus || 'sfx', 0.012, 4000);
     },
     // The valve a player picked, with the turbo's own character as the default.
     bov(kind, big, m, bus) {
       if (kind === 'atmo') return this.blowoffAtmo(m, bus);
-      if (kind === 'flutter') return this.flutter(m, bus);
-      return big ? this.flutter(m, bus) : this.blowoff(m, bus);
+      if (kind === 'flutter') return this.flutter(m, bus, big);
+      return big ? this.flutter(m, bus, true) : this.blowoff(m, bus);
     },
     // v5.3 anti-lag / bang tune: a hard crack with real bottom end, not the
     // little pop used for an overrun crackle. Three layers - the body of it,
     // a low thump you feel, and a sharp transient on top so it cuts through
     // the engine note rather than sitting under it.
-    bang(m, bus) {
-      const k = m || 1;
-      this.noiseHit(0.16, 520, 0.95 * k, 'bandpass', bus || 'sfx', 0, 0, 1.4);
-      this.tone(54, 0.15, 'square', 0.52 * k, 28, bus || 'sfx');
-      this.noiseHit(0.05, 3200, 0.42 * k, 'highpass', bus || 'sfx', 0, 1500);
+    bang(m, bus, prof, when) {
+      const k = m || 1, v = this._fxv(prof);
+      this.noiseHit(0.16, v.body * 0.6, 0.95 * k, 'bandpass', bus || 'sfx', when, 0, 1.4);
+      this.tone(v.thump * 0.62, 0.15, 'square', 0.52 * k, v.thump * 0.33, bus || 'sfx', when);
+      this.noiseHit(0.05, v.snap * 0.95, 0.42 * k, 'highpass', bus || 'sfx', when, 1500);
     },
     // The bang-pop map on a lift: one hard crack, then a scatter of smaller
     // ones chasing it down. A single bang was what made this option feel like
     // nothing was fitted.
-    bangBurst(m, bus) {
+    bangBurst(m, bus, prof) {
       const k = m || 1;
-      this.bang(k, bus);
+      this.bang(k, bus, prof);
       const n = 3 + Math.floor(Math.random() * 4);
       for (let i = 0; i < n; i++) {
         const w = 0.06 + Math.random() * 0.55;
-        const hard = Math.random() < 0.4;
-        setTimeout(() => (hard ? this.bang(k * (0.45 + Math.random() * 0.4), bus) : this.pop(k * (0.5 + Math.random() * 0.5), bus)), w * 1000);
+        if (Math.random() < 0.4) this.bang(k * (0.45 + Math.random() * 0.4), bus, prof, w);
+        else this.pop(k * (0.5 + Math.random() * 0.5), bus, prof, w);
       }
     },
-    // big-turbo compressor surge: a fast falling "stu-tu-tu-tu"
-    flutter(m, bus) {
-      for (let i = 0; i < 7; i++) this.noiseHit(0.04, 1500 - i * 110, 0.14 * (m || 1) * (1 - i * 0.11), 'bandpass', bus || 'sfx', i * 0.052, 0, 3);
+    // compressor surge: a fast falling "stu-tu-tu-tu" (a big turbo lower)
+    flutter(m, bus, big) {
+      const k = m || 1;
+      let w = 0, f = big ? 1500 : 2100;
+      for (let i = 0; i < 10; i++) {
+        this.noiseHit(0.024, f, 0.36 * k * (1 - i * 0.075), 'bandpass', bus || 'sfx', w, f * 0.8, 6);
+        this.tone(f * 0.5, 0.02, 'sine', 0.05 * k * (1 - i * 0.08), f * 0.42, bus || 'sfx', w);
+        w += 0.026 + i * 0.0035;
+        f *= 0.94;
+      }
     },
     lap() {
       this.tone(1318, 0.14, 'triangle', 0.1);

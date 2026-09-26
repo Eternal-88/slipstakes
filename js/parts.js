@@ -19,19 +19,30 @@
       blurb: 'All-wheel-drive hatch. Launches hard and digs in on dirt; pushes wide on tarmac.',
       // v4.3: the rally car now (it won no track at all): +7% on dirt (was
       // +3%) and +8% in the wet, so Rainline and Copper Canyon are its home.
+      // v5.5.6: 'pushes wide on tarmac' was only in the blurb. Fully built it
+      // was the best car in the game (avg rank 3.76 of 11 over 17 tracks, a
+      // tarmac mountain win included) while also the easiest to drive - the
+      // opposite of the brief. 2.5% less grip on dry tarmac: built, 4.71
+      // (level with the Storm); it still owns the wet and the dirt.
       mass: 1330, powerKW: 125, redline: 7300, rearBias: 0.6, wheelbase: 2.5, weightFront: 0.6,
-      cgH: 0.56, track: 1.58, vTop: 50.5, inertiaK: 0.97, body: 'hatch', len: 4.0, wid: 1.82, looseBonus: 1.07, wetBonus: 1.13,
+      cgH: 0.56, track: 1.58, vTop: 50.5, inertiaK: 0.97, body: 'hatch', len: 4.0, wid: 1.82, looseBonus: 1.07, wetBonus: 1.13, dryBonus: 0.975,
     },
     sting: {
       id: 'sting', name: 'Sting S', tag: 'RWD roadster', drive: 'RWD',
-      blurb: 'Light, low, darty roadster. Carries speed through corners; loses out on straights.',
+      blurb: 'Light, low, darty roadster with a high-revving four. Carries speed through corners and wants the revs kept up; loses out on straights.',
       // v4.3: a low road car's weaknesses (−8% on dirt, −5% in the wet). It
       // was the fastest car on 5 of 12 tracks — dirt and wet included.
       // v5.1: it was second-best at everything and best at nothing. Yaw
       // inertia 0.92 -> 0.85 and 20 kg off: now nothing changes direction like
       // it, which is worth most exactly where its lack of power hurts least.
-      mass: 960, powerKW: 113, redline: 7800, rearBias: 1.0, wheelbase: 2.4, weightFront: 0.49,
-      cgH: 0.45, track: 1.55, vTop: 52, inertiaK: 0.85, body: 'roadster', len: 3.9, wid: 1.76, looseBonus: 0.92, wetBonus: 0.95, dryBonus: 1.015,
+      // v5.5.6: it nearly matched the Mule in a straight line (15.12 s quarter
+      // to 14.87, and quicker to 60 km/h) and beat the Vandal everywhere - not
+      // a car that "loses out on straights". 113 -> 105 kW, top speed 52 -> 50
+      // m/s, and a small four's torque that needs revs (tq.lo 0.8): 15.57 s,
+      // 164 km/h, behind the Mule off the line. Its corners are untouched and
+      // it still wins the tight tarmac tracks (City, Summit, Neon).
+      mass: 960, powerKW: 105, redline: 7800, rearBias: 1.0, wheelbase: 2.4, weightFront: 0.49,
+      cgH: 0.45, track: 1.55, vTop: 50, inertiaK: 0.85, body: 'roadster', len: 3.9, wid: 1.76, looseBonus: 0.92, wetBonus: 0.95, dryBonus: 1.015, tq: { lo: 0.8, hi: 1 },
     },
     mule: {
       id: 'mule', name: 'Mule V8', tag: 'RWD muscle', drive: 'RWD',
