@@ -2,6 +2,48 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.5.6 — Lights Out
+
+Network (PROTO 12 - the Sting's power and a hazard moved, so an older game
+would predict both wrongly; a version mismatch now says who should reload):
+- **Compact snapshots** (`hostrace.js` `_compact`, `netpack.js` packRows /
+  packMe): for a game that says `sp` in its hello, every number goes as a
+  zigzag varint of its own unit, base64 - exactly the JSON values, about half
+  the bytes. A racer gets cars more than 160 m from their own every 3rd
+  snapshot; `clientrace.js` keeps each car's last data and when it was taken
+  and guesses it forward from that time. Tests t9, t10.
+- **Room state as changes** (`game.js` `_sendState` / `_sendHeirs`,
+  `netpack.js` diff / patch / chash): a game that says `sd` gets
+  `{t:'sd', b, d, h}` - the change from the version it has plus a
+  fingerprint of the result; a mismatch asks for the whole state again
+  (`resync`). Tests t11, t12. An 8-race test session: host upload ~61 MB ->
+  27.8 MB (snapshots -47%, room state and heir copies -89%).
+
+Race start:
+- The next race's track is built in slices while players are in the garage
+  and on the betting board (`TrackMesh.steps`, `world.prepareTrack` /
+  `pumpPrep`); the terrain's nearest-road search uses a grid (identical
+  output, `tools/harness/buildhash.py`). A 4x-throttled joiner's race-start
+  freeze: 1.80 / 1.38 / 0.62 s -> 0.43 / 0.12 / 0.14 s.
+- No track is built twice between races: `loadTrack` keeps the track on
+  screen when asked for it again and keeps the Proving Ground once built;
+  the betting board's background race runs on the next race's (pre-built)
+  track, and the Proving Ground is pre-built on the results screen
+  (`tools/harness/cycle.py`: rounds 2+ have no long task over 150 ms).
+
+Security: the heirs' copy of the room carries seat-token hashes
+(`U.seatHash`, SHA-256), never tokens; `session.seatOf` matches a returning
+token by its hash after a host change (test t13).
+
+Balance (`tools/harness/carlab.py field`: 11 cars x 17 tracks x 4 setups):
+the Sting's straight-line pace cut; the Brick -2.5% grip on dry tarmac
+(fully built it was the best car, avg rank 3.76 -> 4.71).
+
+Also: the sound tuning options rebuilt to be distinct (the blow-off valve
+never fired; measured with `tools/harness/soundlab.py`), three misplaced hazards
+moved back onto the road (`tools/harness/hazards.py`), start lights no longer
+under the race name, and a first-visit welcome.
+
 ## v5.5.5 — Stick Around
 
 Networking (each fix has a test in `tools/harness/test_net.py`, dev only):
