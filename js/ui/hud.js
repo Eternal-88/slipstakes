@@ -15,7 +15,7 @@
         <div class="hud-vig"></div><div class="hud-flash"></div><div class="hud-draftglow"></div>
         <div class="hud-tl">
           <div class="hud-pos"><span class="pos-n">-</span><span class="pos-of">/-</span><em class="pos-d"></em></div>
-          <div class="hud-lap">LAP <b class="lap-n">-</b></div>
+          <div class="hud-lap"><span class="lap-w">LAP </span><b class="lap-n">-</b></div>
           <div class="hud-times">
             <div><span>TIME</span><b class="t-cur">-</b></div>
             <div><span>LAST</span><b class="t-last">-</b></div>
@@ -46,7 +46,7 @@
         <div class="hud-debug"></div>`;
       const $ = (s) => root.querySelector(s);
       this.el = {
-        posN: $('.pos-n'), posOf: $('.pos-of'), posD: $('.pos-d'), lap: $('.lap-n'), cur: $('.t-cur'), last: $('.t-last'), best: $('.t-best'),
+        posN: $('.pos-n'), posOf: $('.pos-of'), posD: $('.pos-d'), lap: $('.lap-n'), lapW: $('.lap-w'), cur: $('.t-cur'), last: $('.t-last'), best: $('.t-best'),
         tower: $('.hud-tower'), map: $('.hud-map'), speedo: $('.speedo'),
         heat: $('.heat i'), heatBox: $('.gauge.heat'), brk: $('.brk i'), brkBox: $('.gauge.brk'), tyre: $('.tyre i'), eng: $('.eng i'),
         cd: $('.cd'), banner: $('.banner'), sub: $('.sub'), tags: $('.hud-tags'), br: $('.hud-br'), tl: $('.hud-tl'), debug: $('.hud-debug'), help: $('.hud-help'),
@@ -474,6 +474,12 @@
         const lapTxt = v.practice ? (v.format === 'circuit' ? String(Math.max(1, me.lapCount)) : 'PRACTICE')
           : v.format === 'circuit' ? Math.max(1, Math.min(me.lapCount, v.laps)) + '/' + v.laps : v.format === 'drag' ? 'DRAG' : 'SPRINT';
         this.set('lap', el.lap, lapTxt);
+        // (v5.5.6: a sprint or drag race has no laps: it read "LAP SPRINT"
+        // over LAST / BEST times that could only ever show dashes)
+        const laps = v.format === 'circuit' || v.practice;
+        this.set('lapW', el.lapW, v.format === 'circuit' ? '' : 'none', 'display');
+        this.set('lastRow', el.last.parentElement, laps ? '' : 'none', 'display');
+        this.set('bestRow', el.best.parentElement, laps ? '' : 'none', 'display');
         this.set('cur', el.cur, U.fmtTime(me.curMs));
         this.set('last', el.last, U.fmtTime(me.lastLap));
         this.set('best', el.best, U.fmtTime(me.bestLap));

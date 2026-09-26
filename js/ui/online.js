@@ -15,6 +15,12 @@
 // only have come from the card that claims to have sent it (anyone else's
 // ciphertext won't open). Nothing is stored: messages, blocks and the id all
 // go when the tab closes (every visit is a fresh session).
+//
+// v5.5.6: no opt-outs any more (everyone is listed and can be messaged);
+// blocking is how you stop someone. A block tells them, sealed like any
+// message ({b: 1}, and {b: 0} on unblock), so they know to stop; if they
+// write again anyway (a reload forgets it) they are told again, at most once
+// a minute. Older games ignore it (no text in it).
 'use strict';
 (function (G) {
   const U = G.U;
@@ -23,7 +29,6 @@
   const LIVE_TTL = 75000; // a card we've seen refreshed is good for this long
   const RETAINED_TTL = 110000; // ...one that was waiting on the broker, by its own clock
   const MAX_LEN = 200;
-  const S = () => G.Settings.s;
   const okId = (v) => typeof v === 'string' && /^[a-z0-9]{10,24}$/i.test(v);
   const clip = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n);
   const parse = (s) => {
@@ -41,7 +46,8 @@
   const Online = {
     cards: new Map(), // id -> {info, seen, live}
     convos: new Map(), // id -> {name, msgs: [{me, text, at}], unread}
-    blocked: new Set(),
+    blocked: new Map(), // id -> name: I blocked them (listed at the bottom, with Unblock)
+    blockedBy: new Set(), // they blocked me: my box to them is shut
     ms: [],
     open: false,
     view: null, // null = the list, else the id of the conversation on screen
@@ -59,12 +65,6 @@
         } catch (e) {}
       }
       this._build();
-      G.Settings.on((k) => {
-        if (k === 'showOnline' || k === 'allowDM') {
-          this._publish(true);
-          this.render();
-        }
-      });
       // a moment after load, so it never competes with the first screen
       setTimeout(() => this.start(), 1500);
       setInterval(() => this._tick(), 3000);
@@ -124,7 +124,7 @@
       return {
         id: this.id, name: clip(G.App && G.App.name ? G.App.name() : 'Driver', 16), st: s.st, room: s.room || '', rname: s.rname || '',
         n: s.n || 0, max: s.max || 0, v: G.VERSION, proto: G.Net ? G.Net.PROTO : 0,
-        pub: this.pub || '', dm: this.pub && S().allowDM !== false ? 1 : 0, at: Date.now(),
+        pub: this.pub || '', dm: this.pub ? 1 : 0, at: Date.now(),
       };
     },
 
@@ -132,17 +132,11 @@
     _publish(force, m) {
       if (!this.started) return;
       const topic = NS + 'p/' + this.id;
-      if (S().showOnline === false) {
-        if (this._shown !== false) for (const x of m ? [m] : this.ms) x.publish(topic, '', true); // off the list
-        this._shown = false;
-        return;
-      }
       const c = this._card();
       const sig = JSON.stringify(Object.assign({}, c, { at: 0 }));
       if (!force && sig === this._sig && Date.now() - (this._pubAt || 0) < REFRESH) return;
       this._sig = sig;
       this._pubAt = Date.now();
-      this._shown = true;
       const s = JSON.stringify(c);
       for (const x of m ? [m] : this.ms) x.publish(topic, s, true);
     },
@@ -206,7 +200,6 @@
       if (this.seenMsg.has(o.id)) return; // (it comes once per broker)
       this.seenMsg.add(o.id);
       if (this.seenMsg.size > 400) this.seenMsg = new Set(Array.from(this.seenMsg).slice(200));
-      if (S().allowDM === false || S().showOnline === false || this.blocked.has(o.f)) return;
       // a few messages a second from one sender is flooding, not talking
       const now = Date.now();
       const rl = (this._rl = this._rl || new Map());
@@ -214,17 +207,27 @@
       if (w.length >= 8) return;
       w.push(now);
       rl.set(o.f, w);
-      let text;
+      let text, body;
       try {
         const k = await this._key(o.f);
         if (!k) return; // we don't know who that is (no card): can't check it came from them
-        const body = parse(await G.Relay.DM.open(k, o));
+        body = parse(await G.Relay.DM.open(k, o));
         text = clip(body && body.t, MAX_LEN);
       } catch (e) {
         return; // didn't open: not really from that card
       }
-      if (!text) return;
       const card = this.cards.get(o.f);
+      if (this.blocked.has(o.f)) {
+        // still writing: tell them again (they may have reloaded and forgotten)
+        const told = (this._told = this._told || new Map());
+        if (text && now - (told.get(o.f) || 0) > 60000) {
+          told.set(o.f, now);
+          this._notice(o.f, 1);
+        }
+        return;
+      }
+      if (body && (body.b === 1 || body.b === 0)) return this._blockNotice(o.f, card ? card.info.name : 'Driver', body.b === 1);
+      if (!text) return;
       const cv = this._convo(o.f, card ? card.info.name : 'Driver');
       cv.msgs.push({ me: false, text, at: now });
       if (cv.msgs.length > 100) cv.msgs.shift();
@@ -247,7 +250,7 @@
       text = clip(text, MAX_LEN);
       if (!text) return;
       const c = this.cards.get(id);
-      if (S().showOnline === false) return G.UI.toast('Turn on “Show me online” to send messages — they need to see you to reply.', 'bad');
+      if (this.blockedBy.has(id)) return G.UI.toast(`${c ? c.info.name : 'They'} blocked you: your messages don't reach them.`, 'bad');
       if (!c) return G.UI.toast('They have gone offline.', 'bad');
       if (!c.info.dm) return G.UI.toast(`${c.info.name} isn't taking messages.`, 'bad');
       if (!this.ms.length) return G.UI.toast("Can't reach the message servers from here.", 'bad');
@@ -270,11 +273,50 @@
     },
 
     block(id) {
-      this.blocked.add(id);
+      const c = this.cards.get(id), cv = this.convos.get(id);
+      const name = c ? c.info.name : cv ? cv.name : 'Driver';
+      this.blocked.set(id, name);
       this.convos.delete(id);
-      const c = this.cards.get(id);
-      G.UI.toast(`Blocked ${c ? c.info.name : 'that driver'} — you won't see their messages again this session.`, 'info');
+      this._notice(id, 1);
+      G.UI.toast(`Blocked ${name}: they've been told, and you won't see their messages. Unblock them at the bottom of the list.`, 'info');
       this.view = null;
+      this._changed();
+    },
+
+    unblock(id) {
+      const name = this.blocked.get(id) || 'Driver';
+      if (!this.blocked.delete(id)) return;
+      if (this._told) this._told.delete(id);
+      this._notice(id, 0);
+      G.UI.toast(`Unblocked ${name}.`, 'info');
+      this._changed();
+    },
+
+    // Tell someone we blocked (b 1) or unblocked (b 0) them: sealed like a
+    // message, so it can only have come from us. (Needs their card: someone
+    // who has gone offline hears it if they write again.)
+    async _notice(id, b) {
+      if (!this.ms.length || !this.cards.has(id)) return;
+      try {
+        const k = await this._key(id);
+        if (!k) return;
+        const sealed = await G.Relay.DM.seal(k, JSON.stringify({ b }));
+        const msg = JSON.stringify({ f: this.id, id: U.uid(12), iv: sealed.iv, ct: sealed.ct, at: Date.now() });
+        for (const m of this.ms) m.publish(NS + 'dm/' + id, msg);
+      } catch (e) {}
+    },
+
+    // They blocked (on) or unblocked us: say so in the conversation, and shut
+    // or reopen the box.
+    _blockNotice(id, name, on) {
+      if (on === this.blockedBy.has(id)) return;
+      if (on) this.blockedBy.add(id);
+      else this.blockedBy.delete(id);
+      const cv = this._convo(id, name);
+      const text = on ? `${cv.name} blocked you. Your messages won't reach them.` : `${cv.name} unblocked you.`;
+      cv.msgs.push({ sys: true, text, at: Date.now() });
+      if (cv.msgs.length > 100) cv.msgs.shift();
+      if (!(this.open && this.view === id && !document.hidden)) G.UI.toast(text, on ? 'bad' : 'info', false);
       this._changed();
     },
 
@@ -293,7 +335,7 @@
     count() {
       let n = 0;
       for (const id of this.cards.keys()) if (!this.blocked.has(id)) n++;
-      return n + (S().showOnline === false ? 0 : 1); // (and us)
+      return n + 1; // (and us)
     },
     // the corner button: 👥 and how many are on, or unread messages
     cornerHtml() {
@@ -320,7 +362,6 @@
       const el = document.createElement('div');
       el.id = 'online';
       el.innerHTML = `<div class="on-head"><b>Online now</b><span class="on-n"></span><button class="on-x" title="Close (Esc)">✕</button></div>
-        <div class="on-me"></div>
         <div class="on-listv"><input class="on-q" maxlength="16" placeholder="Find a driver…"><div class="on-list"></div></div>
         <div class="on-chat" hidden><div class="on-ch"><button class="on-back" title="Back">←</button><div><b></b><span></span></div><button class="on-block" title="Block: no more messages from them this session">Block</button></div>
           <div class="on-log"></div>
@@ -337,6 +378,8 @@
           return this.render();
         }
         if (t.closest('.on-block')) return this.view && this.block(this.view);
+        const ub = t.closest('[data-on="unblock"]');
+        if (ub) return this.unblock(ub.dataset.id);
         if (t.closest('.on-in button')) return this._sendBox();
         const b = t.closest('[data-on]');
         if (!b) return;
@@ -346,7 +389,6 @@
           this.render();
           setTimeout(() => this.$('.on-in input').focus(), 30);
         } else if (b.dataset.on === 'join') this._join(id);
-        else if (b.dataset.on === 'set') G.Settings.set(b.dataset.k, !!b.checked);
       });
       el.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
@@ -404,10 +446,7 @@
     render() {
       if (!this.el || !this.open) return;
       const $ = this.$;
-      const on = S().showOnline !== false, dm = S().allowDM !== false;
       $('.on-n').textContent = this.ms.length ? `${this.count()} playing` : this.started ? 'connecting…' : '';
-      const meHtml = `<label class="on-tg"><input type="checkbox" data-on="set" data-k="showOnline" ${on ? 'checked' : ''}> Show me online</label><label class="on-tg"><input type="checkbox" data-on="set" data-k="allowDM" ${dm ? 'checked' : ''} ${on ? '' : 'disabled'}> Allow messages</label>`;
-      if ($('.on-me')._h !== meHtml) $('.on-me').innerHTML = $('.on-me')._h = meHtml;
       const chat = this.view && this.convos.get(this.view) ? this.convos.get(this.view) : this.view ? this._convo(this.view, (this.cards.get(this.view) || { info: { name: 'Driver' } }).info.name) : null;
       $('.on-listv').hidden = !!chat;
       $('.on-chat').hidden = !chat;
@@ -416,14 +455,15 @@
         const card = this.cards.get(this.view);
         $('.on-ch b').textContent = chat.name;
         $('.on-ch span').textContent = card ? STATUS[card.info.st] || '' : 'Offline';
-        const log = chat.msgs.map((m) => `<div class="on-m ${m.me ? 'me' : ''}">${U.esc(m.text)}</div>`).join('') || `<p class="on-empty">Say hello to ${U.esc(chat.name)}.</p>`;
+        const log = chat.msgs.map((m) => `<div class="on-m ${m.sys ? 'sys' : m.me ? 'me' : ''}">${U.esc(m.text)}</div>`).join('') || `<p class="on-empty">Say hello to ${U.esc(chat.name)}.</p>`;
         if ($('.on-log')._h !== log) {
           $('.on-log').innerHTML = $('.on-log')._h = log;
           $('.on-log').scrollTop = 1e6;
         }
-        const can = card && card.info.dm && on;
+        const by = this.blockedBy.has(this.view);
+        const can = card && card.info.dm && !by;
         $('.on-in input').disabled = !can;
-        $('.on-in input').placeholder = !on ? 'Turn on “Show me online” to message' : !card ? 'They have gone offline' : !card.info.dm ? "They aren't taking messages" : `Message ${chat.name}…`;
+        $('.on-in input').placeholder = by ? `${chat.name} blocked you` : !card ? 'They have gone offline' : !card.info.dm ? "They aren't taking messages" : `Message ${chat.name}…`;
         if (G.Overlay && G.Overlay.renderCorner) G.Overlay.renderCorner();
         return;
       }
@@ -435,11 +475,18 @@
               const cv = this.convos.get(i.id);
               const u = cv && cv.unread ? `<b class="on-u">${cv.unread}</b>` : '';
               const joinable = i.room && !inRoom && i.proto === (G.Net && G.Net.PROTO) && i.n < (i.max || 8);
-              return `<div class="on-row"><div class="on-who"><div class="on-nm"><b>${U.esc(i.name)}</b>${u}</div><span>${this.statusText(i)}</span></div>${joinable ? `<button class="btn small ghost" data-on="join" data-id="${i.id}" title="Join their room">Join</button>` : ''}${i.dm && on ? `<button class="btn small" data-on="msg" data-id="${i.id}" title="Send a message">💬</button>` : ''}</div>`;
+              const by = this.blockedBy.has(i.id);
+              return `<div class="on-row"><div class="on-who"><div class="on-nm"><b>${U.esc(i.name)}</b>${u}</div><span>${by ? 'Blocked you' : this.statusText(i)}</span></div>${joinable ? `<button class="btn small ghost" data-on="join" data-id="${i.id}" title="Join their room">Join</button>` : ''}${i.dm ? `<button class="btn small" data-on="msg" data-id="${i.id}" title="${by ? 'They blocked you' : 'Send a message'}">💬</button>` : ''}</div>`;
             })
             .join('')
         : `<p class="on-empty">${!this.started || !this.ms.length ? 'Looking for other players…' : this.q ? 'Nobody by that name.' : "Nobody else is on right now. When friends open the game they'll show up here."}</p>`;
-      if ($('.on-list')._h !== html) $('.on-list').innerHTML = $('.on-list')._h = html;
+      // the people you blocked, so you can let them back in
+      const blk = this.blocked.size
+        ? `<div class="on-blk"><span>Blocked</span>${Array.from(this.blocked)
+            .map(([id, name]) => `<div class="on-row"><div class="on-who"><div class="on-nm"><b>${U.esc(name)}</b></div><span>${this.cards.has(id) ? 'Online' : 'Offline'}</span></div><button class="btn small ghost" data-on="unblock" data-id="${id}">Unblock</button></div>`)
+            .join('')}</div>`
+        : '';
+      if ($('.on-list')._h !== html + blk) $('.on-list').innerHTML = $('.on-list')._h = html + blk;
     },
   };
 

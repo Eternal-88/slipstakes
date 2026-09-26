@@ -92,15 +92,40 @@
       // of the re-rendered body: every letter typed replaced the input).
       this.nameBox = root.querySelector('.m-name');
       this.nameBox.querySelector('input').value = U.store.get('ss.name', '') || '';
-      // after an update, show what changed (once per version)
-      if (U.store.get('ss.seenVer', null) !== G.VERSION) {
+      // after an update, show what changed (once per version); on a first
+      // visit, what the game is and the keys instead - a list of fixes means
+      // nothing to someone who has never played
+      const seen = U.store.get('ss.seenVer', null);
+      if (seen !== G.VERSION) {
         U.store.set('ss.seenVer', G.VERSION);
-        setTimeout(() => this.showNews(), 700);
+        setTimeout(() => (seen ? this.showNews() : this.showWelcome()), 700);
       }
     },
 
     showNews() {
       UI.modal(`What's new in v${G.VERSION}`, `<div class="news-box">${G.newsHtml(2)}</div>`, [{ label: 'Let\'s race', value: 1, cls: 'primary' }]);
+    },
+
+    async showWelcome() {
+      const K = G.Settings.s.keys, k = (c) => `<kbd>${U.esc(G.Settings.keyName(c))}</kbd>`;
+      const row = (ic, t, d) => `<div class="news-i"><span>${ic}</span><div><b>${t}</b><p>${d}</p></div></div>`;
+      const r = await UI.modal(
+        'Welcome to SLIPSTAKES',
+        `<div class="news-box welcome">
+          <p class="wl-lead">Race little cars against your friends, bet on who wins, and spend the prize money making your car faster. The richest driver at the end of the session wins.</p>
+          ${row('🏁', 'Race or bet', 'Before each race you choose: race for prize money, or sit out and bet on the others.')}
+          ${row('💰', 'Every place pays', 'Fuel, tyres, engine wear and crashes cost money, so a clean race pays best.')}
+          ${row('🔧', 'Between races', 'Buy parts and tune your car in the garage - or try your luck in the casino.')}
+          ${row('🎮', 'Controls', `${k(K.up)} throttle · ${k(K.down)} brake and reverse · ${k(K.left)} ${k(K.right)} steer · ${k(K.hb)} handbrake · ${k(K.nitro)} nitrous · ${k(K.reset)} back on the track · ${k(K.cam)} camera · <kbd>Esc</kbd> menu. Arrow keys and gamepads work too.`)}
+          ${row('👋', 'Start here', '<b>Quick race</b> to learn the car against bots. To play with your class: <b>Server list</b>, or <b>Join</b> with a room code.')}
+          <p class="wl-note">Every visit starts fresh: nothing is saved.</p>
+        </div>`,
+        [{ label: 'Let\'s race', value: 1, cls: 'primary' }, { label: 'How to play', value: 'help', cls: 'ghost' }]
+      );
+      if (r.value === 'help' && G.App.mode === 'menu') {
+        this.tab = 'help';
+        UI.refresh(true);
+      }
     },
 
     async openJoin(prefill) {
