@@ -253,6 +253,32 @@
       return !!r.value;
     },
 
+    // v5.5.7 catch-up: Off / Mild / Wild, or any percentage typed in the box.
+    // The screen handles input 'cuPreset' (the list) and change 'catchup' (the box).
+    cuField(v, cls) {
+      const p = G.Settings.cuPct(v) == null ? 10 : G.Settings.cuPct(v);
+      const pre = [[0, 'Off'], [10, 'Mild'], [25, 'Wild']];
+      const on = pre.find((x) => x[0] === p);
+      return `<label class="fld cu-fld ${cls || ''}" title="Cars trailing the leader get up to this much extra power (full strength 160 m back). Mild is 10%, Wild 25% - or type any number from 0 to 100."><span>Catch-up</span><span class="cu-row"><select data-input="cuPreset">${pre.map(([n, l]) => `<option value="${n}" ${on && on[0] === n ? 'selected' : ''}>${l}</option>`).join('')}<option value="custom" ${on ? '' : 'selected'}>Custom</option></select><input class="num-in cu-num" type="number" min="0" max="100" step="1" value="${p}" data-change="catchup" aria-label="Catch-up, percent extra power"><em>%</em></span></label>`;
+    },
+    // what the catch-up field was set to: a whole percentage, or null (and a toast)
+    cuRead(el) {
+      if (el.dataset.input === 'cuPreset') {
+        if (el.value === 'custom') {
+          const n = el.parentNode.querySelector('.cu-num');
+          if (n) n.focus(), n.select();
+          return null;
+        }
+        return +el.value;
+      }
+      const p = String(el.value).trim() === '' ? null : G.Settings.cuPct(el.value);
+      if (p == null || +el.value > 100 || +el.value < 0) {
+        this.toast('Catch-up: type a number from 0 to 100.', 'bad');
+        return null;
+      }
+      return p;
+    },
+
     colorHex(c) {
       return '#' + (c >>> 0).toString(16).padStart(6, '0');
     },

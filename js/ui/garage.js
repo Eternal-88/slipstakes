@@ -12,7 +12,9 @@
 (function (G) {
   const U = G.U, Parts = G.Parts, UI = G.UI;
   const hex = (c) => UI.colorHex(c);
-  const TABS = [['parts', '🔩 Parts'], ['tuning', '🎛 Tuning'], ['paint', '🎨 Paint'], ['car', '🚗 Car'], ['service', '🛠 Service']];
+  // v5.5.7: an icon per part slot (Parts.SLOTS still carries its old glyph)
+  const SLOT_IC = { induction: 'turbo', weight: 'weight', aero: 'wind', compound: 'tyre', width: 'tyre', wheels: 'tyre', gearing: 'cog', suspension: 'waves', brakes: 'disc-3', exhaust: 'flame', ecu: 'cpu', cooling: 'snowflake', diff: 'settings', nitrous: 'zap', aids: 'gauge', pitkit: 'fuel', gbturbo: 'turbo', motor: 'zap' };
+  const TABS = [['parts', G.ic('cog') + ' Parts'], ['tuning', G.ic('sliders-horizontal') + ' Tuning'], ['paint', G.ic('palette') + ' Paint'], ['car', G.ic('car') + ' Car'], ['service', G.ic('wrench') + ' Service']];
   const signed = (v) => (v > 0 ? '+' : '') + v;
   function fmtTune(t, v) {
     if (t.labels) return t.labels[Math.round(v)] || String(v);
@@ -176,7 +178,7 @@
         b.classList.toggle('dot', tips.some((x) => x.tab === t && x.lvl !== 'good'));
         b.classList.toggle('dotg', tips.some((x) => x.tab === t && x.lvl === 'good'));
       });
-      UI.patch(this.el.warn, (tips.length ? `<h3>Pit crew</h3>${G.Advisor.html(tips, true)}` : '') + `<h3>Handling notes</h3>` + (warns.length ? warns.map((w) => `<div class="wn ${w[0]}">${w[0] === 'bad' ? '⚠' : '•'} ${U.esc(w[1])}</div>`).join('') : '<div class="wn ok">✓ Stock-ish and predictable. No surprises.</div>'));
+      UI.patch(this.el.warn, (tips.length ? `<h3>Pit crew</h3>${G.Advisor.html(tips, true)}` : '') + `<h3>Handling notes</h3>` + (warns.length ? warns.map((w) => `<div class="wn ${w[0]}">${w[0] === 'bad' ? G.ic('triangle-alert') : '•'} ${U.esc(w[1])}</div>`).join('') : '<div class="wn ok">✓ Stock-ish and predictable. No surprises.</div>'));
     },
 
     // ---------------------------------------------------------------- parts
@@ -189,10 +191,10 @@
         const inst = Parts.opt(slot.id, g.installed[slot.id]);
         // v5: slots this car can't use (the Volt has no engine to turbo or pipe)
         if (!Parts.partAllowed(me.carId, slot.id)) {
-          return `<div class="slot off"><div class="slot-h"><span class="ic">${slot.icon}</span><span class="sn">${slot.name}</span><span class="si">Not on the ${U.esc(Parts.CARS[me.carId].name)}</span><span class="chev"></span></div></div>`;
+          return `<div class="slot off"><div class="slot-h"><span class="ic">${G.ic(SLOT_IC[slot.id]) || slot.icon}</span><span class="sn">${slot.name}</span><span class="si">Not on the ${U.esc(Parts.CARS[me.carId].name)}</span><span class="chev"></span></div></div>`;
         }
         const open = this.sel === slot.id;
-        let h = `<div class="slot ${open ? 'open' : ''}"><div class="slot-h" data-act="slot" data-slot="${slot.id}"><span class="ic">${slot.icon}</span><span class="sn">${slot.name}</span><span class="si">${U.esc(inst.name)}</span><span class="chev">${open ? '▾' : '▸'}</span></div>`;
+        let h = `<div class="slot ${open ? 'open' : ''}"><div class="slot-h" data-act="slot" data-slot="${slot.id}"><span class="ic">${G.ic(SLOT_IC[slot.id]) || slot.icon}</span><span class="sn">${slot.name}</span><span class="si">${U.esc(inst.name)}</span><span class="chev">${open ? '▾' : '▸'}</span></div>`;
         if (open) {
           h += '<div class="opts">';
           for (const o of slot.options) {
@@ -217,7 +219,7 @@
     actionHtml(me, slot) {
       const g = me.garage;
       const p = this.pick && this.pick.slot === slot.id ? this.pick : null;
-      const listen = '<button class="btn ghost small" data-act="listen" title="Rev the engine with this build: exhaust, induction, engine map and gearbox all change the sound">🔊 Listen</button>';
+      const listen = '<button class="btn ghost small" data-act="listen" title="Rev the engine with this build: exhaust, induction, engine map and gearbox all change the sound">' + G.ic('volume-2') + ' Listen</button>';
       if (!p) return `<div class="act-row muted">Hover an option to preview it — click to select. ${listen}</div>`;
       const o = Parts.opt(slot.id, p.opt);
       const owned = g.owned[slot.id].includes(o.id);
@@ -254,7 +256,7 @@
         h += `<div class="tn ${avail ? '' : 'na'} ${chg ? 'chg' : ''}">
           <div class="tn-h"><b>${t.name}</b><output>${fmtTune(t, v)}</output>${avail && v !== t.def ? `<button class="tn-def" data-act="tdef" data-id="${t.id}" title="Back to default">↺</button>` : ''}</div>
           <input type="range" min="${t.min}" max="${t.max}" step="${t.step}" value="${v}" data-input="tune" data-change="tunec" data-id="${t.id}" ${avail ? '' : 'disabled'}>
-          <div class="tn-lh"><span>◀ ${U.esc(t.lo)}</span><span>${U.esc(t.hi)} ▶</span></div>${avail ? '' : `<div class="tn-need">🔒 ${U.esc(t.needTxt)}</div>`}</div>`;
+          <div class="tn-lh"><span>◀ ${U.esc(t.lo)}</span><span>${U.esc(t.hi)} ▶</span></div>${avail ? '' : `<div class="tn-need">${G.ic('lock')} ${U.esc(t.needTxt)}</div>`}</div>`;
       }
       h += '</div>';
       const dirty = !!this.draft && !tuneEq(g.installed, this.draft, g.tune, g.carId);
@@ -282,7 +284,7 @@
       const chip = (act, v, label, on) => `<button class="chipb ${on ? 'on' : ''}" data-act="${act}" data-v="${v}">${label}</button>`;
       const cur = (list, v) => { const f = list.find((x) => x[0] === v); return f ? f[1] : ''; };
       const sec = (title, now, body, note) => `<div class="pt-sec"><h4>${title}${now ? `<span class="pt-now">${U.esc(now)}</span>` : ''}</h4>${note ? `<p class="pt-note">${note}</p>` : ''}${body}</div>`;
-      const tabs = [['paint', '🎨 Paint'], ['body', '🚗 Body'], ['wheels', '🛞 Wheels'], ['sound', '🔊 Sound']];
+      const tabs = [['paint', G.ic('palette') + ' Paint'], ['body', G.ic('car') + ' Body'], ['wheels', G.ic('tyre') + ' Wheels'], ['sound', G.ic('volume-2') + ' Sound']];
       let body = '';
       if (sub === 'paint') {
         body = sec('Colour', L.paint == null ? 'Team colour' : '', `<div class="sws">
@@ -292,7 +294,7 @@
           + sec('Finish', cur(LK.finishes, L.finish), `<div class="chips2">${LK.finishes.map(([v, l]) => chip('finish', v, l, L.finish === v)).join('')}</div>`)
           + sec('Livery', cur(LK.liveries, L.livery), `<div class="chips2">${LK.liveries.map(([v, l]) => chip('livery', v, l, L.livery === v)).join('')}</div>`)
           + sec('Accent colour', '', `<div class="sws">${LK.accents.map((c) => sw('accent', c, L.accent === c)).join('')}</div>`, 'Stripes, two-tone, the roof and the rest of the livery.')
-          + sec('Race number', L.num ? '#' + L.num : 'none', `<div class="pt-num"><input type="number" min="0" max="99" data-change="num" value="${L.num}"><button class="btn small ghost" data-act="numr">🎲 Random</button></div>`, 'Shown on the Side-stripe and Race liveries. 0 hides it.');
+          + sec('Race number', L.num ? '#' + L.num : 'none', `<div class="pt-num"><input type="number" min="0" max="99" data-change="num" value="${L.num}"><button class="btn small ghost" data-act="numr">${G.ic('dices')} Random</button></div>`, 'Shown on the Side-stripe and Race liveries. 0 hides it.');
       } else if (sub === 'body') {
         body = this.skinHtml(me, L)
           + sec('Body kit', cur(LK.kits, L.kit), `<div class="chips2">${LK.kits.map(([v, l]) => chip('kit', v, l, L.kit === v)).join('')}</div>`)

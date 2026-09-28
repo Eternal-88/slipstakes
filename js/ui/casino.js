@@ -40,7 +40,7 @@
       const sandbox = st.phase === 'sandbox';
       UI.patch(
         this.el.head,
-        `${sandbox ? '<button class="btn ghost" data-act="czback">← Menu</button><h1 class="cz-title">CASINO <small>practice chips</small></h1>' : UI.interTabs()}<div class="cz-tabs"><button class="${this.tab === 'bj' ? 'on' : ''}" data-act="ctab" data-t="bj">🃏 Blackjack</button><button class="${this.tab === 'rl' ? 'on' : ''}" data-act="ctab" data-t="rl">🎡 Roulette</button></div>
+        `${sandbox ? '<button class="btn ghost" data-act="czback">← Menu</button><h1 class="cz-title">CASINO <small>practice chips</small></h1>' : UI.interTabs()}<div class="cz-tabs"><button class="${this.tab === 'bj' ? 'on' : ''}" data-act="ctab" data-t="bj">${G.ic('spade')} Blackjack</button><button class="${this.tab === 'rl' ? 'on' : ''}" data-act="ctab" data-t="rl">${G.ic('target')} Roulette</button></div>
          <div class="cz-money"><span>CASH</span><b>${U.fmtMoney(me.money)}</b><em>floor ${U.fmtMoney(G.Econ.FLOOR)}</em></div>
          ${sandbox ? '' : `<span class="muted small">${G.Game.readyLine()}</span><button class="btn ${me.ready ? 'green' : 'primary'}" data-act="ready">${me.ready ? '✓ Ready' : 'Ready'}</button>`}`
       );

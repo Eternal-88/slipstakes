@@ -11,7 +11,7 @@
   const U = G.U, UI = G.UI;
   const S = () => G.Settings;
   const opt = (v, cur, label) => `<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${label}</option>`;
-  const TABS = [['graphics', '🖥 Graphics'], ['audio', '🔊 Audio'], ['controls', '⌨ Controls'], ['voice', '🎤 Voice'], ['camera', '🎥 Camera & HUD']];
+  const TABS = [['graphics', G.ic('monitor') + ' Graphics'], ['audio', G.ic('volume-2') + ' Audio'], ['music', G.ic('music') + ' Music'], ['controls', G.ic('keyboard') + ' Controls'], ['voice', G.ic('mic') + ' Voice'], ['camera', G.ic('video') + ' Camera & HUD']];
 
   function fullscreen() {
     const d = document;
@@ -84,7 +84,7 @@
     renderCorner() {
       const snd = G.Audio && G.Audio.enabled;
       const fs = !!document.fullscreenElement;
-      this.corner.innerHTML = `${G.Online ? G.Online.cornerHtml() : ''}<button data-c="menu" title="Menu (Esc)">☰</button><button data-c="sound" class="${snd ? '' : 'off'}" title="Sound on/off (M)">${snd ? '🔊' : '🔇'}</button><button data-c="fs" title="Fullscreen">${fs ? '🗗' : '⛶'}</button>`;
+      this.corner.innerHTML = `${G.Online ? G.Online.cornerHtml() : ''}<button data-c="menu" title="Menu (Esc)">${G.ic('menu')}</button><button data-c="sound" class="${snd ? '' : 'off'}" title="Sound on/off (M)">${G.ic(snd ? 'volume-2' : 'volume-x')}</button><button data-c="fs" title="Fullscreen">${G.ic(fs ? 'minimize' : 'maximize')}</button>`;
     },
 
     // Esc: close key capture / sub-view / overlay, or open it.
@@ -144,23 +144,23 @@
       let btns = b('resume', '▶ Resume', 'primary big');
       if (drive) btns += b('restart', '↻ Restart');
       const canGarage = (mode === 'menu' || mode === 'garage' || (drive && !sess && !test)) && !sess;
-      if (canGarage && mode !== 'garage') btns += b('garage', '🔧 Garage, tuning & paint');
+      if (canGarage && mode !== 'garage') btns += b('garage', G.ic('wrench') + ' Garage, tuning & paint');
       const carOk = !sess ? mode !== 'drive' || !test : st && ['lobby', 'carselect', 'intermission', 'results'].includes(st.phase) && mode === 'session';
-      if (carOk) btns += b('car', '🚗 Change car');
-      if (sess && st && ['lobby', 'carselect'].includes(st.phase) && mode === 'session') btns += b('paint', '🎨 Tune & paint');
-      btns += b('settings', '⚙ Settings') + b('controls', '⌨ Controls');
-      if (G.NetDiag) btns += b('conn', sess ? '📶 Connection' : '📶 Connection & device');
-      btns += b('fullscreen', document.fullscreenElement ? '🗗 Exit fullscreen' : '⛶ Fullscreen');
+      if (carOk) btns += b('car', G.ic('car') + ' Change car');
+      if (sess && st && ['lobby', 'carselect'].includes(st.phase) && mode === 'session') btns += b('paint', G.ic('palette') + ' Tune & paint');
+      btns += b('settings', G.ic('settings') + ' Settings') + b('controls', G.ic('keyboard') + ' Controls') + b('music', G.ic('music') + ' Music');
+      if (G.NetDiag) btns += b('conn', G.ic('signal') + (sess ? ' Connection' : ' Connection & device'));
+      btns += b('fullscreen', document.fullscreenElement ? G.ic('minimize') + ' Exit fullscreen' : G.ic('maximize') + ' Fullscreen');
       if (drive) btns += b('leaveDrive', test ? '← Back to garage' : sess ? '← Back to the session' : '← Leave practice', 'ghost');
       // host: who can get in, room size and bots — any time (bots not mid-race)
       if (sess && G.Game.role === 'host' && st) {
         const s = st.settings;
-        btns += b('roomVis', s.vis === 'public' ? '🌐 Public room — make private' : '🔒 Private room — make public');
-        btns += b('roomMax', `👥 Max drivers: ${s.maxPlayers || 8}`);
-        btns += b('roomBots', `🤖 Bots: ${s.bots}`, '', st.phase === 'race');
+        btns += b('roomVis', s.vis === 'public' ? G.ic('globe') + ' Public room — make private' : G.ic('lock') + ' Private room — make public');
+        btns += b('roomMax', `${G.ic('users')} Max drivers: ${s.maxPlayers || 8}`);
+        btns += b('roomBots', `${G.ic('bot')} Bots: ${s.bots}`, '', st.phase === 'race');
       }
       if (sess) btns += b('leaveSession', G.Game.role === 'host' ? '✖ Leave room' : '✖ Leave session', 'red');
-      if (!sess && mode !== 'menu') btns += b('mainMenu', '⌂ Main menu', 'ghost');
+      if (!sess && mode !== 'menu') btns += b('mainMenu', G.ic('house') + ' Main menu', 'ghost');
       return `<div class="ov-card pause"><h1>${title}</h1>${sub ? `<p class="muted">${U.esc(sub)}</p>` : ''}<div class="ov-btns">${btns}</div><p class="muted small ov-foot">Esc closes · M sound · frame rate: Settings → Graphics → Show FPS · <span class="ver">v${G.VERSION}</span></p></div>`;
     },
 
@@ -190,9 +190,26 @@
           row('Other cars', rng('vOthers', 0, 100, 5, '%'), 'Engines, tyre squeal, backfires and crashes of nearby cars.') +
           row('Effects', rng('vSfx', 0, 100, 5, '%'), 'Tyres, crashes, crowd, countdown.') +
           row('Interface', rng('vUi', 0, 100, 5, '%'), 'Clicks, purchases, casino.') +
+          row('Music', rng('vMusic', 0, 100, 5, '%'), 'More in the Music tab: every song, and what plays in the garage.') +
+          `<div class="ov-row"><label></label><div class="ov-ctl"><button class="btn small" data-oact="testsnd">▶ Test sound</button></div></div>`;
+      } else if (this.tab === 'music') {
+        // v5.5.7 the music player: every song in the game, and the garage playlist
+        const M = G.Audio.Music, I = M.SONG_INFO, pin = M.pinned;
+        const st = G.Client.state, racing = G.App.mode === 'drive' || (G.App.mode === 'session' && st && st.phase === 'race');
+        const songs = M.list()
+          .map((id) => {
+            const [title, style, where] = I[id] || [id, '', ''];
+            const on = pin === id, now = M.cur === id;
+            return `<div class="mp-row${on ? ' on' : ''}${now ? ' now' : ''}"><button class="btn small ${on ? 'primary' : 'ghost'}" data-oact="mplay" data-id="${id}" title="${on ? 'Stop' : 'Play'} ${U.esc(title)}">${on ? '■' : '▶'}</button><div><b>${U.esc(title)}</b><span>${U.esc(style)} · ${U.esc(where)}</span></div>${now ? '<em>playing</em>' : ''}</div>`;
+          })
+          .join('');
+        const gsOpts = [['mix', 'All five in turn']].concat(M.CHILL.map((id) => [id, I[id][0]]));
+        body =
           row('Music', rng('vMusic', 0, 100, 5, '%')) +
           row('Music during races', chk('raceMusic')) +
-          `<div class="ov-row"><label></label><div class="ov-ctl"><button class="btn small" data-oact="testsnd">▶ Test sound</button></div></div>`;
+          row('Garage music', sel('garageSong', gsOpts), 'In the garage and between races: all five songs take turns (a new one each visit), or keep one.') +
+          `<div class="mp-head"><b>Listen</b><span>${pin ? `Playing <b>${U.esc(I[pin][0])}</b> until you stop it${racing ? ' - races play their own music, it comes back after' : ''}.` : 'Press ▶ to play a song everywhere outside a race, until you stop it.'}</span></div><div class="mp-list">${songs}</div>` +
+          `<p class="muted small">No recordings: the game plays every note itself, live, on instruments it builds from sound waves.</p>`;
       } else if (this.tab === 'controls') {
         const K = s.keys;
         const keys = Object.keys(S().KEY_LABELS)
@@ -204,7 +221,7 @@
           row('Bot difficulty', sel('botLevel', G.BotKit.LEVEL_ORDER.map((k) => [k, G.BotKit.LEVELS[k].name])), 'Quick race and practice bots. Higher levels take better lines, bring better cars and parts, and sometimes play dirty.') +
           row('Race weather', sel('raceWeather', [['auto', 'Changeable (showers sometimes)'], ['dry', 'Always dry'], ['rain', 'Rain']]), 'Quick races. In the rain dry roads lose grip: narrow tyres cope best, wide slicks can aquaplane.') +
           row('Touch controls', sel('touch', [['auto', 'Auto (appear once you touch the screen)'], ['on', 'Always show'], ['off', 'Off']]), 'On-screen steer, gas, brake and handbrake buttons for touchscreen Chromebooks.') +
-          row('Speech to text', `<button class="btn small" data-oact="stab" data-t="voice">🎤 Voice settings →</button>`, 'Push to talk, tap to talk or voice activated, the language, sensitivity and a microphone test.') +
+          row('Speech to text', `<button class="btn small" data-oact="stab" data-t="voice">${G.ic('mic')} Voice settings →</button>`, 'Push to talk, tap to talk or voice activated, the language, sensitivity and a microphone test.') +
           `<div class="ov-row"><label></label><div class="ov-ctl"><button class="btn small ghost" data-oact="resetKeys">Reset keys to default</button></div></div>` +
           `<p class="muted small">Fixed keys: <b>Esc</b> menu · <b>M</b> sound · <b>F3</b> fps (no F-keys on a Chromebook: Graphics → Show FPS) · spectating: <b>1–8</b>/<b>Tab</b> follow a car, <b>WASD Q E</b> free camera, mouse wheel zoom.<br>Gamepad: left stick steer · RT throttle · LT brake · A handbrake · Y reset · RB camera · Start menu.</p>`;
       } else if (this.tab === 'voice') {
@@ -212,10 +229,10 @@
         const kn = s.keys.talk ? S().keyName(s.keys.talk) : 'the talk key';
         const bind = `<button class="key ${this.capturing === 'talk' ? 'cap' : ''}" data-oact="bind" data-a="talk">${this.capturing === 'talk' ? 'Press a key…' : S().keyName(s.keys.talk)}</button>`;
         const how = {
-          ptt: `Hold ${kn} (or click 🎤) and speak; letting go sends it.`,
-          tap: `Tap ${kn} or 🎤 once and speak; it sends when you pause. Tap again to send straight away.`,
-          voice: `Always listening while you are in a multiplayer session: each sentence goes into the chat when you pause. ${kn} or 🎤 mutes and unmutes it.`,
-          off: 'No microphone at all, and no 🎤 buttons.',
+          ptt: `Hold ${kn} (or click ${G.ic('mic')}) and speak; letting go sends it.`,
+          tap: `Tap ${kn} or ${G.ic('mic')} once and speak; it sends when you pause. Tap again to send straight away.`,
+          voice: `Always listening while you are in a multiplayer session: each sentence goes into the chat when you pause. ${kn} or ${G.ic('mic')} mutes and unmutes it.`,
+          off: 'No microphone at all, and no microphone buttons.',
         }[m];
         const on = m !== 'off';
         body =
@@ -232,7 +249,7 @@
                 : '') +
               row('Game volume while talking', rng('sttDuck', 0, 100, 5, '%'), 'Turns the game down while you talk, so laptop speakers don’t drown you out. 100% leaves it alone.') +
               row('Live captions', chk('sttBar'), 'Shows what it is hearing while you talk.') +
-              row('Mark spoken messages', chk('sttMark'), 'Puts 🎤 in front of them, so everyone knows a misheard word wasn’t typed.') +
+              row('Mark spoken messages', chk('sttMark'), 'Puts a microphone in front of them, so everyone knows a misheard word wasn’t typed.') +
               row('Listening sounds', chk('sttBeep'), 'A short blip when it starts and stops listening.')
             : '') +
           `<div class="ov-row"><label>Test your microphone</label><div class="ov-ctl"><button class="btn small" data-oact="stttest" ${ok ? '' : 'disabled'}>${T && T.test ? '■ Stop test' : '▶ Test'}</button></div><div class="ov-hint"><div class="stt-meter"><i></i><b style="left:${T ? (T.gate01() * 100).toFixed(1) : 50}%"></b></div><span class="stt-heard"></span><br>The bar is your voice and the line is where voice activation starts listening. Nothing is sent while you test.</div></div>` +
@@ -268,9 +285,9 @@
         this.hide();
         return A.openCarTab(a === 'paint' ? 'paint' : 'car');
       }
-      if (a === 'settings' || a === 'controls') {
+      if (a === 'settings' || a === 'controls' || a === 'music') {
         this.view = 'settings';
-        this.tab = a === 'controls' ? 'controls' : this.tab === 'controls' ? 'graphics' : this.tab;
+        this.tab = a === 'controls' || a === 'music' ? a : this.tab === 'controls' || this.tab === 'music' ? 'graphics' : this.tab;
         return this.render();
       }
       if (a === 'conn') {
@@ -352,6 +369,16 @@
       }
       if (a === 'resetKeys') {
         S().resetKeys();
+        return this.render();
+      }
+      if (a === 'mplay') {
+        const M = G.Audio.Music, id = el.dataset.id;
+        if (!G.Audio.enabled) G.Audio.setEnabled(true);
+        M.pinned = M.pinned === id ? null : id;
+        if (M.pinned && !S().s.vMusic) UI.toast('Music volume is at 0% - turn it up to hear it.', 'info');
+        if (G.App.musicFor) G.Audio.music(G.App.musicFor()); // now, not on the next frame
+        clearTimeout(this._mpT);
+        this._mpT = setTimeout(() => this.isOpen && this.tab === 'music' && this.render(), 700); // (the song swaps after a short fade)
         return this.render();
       }
       if (a === 'testsnd') {

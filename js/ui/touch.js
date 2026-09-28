@@ -14,7 +14,7 @@
     init() {
       this.root = document.getElementById('touch');
       this.root.innerHTML = `
-        <div class="tc-top"><button data-t="rs" title="Reset car">↺</button><button data-t="cam" title="Camera">🎥</button></div>
+        <div class="tc-top"><button data-t="rs" title="Reset car">↺</button><button data-t="cam" title="Camera">${G.ic('video')}</button></div>
         <div class="tc-left"><button data-t="l">◀</button><button data-t="r">▶</button></div>
         <div class="tc-right"><button data-t="n" class="nos">N2O</button><button data-t="hb" class="hb">HAND<br>BRAKE</button><button data-t="b" class="br">BRAKE</button><button data-t="t" class="gas">GAS</button></div>`;
       const set = (e, v) => {

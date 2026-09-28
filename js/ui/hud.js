@@ -593,7 +593,7 @@
       if (this.cache.tower !== tower) {
         this.cache.tower = tower;
         el.tower.innerHTML = v.order
-          .map((c, i) => `<div class="row${me && c.id === me.id ? ' me' : ''}${c.finished ? ' fin' : ''}"><span class="p">${i + 1}</span><i style="background:#${c.color.toString(16).padStart(6, '0')}"></i><span class="n">${U.esc(c.name)}</span>${c.bet ? `<em>${U.esc(c.bet)}</em>` : ''}${v.endu ? (c.pit ? '<s class="pit">PIT</s>' : c.stops ? `<s>${c.stops}×</s>` : '') : ''}${c.finished ? '<b>🏁</b>' : c.dnf ? '<b>DNF</b>' : ''}</div>`)
+          .map((c, i) => `<div class="row${me && c.id === me.id ? ' me' : ''}${c.finished ? ' fin' : ''}"><span class="p">${i + 1}</span><i style="background:#${c.color.toString(16).padStart(6, '0')}"></i><span class="n">${U.esc(c.name)}</span>${c.bet ? `<em>${U.esc(c.bet)}</em>` : ''}${v.endu ? (c.pit ? '<s class="pit">PIT</s>' : c.stops ? `<s>${c.stops}×</s>` : '') : ''}${c.finished ? `<b>${G.ic('checker')}</b>` : c.dnf ? '<b>DNF</b>' : ''}</div>`)
           .join('');
       }
       this.drawMap(v.cars.map((c) => ({ x: c.rs.x, z: c.rs.z, h: c.rs.h, color: c.color, id: c.id })), me && me.id);

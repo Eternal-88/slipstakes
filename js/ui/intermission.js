@@ -8,8 +8,8 @@
   // Tab strip shared by every intermission screen (garage renders it too).
   UI.interTabs = function () {
     const cur = (G.Game && G.Game.interTab) || 'garage';
-    const tabs = [['garage', '🔧 Garage'], ['standings', '🏆 Standings']];
-    if (UI.screens.casino) tabs.push(['casino', '🎰 Casino']);
+    const tabs = [['garage', G.ic('wrench') + ' Garage'], ['standings', G.ic('trophy') + ' Standings']];
+    if (UI.screens.casino) tabs.push(['casino', G.ic('slots') + ' Casino']);
     return `<div class="itabs">${tabs.map(([k, l]) => `<button class="${cur === k ? 'on' : ''}" data-act="itab" data-tab="${k}">${l}</button>`).join('')}</div>`;
   };
   UI.globalActs.itab = (el) => {
@@ -38,7 +38,7 @@
   const Standings = {
     mount(root) {
       root.innerHTML = `<div class="inter"><div class="panel in-card"><div class="in-head"></div><div class="in-body"></div>
-        <div class="in-chat"><h3>Chat & trash talk</h3><div class="chat-log"></div><div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small stt-mic" title="Speech to text: hold the talk key or tap here, then speak">🎤</button><button class="btn small" data-act="send">Send</button></div></div></div></div>`;
+        <div class="in-chat"><h3>Chat & trash talk</h3><div class="chat-log"></div><div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small stt-mic" title="Speech to text: hold the talk key or tap here, then speak">${G.ic('mic')}</button><button class="btn small" data-act="send">Send</button></div></div></div></div>`;
       this.el = { head: root.querySelector('.in-head'), body: root.querySelector('.in-body'), log: root.querySelector('.chat-log'), inp: root.querySelector('.chat-in input') };
     },
     acts: {
@@ -116,26 +116,26 @@
       const by = (f, dir) => rows.slice().sort((a, b) => (dir || -1) * (f(a) - f(b)))[0];
       const aw = [];
       const w = by((r) => r.stats.wins);
-      if (w && w.stats.wins) aw.push(['🏁 Most wins', w.name, w.stats.wins + ' wins']);
+      if (w && w.stats.wins) aw.push(['checker', 'Most wins', w.name, w.stats.wins + ' wins']);
       const sp = by((r) => r.stats.spent);
-      if (sp && sp.stats.spent) aw.push(['🛠 Biggest spender', sp.name, U.fmtMoney(sp.stats.spent) + ' on parts']);
+      if (sp && sp.stats.spent) aw.push(['wrench', 'Biggest spender', sp.name, U.fmtMoney(sp.stats.spent) + ' on parts']);
       const rp = by((r) => r.stats.repairs);
-      if (rp && rp.stats.repairs) aw.push(['🔩 Scrapyard regular', rp.name, U.fmtMoney(rp.stats.repairs) + ' in repairs']);
+      if (rp && rp.stats.repairs) aw.push(['cog', 'Scrapyard regular', rp.name, U.fmtMoney(rp.stats.repairs) + ' in repairs']);
       const ob = by((r) => r.stats.bets);
-      if (ob && ob.stats.bets > 0) aw.push(['🔮 Oracle', ob.name, U.fmtSigned(ob.stats.bets) + ' from bets']);
+      if (ob && ob.stats.bets > 0) aw.push(['sparkle', 'Oracle', ob.name, U.fmtSigned(ob.stats.bets) + ' from bets']);
       const cw = by((r) => r.stats.casino, 1);
-      if (cw && cw.stats.casino < 0) aw.push(['🎰 House favourite', cw.name, U.fmtSigned(cw.stats.casino) + ' at the tables']);
+      if (cw && cw.stats.casino < 0) aw.push(['slots', 'House favourite', cw.name, U.fmtSigned(cw.stats.casino) + ' at the tables']);
       const fu = by((r) => r.stats.fuel);
-      if (fu && fu.stats.fuel) aw.push(['⛽ Thirstiest', fu.name, U.fmtMoney(fu.stats.fuel) + ' of fuel']);
+      if (fu && fu.stats.fuel) aw.push(['fuel', 'Thirstiest', fu.name, U.fmtMoney(fu.stats.fuel) + ' of fuel']);
       const table = rows
         .map((r, i) => `<tr class="${me && r.id === me.id ? 'me' : ''}"><td class="p">${i + 1}</td><td><i class="dot" style="background:${hex(r.color)}"></i>${U.esc(r.name)}${r.isBot ? ' <em class="tag-bot">BOT</em>' : ''}</td><td class="num pts">${r.stats.points || 0}</td><td class="num">${U.fmtMoney(r.worth)}</td><td>${r.stats.wins}</td><td>${r.stats.podiums}</td><td class="num">${U.fmtMoney(r.stats.earned)}</td><td class="num">${U.fmtMoney(r.stats.spent)}</td><td class="num">${U.fmtMoney(r.stats.repairs + r.stats.fuel)}</td><td class="num ${r.stats.bets >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(r.stats.bets)}</td><td class="num ${r.stats.casino >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(r.stats.casino)}</td></tr>`)
         .join('');
       UI.patch(
         this.body,
         `<h1 class="fin-t">${st.final.champ === 'points' ? 'CHAMPIONSHIP' : 'FINAL STANDINGS'}</h1><div class="podium">${podium}</div>
-         <div class="awards">${aw.map((a) => `<div class="aw"><span>${a[0]}</span><b>${U.esc(a[1])}</b><em>${a[2]}</em></div>`).join('')}</div>
+         <div class="awards">${aw.map((a) => `<div class="aw"><span>${G.ic(a[0])} ${a[1]}</span><b>${U.esc(a[2])}</b><em>${a[3]}</em></div>`).join('')}</div>
          <table class="stand"><tr><th>#</th><th>Driver</th><th>Pts</th><th>Net worth</th><th>Wins</th><th>Pods</th><th>Prize money</th><th>Parts</th><th>Fuel+repairs</th><th>Bets</th><th>Casino</th></tr>${table}</table>
-         <div class="fin-btns">${G.Game.role === 'host' ? '<button class="btn primary big" data-act="again">🔁 Play again — same room</button>' : '<span class="muted">The host can start a rematch in this room — stay here, or</span>'}<button class="btn ghost big" data-act="menu">Back to menu</button></div>`
+         <div class="fin-btns">${G.Game.role === 'host' ? '<button class="btn primary big" data-act="again">' + G.ic('repeat') + ' Play again — same room</button>' : '<span class="muted">The host can start a rematch in this room — stay here, or</span>'}<button class="btn ghost big" data-act="menu">Back to menu</button></div>`
       );
     },
     acts: {

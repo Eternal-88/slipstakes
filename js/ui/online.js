@@ -73,6 +73,7 @@
     async start() {
       if (this.started) return;
       this.started = true;
+      this._changed(); // the corner button shows from now on, not only once somebody else turns up
       try {
         this.keys = await G.Relay.DM.keyPair();
         this.pub = await G.Relay.DM.exportPub(this.keys.publicKey);
@@ -89,12 +90,14 @@
       m.connect(7000)
         .then(() => {
           this.ms.push(m);
+          this._changed();
           const subAt = performance.now();
           m.subscribe(NS + 'p/+');
           m.subscribe(NS + 'dm/' + this.id);
           m.on('msg', (t, s) => this._in(t, s, performance.now() - subAt > 1500));
           m.on('close', () => {
             this.ms = this.ms.filter((x) => x !== m);
+            this._changed();
             setTimeout(() => this._connect(b), 30000); // try that broker again later
           });
           this._publish(true, m);
@@ -335,13 +338,13 @@
     count() {
       let n = 0;
       for (const id of this.cards.keys()) if (!this.blocked.has(id)) n++;
-      return n + 1; // (and us)
+      return n; // everyone else (v5.5.7: not counting us - alone is 0, not 1)
     },
     // the corner button: 👥 and how many are on, or unread messages
     cornerHtml() {
       if (!this.started) return '';
       const u = this.unread();
-      return `<button data-c="online" title="Online players and messages" class="on-cbtn">👥<b class="${u ? 'unread' : ''}">${u || (this.ms.length ? this.count() : '')}</b></button>`;
+      return `<button data-c="online" title="${this.ms.length ? this.count() + ' other' + (this.count() === 1 ? '' : 's') + ' online · ' : ''}players and messages" class="on-cbtn">${G.ic('users')}<b class="${u ? 'unread' : ''}">${u || (this.ms.length ? this.count() : '')}</b></button>`;
     },
 
     _changed() {
@@ -446,7 +449,7 @@
     render() {
       if (!this.el || !this.open) return;
       const $ = this.$;
-      $('.on-n').textContent = this.ms.length ? `${this.count()} playing` : this.started ? 'connecting…' : '';
+      $('.on-n').textContent = this.ms.length ? `${this.count()} online` : this.started ? 'connecting…' : '';
       const chat = this.view && this.convos.get(this.view) ? this.convos.get(this.view) : this.view ? this._convo(this.view, (this.cards.get(this.view) || { info: { name: 'Driver' } }).info.name) : null;
       $('.on-listv').hidden = !!chat;
       $('.on-chat').hidden = !chat;

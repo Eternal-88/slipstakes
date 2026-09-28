@@ -48,20 +48,20 @@
       UI.patch(
         this.el.body,
         `<div class="choice ${me.entry === 'race' ? 'on' : ''}" data-act="race">
-           <div class="ch-t">🏁 RACE</div>
+           <div class="ch-t">${G.ic('checker')} RACE</div>
            <p>Paid by placement: <b>${prizes[0]}</b> · ${prizes[1]} · ${prizes[2]} … last ${prizes[prizes.length - 1]}. +${U.fmtMoney(E().GAIN_BONUS)} per place gained from the grid, ${U.fmtMoney(E().FASTEST_LAP)} fastest lap.</p>
            <p class="muted">Your ${U.esc(Parts.CARS[me.carId].name)}: tyres ${Math.round((1 - w.tyre) * 100)}% · engine ${Math.round((1 - w.engine) * 100)}% · running cost ~${U.fmtMoney(cost)} (fuel + wear)</p>
-           ${warns.map((x) => `<div class="wn bad">⚠ ${U.esc(x[1])}</div>`).join('')}
+           ${warns.map((x) => `<div class="wn bad">${G.ic('triangle-alert')} ${U.esc(x[1])}</div>`).join('')}
            ${G.Advisor ? G.Advisor.html(G.Advisor.tips(me, tr, 4).filter((t) => t.lvl !== 'good'), false) : ''}
          </div>
          <div class="choice ${me.entry === 'sit' ? 'on' : ''}" data-act="sit">
-           <div class="ch-t">🎲 SIT OUT & BET</div>
+           <div class="ch-t">${G.ic('dices')} SIT OUT & BET</div>
            <p>No prize, no wear, no fuel. Watch live with a free camera and bet on the racers — odds come from recent form and each car's stats on <b>this</b> track.</p>
            <p class="muted">Bets ${U.fmtMoney(E().BET_MIN)}–${U.fmtMoney(E().BET_MAX)}, max ${U.fmtMoney(E().BET_TOTAL)} per race. You always keep ${U.fmtMoney(E().FLOOR)} for repairs.</p>
          </div>`
       );
       const hs = Object.values(st.players).filter((p) => !p.isBot && p.connected);
-      UI.patch(this.el.foot, hs.map((p) => `<span class="rd ${p.entry ? 'y' : ''}" style="border-color:${hex(p.color)}">${U.esc(p.name)} ${p.entry === 'race' ? '🏁' : p.entry === 'sit' ? '🎲' : '…'}</span>`).join('') + `<span class="muted small">Undecided at the buzzer = racing. Bots always race.</span>`);
+      UI.patch(this.el.foot, hs.map((p) => `<span class="rd ${p.entry ? 'y' : ''}" style="border-color:${hex(p.color)}">${U.esc(p.name)} ${p.entry === 'race' ? G.ic('checker') : p.entry === 'sit' ? G.ic('dices') : '…'}</span>`).join('') + `<span class="muted small">Undecided at the buzzer = racing. Bots always race.</span>`);
     },
     update() {
       if (Math.floor(performance.now() / 500) !== this._t) {
@@ -104,14 +104,14 @@
           return `<tr class="${p.id === me.id ? 'me' : ''}"><td><i class="dot" style="background:${hex(p.color)}"></i>${U.esc(p.name)}${stip.has(p.id) ? ' <em class="tag-sti" title="Sponsor stipend: poorest racers get a bonus">+$300</em>' : ''}</td><td class="muted">${Parts.CARS[p.carId].name}</td><td>${form}</td><td><div class="sc"><i style="width:${o.score * 10}%"></i></div></td>${cell('win', o.win)}${cell('podium', o.podium)}</tr>`;
         })
         .join('');
-      const bounty = st.bounty ? `<div class="bounty">🎯 <b>BOUNTY ${U.fmtMoney(st.bounty.amount)}</b> on ${U.esc(st.bounty.name)} (the money leader) — paid to whoever finishes highest ahead of them.</div>` : '';
+      const bounty = st.bounty ? `<div class="bounty">${G.ic('target')} <b>BOUNTY ${U.fmtMoney(st.bounty.amount)}</b> on ${U.esc(st.bounty.name)} (the money leader) — paid to whoever finishes highest ahead of them.</div>` : '';
       UI.patch(this.el.board, `${bounty}<table class="odds"><tr><th>Racer</th><th>Car</th><th>Form</th><th>Car on this track</th><th>WIN</th><th>PODIUM</th></tr>${rows}</table>${this.publicBets(st)}`);
       UI.patch(this.el.slip, sitting ? this.slipHtml(st, me) : this.sideHtml(st, me));
       UI.patch(this.el.foot, `<span class="muted">${G.Game.readyLine()}</span><button class="btn ${me.ready ? 'green' : 'primary'}" data-act="ready">${me.ready ? '✓ Ready' : sitting ? 'Done betting' : 'Ready to race'}</button>`);
     },
     publicBets(st) {
-      const bets = st.bets.map((b) => `<div>🎲 <b>${U.esc(b.name)}</b> ${U.fmtMoney(b.stake)} on ${U.esc(b.racerName)} to ${b.type === 'win' ? 'win' : 'podium'} @${b.odds.toFixed(2)}x</div>`);
-      const sides = st.sideBets.map((s) => `<div>⚔ <b>${U.esc(s.fromName)}</b> vs <b>${U.esc(s.toName)}</b> ${U.fmtMoney(s.stake)} — ${s.status}</div>`);
+      const bets = st.bets.map((b) => `<div>${G.ic('dices')} <b>${U.esc(b.name)}</b> ${U.fmtMoney(b.stake)} on ${U.esc(b.racerName)} to ${b.type === 'win' ? 'win' : 'podium'} @${b.odds.toFixed(2)}x</div>`);
+      const sides = st.sideBets.map((s) => `<div>${G.ic('swords')} <b>${U.esc(s.fromName)}</b> vs <b>${U.esc(s.toName)}</b> ${U.fmtMoney(s.stake)} — ${s.status}</div>`);
       const all = bets.concat(sides);
       return all.length ? `<div class="pub"><h3>On the book</h3>${all.join('')}</div>` : '';
     },

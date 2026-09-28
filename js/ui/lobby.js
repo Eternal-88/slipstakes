@@ -10,7 +10,9 @@
   function playerRow(p, st, extra) {
     const car = Parts.CARS[p.carId];
     const host = p.id === st.hostId;
-    return `<div class="pl ${p.connected || p.isBot ? '' : 'off'}"><i style="background:${hex(p.color)}"></i><b>${U.esc(p.name)}</b>${host ? '<em class="tag-host">HOST</em>' : ''}${p.isBot ? '<em class="tag-bot">BOT</em>' : ''}${!p.connected && !p.isBot ? '<em class="tag-off">OFFLINE</em>' : ''}<span class="car">${car ? car.name : ''}</span>${extra || ''}</div>`;
+    // (v5.5.7: hover a bot to see how it drives)
+    const K = G.BotKit, how = p.isBot ? (K.STYLE_NAMES[p.botStyle] || 'All-rounder') + ' driver' + (K.traitText(p.botTraits) ? ' · ' + K.traitText(p.botTraits) : '') : '';
+    return `<div class="pl ${p.connected || p.isBot ? '' : 'off'}"${how ? ` title="${U.esc(how)}"` : ''}><i style="background:${hex(p.color)}"></i><b>${U.esc(p.name)}</b>${host ? '<em class="tag-host">HOST</em>' : ''}${p.isBot ? '<em class="tag-bot">BOT</em>' : ''}${!p.connected && !p.isBot ? '<em class="tag-off">OFFLINE</em>' : ''}<span class="car">${car ? car.name : ''}</span>${extra || ''}</div>`;
   }
 
   function chatHtml(st) {
@@ -39,7 +41,7 @@
           <div class="panel lb-chat">
             <h3>Chat & trash talk</h3>
             <div class="chat-log"></div>
-            <div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small stt-mic" title="Speech to text: hold the talk key or tap here, then speak">🎤</button><button class="btn small" data-act="send">Send</button></div>
+            <div class="chat-in"><input maxlength="140" placeholder="Say something…" data-enter="send"><button class="btn small stt-mic" title="Speech to text: hold the talk key or tap here, then speak">${G.ic('mic')}</button><button class="btn small" data-act="send">Send</button></div>
           </div>
         </div>`;
       this.el = { code: root.querySelector('.lb-code'), count: root.querySelector('.lb-count'), pl: root.querySelector('.lb-players'), set: root.querySelector('.lb-set'), btns: root.querySelector('.lb-btns'), log: root.querySelector('.chat-log'), inp: root.querySelector('.chat-in input') };
@@ -51,8 +53,8 @@
       const s = st.settings;
       const hostP = st.players[st.hostId];
       const roomName = s.name || `${hostP ? hostP.name : 'Host'}'s room`;
-      const vis = s.vis === 'public' ? '🌐 <b>Public</b> — on the server list; anyone can walk in' : '🔒 <b>Private</b> — friends with the code walk in; strangers on the server list ask the host first (the code is never shown there)';
-      UI.patch(this.el.code, `<span>ROOM CODE</span><b>${U.esc(st.code || '')}</b><button class="btn small ghost" data-act="copy" title="Copy a link that opens the Join box with this code filled in">🔗 Copy invite link</button><p class="muted small"><b>${U.esc(roomName)}</b> · up to ${s.maxPlayers || 8} drivers. Friends click <b>Join</b> and type the code, or find the room on the 🌐 Server list.</p><p class="lb-vis">${vis}</p>`);
+      const vis = s.vis === 'public' ? G.ic('globe') + ' <b>Public</b> — on the server list; anyone can walk in' : G.ic('lock') + ' <b>Private</b> — friends with the code walk in; strangers on the server list ask the host first (the code is never shown there)';
+      UI.patch(this.el.code, `<span>ROOM CODE</span><b>${U.esc(st.code || '')}</b><button class="btn small ghost" data-act="copy" title="Copy a link that opens the Join box with this code filled in">${G.ic('link')} Copy invite link</button><p class="muted small"><b>${U.esc(roomName)}</b> · up to ${s.maxPlayers || 8} drivers. Friends open <b>Play online</b> and type the code, or find the room on the server list.</p><p class="lb-vis">${vis}</p>`);
       const drivers = st.order.map((id) => st.players[id]).filter(Boolean);
       UI.patch(this.el.count, `${drivers.filter((p) => !p.isBot).length} of ${s.maxPlayers || 8}${drivers.some((p) => p.isBot) ? ` · ${drivers.filter((p) => p.isBot).length} bots` : ''}`);
       UI.patch(
@@ -63,15 +65,13 @@
           .map((p) => playerRow(p, st, isHost && !p.isBot && p.id !== st.hostId ? `<button class="btn small ghost kick" data-act="kick" data-id="${p.id}" title="Remove from the room">✖ Kick</button>` : ''))
           .join('')
       );
-      const CU = { off: 'Off (pure racing)', mild: 'Mild', wild: 'Wild (chaos)' };
-      const cu = s.catchup || 'mild';
       const WX = { auto: 'Changeable', dry: 'Always dry', rain: 'Rain' };
       UI.patch(
         this.el.set,
         isHost
           ? `<section class="lb-group"><h4>Room</h4><div class="lb-grid">
                <label class="fld lb-wide"><span>Room name</span><input class="txt-in" maxlength="28" value="${U.esc(s.name || '')}" placeholder="${U.esc(roomName)}" data-change="rname" title="How the room shows on the server list (press Enter)"></label>
-               <label class="fld lb-two" title="Private: anyone with the code walks in; strangers on the server list ask you first and never see the code. Public: anyone on the server list walks straight in."><span>Who can join</span><select data-input="vis"><option value="private" ${s.vis !== 'public' ? 'selected' : ''}>🔒 Private — code, or ask me</option><option value="public" ${s.vis === 'public' ? 'selected' : ''}>🌐 Public — anyone</option></select></label>
+               <label class="fld lb-two" title="Private: anyone with the code walks in; strangers on the server list ask you first and never see the code. Public: anyone on the server list walks straight in."><span>Who can join</span><select data-input="vis"><option value="private" ${s.vis !== 'public' ? 'selected' : ''}>Private — code, or ask me</option><option value="public" ${s.vis === 'public' ? 'selected' : ''}>Public — anyone</option></select></label>
                <label class="fld"><span>Max drivers</span><select data-input="maxPlayers">${[2, 3, 4, 5, 6, 7, 8].map((n) => `<option ${n === (s.maxPlayers || 8) ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
              </div></section>
              <section class="lb-group"><h4>Session</h4><div class="lb-grid">
@@ -82,12 +82,12 @@
                <label class="fld" title="Bots fill empty grid slots (8 cars at most). You can change this between races too."><span>Bots</span><select data-input="bots">${[0, 1, 2, 3, 4, 5, 6, 7].map((n) => `<option ${n === s.bots ? 'selected' : ''}>${n}</option>`).join('')}</select></label>
                <label class="fld" title="How fast the bots are, how clean they race, and how good their cars get. Hard and above can turn rival and try to knock someone off. Applies from the next race."><span>Bot skill</span><select data-input="botLevel">${G.BotKit.LEVEL_ORDER.map((k) => `<option value="${k}" ${k === (s.botLevel || 'normal') ? 'selected' : ''}>${G.BotKit.LEVELS[k].name}</option>`).join('')}</select></label>
                <label class="fld" title="Changeable: sometimes a shower starts mid-race and the road gets slippery. Tracks that are already wet or snowy stay that way."><span>Weather</span><select data-input="weather">${Object.keys(WX).map((k) => `<option value="${k}" ${k === (s.weather || 'auto') ? 'selected' : ''}>${WX[k]}</option>`).join('')}</select></label>
-               <label class="fld" title="Cars trailing the leader get extra power: Mild up to +10%, Wild up to +25%"><span>Catch-up</span><select data-input="catchup">${Object.keys(CU).map((k) => `<option value="${k}" ${k === cu ? 'selected' : ''}>${CU[k]}</option>`).join('')}</select></label>
+               ${UI.cuField(s.catchup)}
              </div></section>
              <p class="muted small lb-note">~${s.races * 6 >= 90 ? ((s.races * 6) / 60).toFixed(1) + ' h' : Math.round(s.races * 6) + ' min'} session · drivers can join at any time (late joiners start with 80% of the poorest driver's worth)</p>`
-          : `<div class="lb-summary">${[`${s.races} race${s.races === 1 ? '' : 's'}`, s.champ === 'points' ? 'Championship points' : 'Richest wins', `${s.bots} ${G.BotKit.level(s.botLevel).name.toLowerCase()} bot${s.bots === 1 ? '' : 's'}`, `${WX[s.weather || 'auto']} weather`, `Catch-up ${CU[cu].split(' ')[0].toLowerCase()}`].map((x) => `<span class="chip-s">${U.esc(x)}</span>`).join('')}</div><p class="muted small lb-note">Waiting for the host to start.</p>`
+          : `<div class="lb-summary">${[`${s.races} race${s.races === 1 ? '' : 's'}`, s.champ === 'points' ? 'Championship points' : 'Richest wins', `${s.bots} ${G.BotKit.level(s.botLevel).name.toLowerCase()} bot${s.bots === 1 ? '' : 's'}`, `${WX[s.weather || 'auto']} weather`, `Catch-up ${G.Settings.cuLabel(s.catchup)}`].map((x) => `<span class="chip-s">${U.esc(x)}</span>`).join('')}</div><p class="muted small lb-note">Waiting for the host to start.</p>`
       );
-      UI.patch(this.el.btns, `<button class="btn ghost" data-act="leave">Leave</button><button class="btn" data-act="garage">🎨 Car, tune & paint</button>${isHost ? '<button class="btn primary big" data-act="start">Start session →</button>' : ''}`);
+      UI.patch(this.el.btns, `<button class="btn ghost" data-act="leave">Leave</button><button class="btn" data-act="garage">${G.ic('palette')} Car, tune & paint</button>${isHost ? '<button class="btn primary big" data-act="start">Start session →</button>' : ''}`);
       const log = chatHtml(st);
       if (this.el.log._html !== log) {
         UI.patch(this.el.log, log);
@@ -96,7 +96,7 @@
     },
     input(k, el) {
       if (k === 'bots') G.Client.act({ t: 'settings', bots: +el.value });
-      if (k === 'catchup') G.Client.act({ t: 'settings', catchup: el.value });
+      if (k === 'cuPreset') this.change('catchup', el);
       if (k === 'botLevel') G.Client.act({ t: 'settings', botLevel: el.value });
       if (k === 'weather') G.Client.act({ t: 'settings', weather: el.value });
       if (k === 'champ') G.Client.act({ t: 'settings', champ: el.value });
@@ -106,6 +106,12 @@
     // number / text fields: act on Enter or leaving the field, not per keystroke
     change(k, el) {
       if (k === 'rname') return G.Client.act({ t: 'settings', name: el.value });
+      if (k === 'catchup') {
+        const p = UI.cuRead(el);
+        if (p != null) G.Client.act({ t: 'settings', catchup: p });
+        else if (!el.dataset.input) el.value = G.Settings.cuPct(G.Client.state.settings.catchup);
+        return;
+      }
       if (k !== 'races') return;
       const n = Math.round(+el.value);
       if (!(n >= 1 && n <= 100)) {
@@ -181,7 +187,7 @@
       const hs = Object.values(st.players).filter((p) => !p.isBot && p.connected);
       const ready = hs.map((p) => `<span class="rd ${p.ready ? 'y' : ''}" style="border-color:${hex(p.color)}">${U.esc(p.name)} ${p.ready ? '✓' : '…'}</span>`).join('');
       const isHost = me.id === st.hostId;
-      UI.patch(this.el.foot, `<div class="cs-sw">${sw}</div><div class="cs-ready">${ready}</div><div class="cs-btns"><button class="btn" data-act="garage">🎛 Tune & 🎨 paint</button><button class="btn ${me.ready ? 'green' : 'primary'} big" data-act="ready">${me.ready ? '✓ Ready' : 'Ready'}</button>${isHost ? '<button class="btn ghost" data-act="start">Start now</button>' : ''}</div>`);
+      UI.patch(this.el.foot, `<div class="cs-sw">${sw}</div><div class="cs-ready">${ready}</div><div class="cs-btns"><button class="btn" data-act="garage">${G.ic('sliders-horizontal')} Tune & paint</button><button class="btn ${me.ready ? 'green' : 'primary'} big" data-act="ready">${me.ready ? '✓ Ready' : 'Ready'}</button>${isHost ? '<button class="btn ghost" data-act="start">Start now</button>' : ''}</div>`);
     },
     acts: {
       garage() { G.App.openCarTab('paint'); },
@@ -227,7 +233,7 @@
       else if (G.Game.spectating) h = `<b>FINISHED</b> — spectating${who} · <span>1–8 / Tab</span> another car · <span>F</span> your car · <span>WASD</span> free cam`;
       else if (st.race) h = `<b>RACE ${st.race.no}/${st.settings.races}</b> ${tr ? U.esc(tr.name) : ''}`;
       UI.patch(this.el.top, h);
-      UI.patch(this.el.net, G.Game.lost ? '<span class="bad">⚠ Reconnecting to host…</span>' : '');
+      UI.patch(this.el.net, G.Game.lost ? '<span class="bad">' + G.ic('triangle-alert') + ' Reconnecting to host…</span>' : '');
     },
   };
   UI.register('raceui', RaceUI);
@@ -259,15 +265,15 @@
         .join('');
       const hasPay = R.rows.some((r) => r.payout);
       UI.patch(this.el.table, `<table><tr><th>#</th><th>Driver</th><th>Time</th>${laps ? '<th>Best lap</th>' : ''}<th>Grid</th>${R.endu ? '<th>Stops</th>' : ''}<th>Pts</th>${hasPay ? '<th>Net</th>' : ''}</tr>${rows}</table>`);
-      const bty = R.bounty ? `<div class="bounty">🎯 Bounty on ${U.esc(R.bounty.name)}: ${R.bounty.winner ? `<b>${U.esc(R.bounty.winnerName)}</b> collects ${U.fmtMoney(R.bounty.amount)}` : 'nobody beat them — it stays on the table'}.</div>` : '';
+      const bty = R.bounty ? `<div class="bounty">${G.ic('target')} Bounty on ${U.esc(R.bounty.name)}: ${R.bounty.winner ? `<b>${U.esc(R.bounty.winnerName)}</b> collects ${U.fmtMoney(R.bounty.amount)}` : 'nobody beat them — it stays on the table'}.</div>` : '';
       UI.patch(this.el.extra, bty + (G.Game.resultsExtra ? G.Game.resultsExtra(R) : ''));
       const left = secsLeft(st);
       // v4: double or nothing on this race's prize (once, a straight 50/50)
       const mine = me && R.rows.find((r) => r.id === me.id);
       const prize = mine && mine.payout ? mine.payout.prize : 0;
       let dbl = '';
-      if (mine && mine.dbl) dbl = `<span class="dbl-res ${mine.dbl}">${mine.dbl === 'won' ? '🪙 Doubled! +' + U.fmtMoney(mine.dblAmt) : '🪙 Lost the flip: −' + U.fmtMoney(mine.dblAmt)}</span>`;
-      else if (prize > 0) dbl = `<button class="btn gold" data-act="double" title="A straight 50/50 coin flip: win and your prize is paid again, lose and it's gone">🪙 Double or nothing (${U.fmtMoney(Math.min(prize, G.Econ.DOUBLE_MAX))})</button>`;
+      if (mine && mine.dbl) dbl = `<span class="dbl-res ${mine.dbl}">${G.ic('coins')} ${mine.dbl === 'won' ? 'Doubled! +' + U.fmtMoney(mine.dblAmt) : 'Lost the flip: −' + U.fmtMoney(mine.dblAmt)}</span>`;
+      else if (prize > 0) dbl = `<button class="btn gold" data-act="double" title="A straight 50/50 coin flip: win and your prize is paid again, lose and it's gone">${G.ic('coins')} Double or nothing (${U.fmtMoney(Math.min(prize, G.Econ.DOUBLE_MAX))})</button>`;
       UI.patch(this.el.foot, `<span class="muted">${left != null ? 'Garage opens in ' + left + ' s' : ''} · ${G.Game.readyLine()}</span>${dbl}<button class="btn ${me && me.ready ? 'green' : 'primary'}" data-act="ready">${me && me.ready ? '✓ Waiting…' : 'Continue'}</button>`);
     },
     update() {

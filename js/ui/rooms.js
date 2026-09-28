@@ -175,7 +175,7 @@
         if (!code) {
           if (this._asking || !this.board) return;
           this._asking = true;
-          UI.notice(`🔒 Asked the host of <b>${U.esc(r.name)}</b> to let you in…`, () => this.board && this.board.cancelAsk());
+          UI.notice(`${G.ic('lock')} Asked the host of <b>${U.esc(r.name)}</b> to let you in…`, () => this.board && this.board.cancelAsk());
           try {
             code = await this.board.ask(r, G.App.name());
             UI.clearNotice();
@@ -226,7 +226,7 @@
       this.el.style.display = on ? '' : 'none';
       this.el.innerHTML = on
         ? Array.from(g.requests.values())
-            .map((r) => `<div class="rq"><span>🔔 <b>${U.esc(r.name)}</b> wants to join</span><button class="btn small green" data-id="${U.esc(r.id)}" data-ok="1">Let in</button><button class="btn small ghost" data-id="${U.esc(r.id)}" data-ok="0">No</button></div>`)
+            .map((r) => `<div class="rq"><span>${G.ic('bell')} <b>${U.esc(r.name)}</b> wants to join</span><button class="btn small green" data-id="${U.esc(r.id)}" data-ok="1">Let in</button><button class="btn small ghost" data-id="${U.esc(r.id)}" data-ok="0">No</button></div>`)
             .join('')
         : '';
     },

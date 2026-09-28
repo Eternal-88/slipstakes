@@ -147,7 +147,7 @@
     },
     html() {
       const L = this.lines();
-      return `<div class="ov-card conn"><div class="ov-head"><button class="btn small ghost" data-oact="back">←</button><h1>CONNECTION</h1><button class="btn small primary" data-oact="copyDiag">📋 Copy debug info</button></div><p class="muted small">If you keep dropping out, copy this and paste it to whoever runs the room. It stays on this computer until you do.</p><pre class="diag">${U.esc(L.join('\n'))}</pre></div>`;
+      return `<div class="ov-card conn"><div class="ov-head"><button class="btn small ghost" data-oact="back">←</button><h1>CONNECTION</h1><button class="btn small primary" data-oact="copyDiag">${G.ic('clipboard-list')} Copy debug info</button></div><p class="muted small">If you keep dropping out, copy this and paste it to whoever runs the room. It stays on this computer until you do.</p><pre class="diag">${U.esc(L.join('\n'))}</pre></div>`;
     },
     copy() {
       const text = this.lines().join('\n');

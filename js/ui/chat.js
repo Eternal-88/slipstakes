@@ -18,7 +18,7 @@
       const el = document.createElement('div');
       el.id = 'chatbox';
       el.style.display = 'none';
-      el.innerHTML = `<div class="cb-log"></div><div class="cb-in"><input maxlength="140" placeholder="Say something… Enter sends · Esc closes"></div><div class="cb-row"><button class="cb-btn" title="Chat (T or Enter)">💬 <span>Chat</span><b></b></button><button class="cb-btn stt-mic" title="Speech to text">🎤</button></div>`;
+      el.innerHTML = `<div class="cb-log"></div><div class="cb-in"><input maxlength="140" placeholder="Say something… Enter sends · Esc closes"></div><div class="cb-row"><button class="cb-btn" title="Chat (T or Enter)">${G.ic('message-circle')} <span>Chat</span><b></b></button><button class="cb-btn stt-mic" title="Speech to text">${G.ic('mic')}</button></div>`;
       document.body.appendChild(el);
       this.el = el;
       this.logEl = el.querySelector('.cb-log');
