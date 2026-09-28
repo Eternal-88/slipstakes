@@ -158,6 +158,7 @@
       }
       const d = Math.sqrt(best);
       const base = track.Y[bk];
+      fn.lastBase = base; // (v5.6.1: for theme.hillRel colouring)
       // (v5: run-off width varies along the road — pit aprons, gravel traps)
       const flat = track.wallD[bk] + 3, clear = track.wallD[bk] + 14;
       let h = base;
@@ -336,7 +337,7 @@
               if (ks) for (let n = 0; n < ks.length; n++) best = Math.min(best, (gx - track.X[ks[n]]) ** 2 + (gz - track.Z[ks[n]]) ** 2);
             }
           }
-          const far = Math.sqrt(best) - calm > 0;
+          const far = Math.sqrt(best) - calm > 0 && !th.smoothGround; // (v5.6.1 theme.smoothGround: no jitter, see gH.mesh)
           const rj = rng(), rk = rng();
           const x = gx + (far && i > 0 && i < nx ? (rj - 0.5) * dx * 0.5 : 0);
           const z = gz + (far && j > 0 && j < nz ? (rk - 0.5) * dz * 0.5 : 0);
@@ -344,7 +345,7 @@
           // a little facet noise away from the road
           const jit = (rng() - 0.5) * 1.2;
           if (Math.sqrt(best) > clear && far) h += jit;
-          H.push([x, h - 0.05, z]);
+          H.push([x, h - 0.05, z, gH.lastBase]);
         }
         if (j % 16 === 15) {
           yield 'ground rows';
@@ -353,6 +354,18 @@
       }
       yield 'ground';
       resume();
+      // (v5.6.1) the mesh's own height anywhere, for ground cover that has to
+      // lie right on it: between its corners a big terrain triangle is not
+      // where groundFn says, and a field laid by groundFn sank into it in
+      // places. Only on an unjittered grid (theme.smoothGround).
+      if (th.smoothGround) {
+        gH.mesh = (x, z) => {
+          const fi = U.clamp((x - x0) / dx, 0, nx - 1e-6), fj = U.clamp((z - z0) / dz, 0, nz - 1e-6), W = nx + 1;
+          const i = Math.floor(fi), j = Math.floor(fj), u = fi - i, v = fj - j;
+          const a = H[j * W + i][1], b = H[j * W + i + 1][1], c = H[(j + 1) * W + i + 1][1], d = H[(j + 1) * W + i][1];
+          return (u >= v ? a + u * (b - a) + v * (c - b) : a + v * (d - a) + u * (c - d)) + 0.05; // (+0.05: where groundFn's height sits)
+        };
+      }
       const pos = [], col = [];
       const g1 = C(th.ground), g2 = C(th.ground2), g3 = C(th.hill), gp = C(th.patch || th.ground2), rock = C(th.mtn || th.hill).multiplyScalar(0.9);
       const beach = C(0xe6d3a0), snow = C(0xf4f6f8);
@@ -367,7 +380,10 @@
             const n = vnoise(cx, cz);
             tmp.copy((i + j) % 3 === 0 ? g2 : g1);
             if (n > 0.35) tmp.lerp(gp, U.clamp((n - 0.35) * 2.2, 0, 0.8)); // meadow / dry patches
-            tmp.lerp(g3, U.clamp(hAvg / 14, 0, 1));
+            // (v5.6.1 theme.hillRel: gold by height above the nearest road
+            // instead of above sea level, so a road that climbs keeps its
+            // green valley floor and only the hills round it turn gold)
+            tmp.lerp(g3, th.hillRel ? U.clamp((hAvg - (p[3] + q[3] + r[3]) / 3) / th.hillRel, 0, 1) : U.clamp(hAvg / 14, 0, 1));
             if (slope > 0.45) tmp.lerp(rock, U.clamp((slope - 0.45) * 1.5, 0, 0.7)); // cliffs show rock
             if (th.snow && hAvg > 18) tmp.lerp(snow, U.clamp((hAvg - 18) / 6, 0, 0.9));
             if (hAvg < -0.25) tmp.copy(beach).multiplyScalar(0.8 + 0.2 * U.clamp(1 + hAvg / 3, 0, 1)); // sea bed / beach
@@ -1525,6 +1541,200 @@
     const env = () => group.userData.env || { t: 0 };
     const tmp = {}, q = {};
     for (const o of track.dyn) {
+      if (o.k === 'train' && o.look && o.look !== 'train') {
+        // v5.6.1 crossings that aren't railways: forklifts out of the
+        // Megastore's stockrooms, a tractor and its hay wagons on Harvest Run.
+        // Same timing, physics and bots as a level crossing (each vehicle is
+        // a carriage). Built in the crossing's frame like the railway: local
+        // X across the road, Z along it; everything is mirror-symmetric in X.
+        const i = o.i, y0 = track.Y[i], H0 = track.H[i], cx = track.X[i], cz = track.Z[i];
+        const fork = o.look === 'forklift', wd = track.wallD[i];
+        const ground = (x, z) => (_gH ? (_gH.mesh || _gH)(x, z) : y0);
+        const W = (lx, lz) => [cx + lx * Math.cos(H0) + lz * Math.sin(H0), cz - lx * Math.sin(H0) + lz * Math.cos(H0)];
+        if (!o.car) {
+          const xb = new G.CarModel.GB(), wb = new G.CarModel.GB(), txt = new G.CarModel.GB(), lampOn = [];
+          const at = (lx, lz) => {
+            const p = W(lx, lz);
+            return [p[0], ground(p[0], p[1]), p[1]];
+          };
+          if (fork) {
+            // yellow and black stripes down both edges of the forklift lane,
+            // right across the aisle; a stockroom at each end, its door hung
+            // with plastic strips (the forklifts come and go through it)
+            for (let k = -o.span + 1.6, n = 0; k < o.span - 1.6; k += 1.2, n++) for (const sz of [-2.2, 2.2]) xb.box(k + 0.6, 0.03, sz, 1.2, 0.02, 0.32, C(n % 2 ? 0x1b1d22 : 0xf2c230));
+            for (const sx of [-1, 1]) {
+              const face = sx * (o.span - 1.6);
+              xb.box(sx * (o.span + 2.4), 2.6, 0, 8, 5.2, 10, C(0xd9d6cf));
+              xb.box(sx * (o.span + 2.4), 5.25, 0, 8.3, 0.1, 10.3, C(0x9a9ea5));
+              xb.box(face - sx * 0.03, 1.7, 0, 0.04, 3.4, 3.4, C(0x2a2d33));
+              for (let k = -6; k <= 6; k++) xb.box(face - sx * 0.07, 1.72, k * 0.25, 0.03, 3.3, 0.18, C(k % 2 ? 0xb9c6cc : 0xa7b6bd));
+              xb.box(face - sx * 0.05, 4.1, 0, 0.06, 0.7, 4.2, C(0x2a2d33));
+              pixText(txt, 'STOCKROOM', [face - sx * 0.1, 4.1, 0], [0, 0, sx], [0, 1, 0], 0.06, C(0xf2c230), [-sx, 0, 0]);
+              for (const sz of [-4, 4]) {
+                xb.box(face - sx * 0.1, 3.9, sz, 0.12, 0.12, 0.12, C(0x3b3d42));
+                lampOn.push([face - sx * 0.18, 3.9, sz]);
+              }
+            }
+            // a post at each edge of the road, each way: amber flasher, sign
+            for (const sx of [wd + 0.9, -wd - 0.9]) {
+              for (const sz of [-3.4, 3.4]) {
+                xb.box(sx, 1.35, sz, 0.12, 2.7, 0.12, C(0x2a2d33));
+                xb.box(sx, 2.25, sz, 1.5, 0.5, 0.06, C(0xf2c230));
+                pixText(txt, 'FORKLIFTS', [sx, 2.25, sz + Math.sign(sz) * 0.04], [Math.sign(sz), 0, 0], [0, 1, 0], 0.035, C(0x1b1d22), [0, 0, Math.sign(sz)]);
+                xb.box(sx, 2.8, sz, 0.26, 0.26, 0.26, C(0x3b3d42));
+                lampOn.push([sx, 2.8, sz + Math.sign(sz) * 0.14]);
+              }
+            }
+          } else {
+            // a dirt farm track across both verges; a pole barn at each end
+            // the tractor drives in and out of; diamond warning signs on the
+            // approaches with amber flashers on top
+            for (const sx of [-1, 1]) {
+              gpatch(wb, W(sx * (wd - 0.5), -2.2), W(sx * (o.span - 1), -2.2), W(sx * (o.span - 1), 2.2), W(sx * (wd - 0.5), 2.2), C(0x8a6a48), 0.1, Math.max(2, Math.round((o.span - wd) / 4)), 1);
+              const bx = sx * (o.span + 1.2), [px, pz] = W(bx, 0), by = ground(px, pz);
+              const red = C(0x9c3a2e), roof = C(0x6b6f75);
+              boxAt(wb, px, by, pz, H0, sx * 4, 2.2, 0, 0.3, 5.4, 9, red); // back wall
+              for (const sz of [-4.4, 4.4]) boxAt(wb, px, by, pz, H0, 0, 2.2, sz, 8, 5.4, 0.3, red);
+              for (const sz of [-4.4, 4.4]) boxAt(wb, px, by, pz, H0, -sx * 4, 2.3, sz, 0.35, 4.6, 0.35, C(0xece6d8)); // corner posts, white
+              boxAt(wb, px, by, pz, H0, -sx * 4, 4.55, 0, 0.35, 0.3, 9, C(0xece6d8)); // the header over the opening
+              const rp = rotPt(px, pz, H0, 0, 0);
+              roofW(wb, rp[0], by + 4.9, rp[1], H0 + Math.PI / 2, 9.2, 8.2, 2.2, 'gable', roof);
+              for (const k of [0, 1]) boxAt(wb, px, by, pz, H0, sx * (2.5 - k * 1.3), 0.45 + k * 0.6, 3.2, 1.1, 0.6, 1.1, C(0xd9b860)); // bales inside
+            }
+            for (const sz of [-30, 30]) {
+              for (const sx of [wd + 1.2, -wd - 1.2]) {
+                const [px, py, pz] = at(sx, sz), s = Math.sign(sz);
+                boxAt(wb, px, py, pz, H0, 0, 1.4, 0, 0.12, 2.8, 0.12, C(0x8a9097));
+                // the diamond (a quad on its corner), facing traffic coming at it
+                const Dp = (lx, ly) => {
+                  const p = rotPt(px, pz, H0, lx, s * 0.07);
+                  return [p[0], py + ly, p[1]];
+                };
+                const nn = rotPt(0, 0, H0, 0, s);
+                wb.quadN(Dp(0, 2.35), Dp(0.75, 3.1), Dp(0, 3.85), Dp(-0.75, 3.1), C(0xf2c230), [nn[0], 0, nn[1]]);
+                // the tractor on it: body, cab, a big wheel and a little one
+                const Tq = (lx, ly, w, h) => {
+                  const p0 = rotPt(px, pz, H0, lx - w / 2, s * 0.09), p1 = rotPt(px, pz, H0, lx + w / 2, s * 0.09);
+                  wb.quadN([p0[0], py + ly - h / 2, p0[1]], [p1[0], py + ly - h / 2, p1[1]], [p1[0], py + ly + h / 2, p1[1]], [p0[0], py + ly + h / 2, p0[1]], C(0x1b1d22), [nn[0], 0, nn[1]]);
+                };
+                Tq(0.05, 3.12, 0.55, 0.14);
+                Tq(-0.12, 3.3, 0.2, 0.26);
+                Tq(-0.14, 2.93, 0.26, 0.26);
+                Tq(0.26, 2.9, 0.16, 0.16);
+                lampOn.push([sx, py - y0 + 4.05, sz]);
+                boxAt(wb, px, py, pz, H0, 0, 4.05, 0, 0.24, 0.24, 0.24, C(0x3b3d42));
+              }
+            }
+          }
+          for (const [gb2, sh] of [[xb, true], [txt, false]]) {
+            if (!gb2.p.length) continue;
+            const m = new THREE.Mesh(gb2.geometry(), G.CarModel.material());
+            m.position.set(cx, y0, cz);
+            m.rotation.y = H0;
+            m.castShadow = sh;
+            group.add(m);
+          }
+          worldMesh(group, wb, null, 'crossing', true);
+          // amber flashers, two sets flashed in turn while it's coming
+          const mk = (odd) => {
+            const lb = new G.CarModel.GB();
+            lampOn.forEach((q, k) => { if (k % 2 === odd) lb.box(q[0], q[1], q[2], 0.3, 0.3, 0.3, C(0xffa21a)); });
+            const m = new THREE.Mesh(lb.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+            m.position.set(cx, y0, cz);
+            m.rotation.y = H0;
+            m.visible = false;
+            group.add(m);
+            return m;
+          };
+          const lA = mk(0), lB = mk(1);
+          const pass = (2 * o.span + o.cars * o.gap) / o.speed;
+          let told = -1;
+          group.userData.animFns.push(() => {
+            const t = env().t;
+            if (t <= 0) { lA.visible = lB.visible = false; return; }
+            const c = t + o.off, n = Math.floor(c / o.every), ph = c - n * o.every;
+            const warn = ph < pass || ph > o.every - 2.5, on = Math.floor(t * 2.2) % 2 === 0;
+            lA.visible = warn && on;
+            lB.visible = warn && !on;
+            if (ph < 0.6 && told !== n) {
+              told = n;
+              const cam = group.userData.cam;
+              const k = cam ? U.clamp(1.15 - Math.hypot(cam.fx - cx, cam.fz - cz) / 120, 0, 1) : 0;
+              if (G.Audio && k > 0) {
+                if (fork) G.Audio.forkBeep(k);
+                else G.Audio.tractorHorn(k);
+              }
+            }
+          });
+        }
+        // this vehicle, built facing +Z and turned to the way it's going
+        const vb = new G.CarModel.GB(), dark = C(0x24262b);
+        let beacon = null;
+        if (fork && o.car === 0) {
+          // the load on the forks: a pallet of boxes
+          for (const x of [-0.3, 0.3]) vb.box(x, 0.2, -0.3, 0.12, 0.05, 1.6, dark);
+          vb.box(0, 0.32, 0, 1.15, 0.14, 1.2, C(0xa9855a));
+          vb.box(0, 0.93, 0, 1.1, 1.08, 1.12, C(0xc49a6c));
+          vb.box(0, 0.93, 0.57, 0.14, 1.09, 0.02, C(0xd9c7a0)); // tape
+          vb.box(0.15, 1.72, -0.1, 0.7, 0.5, 0.7, C(0xb88c5e));
+        } else if (fork) {
+          const orange = C(0xf29a1a);
+          vb.box(0, 0.6, 0, 1.2, 0.7, 2.2, orange);
+          vb.box(0, 0.95, -0.95, 1.22, 1.0, 0.5, dark); // counterweight
+          vb.box(0, 1.1, -0.2, 0.5, 0.3, 0.5, C(0x111214)); // seat
+          for (const x of [-0.55, 0.55]) for (const z of [-0.8, 0.55]) vb.box(x, 1.65, z, 0.08, 1.5, 0.08, dark);
+          vb.box(0, 2.42, -0.12, 1.22, 0.07, 1.5, dark); // overhead guard
+          for (const x of [-0.35, 0.35]) vb.box(x, 1.7, 1.28, 0.12, 3.1, 0.14, dark); // mast
+          vb.box(0, 3.2, 1.28, 0.82, 0.12, 0.14, dark);
+          for (const x of [-0.58, 0.58]) for (const z of [-0.75, 0.75]) cylX(vb, x, 0.3, z, 0.3, 0.24, 8, C(0x111214));
+          beacon = [0, 2.58, -0.3];
+        } else if (o.car === 0) {
+          const red = C(0xb8352c);
+          vb.box(0, 1.2, 0.8, 1.0, 0.9, 2.1, red); // bonnet
+          vb.box(0, 2.0, -0.55, 1.4, 1.5, 1.4, C(0x2b3440)); // cab glass
+          for (const x of [-0.68, 0.68]) for (const z of [-1.22, 0.12]) vb.box(x, 2.0, z, 0.1, 1.5, 0.1, red);
+          vb.box(0, 2.8, -0.55, 1.6, 0.12, 1.6, red);
+          vb.box(0.36, 2.35, 1.35, 0.1, 1.2, 0.1, dark); // exhaust
+          vb.box(0, 0.65, -1.6, 0.2, 0.2, 0.8, dark); // hitch
+          for (const x of [-1, 1]) {
+            cylX(vb, x, 0.9, -0.6, 0.9, 0.55, 12, C(0x1d1e20));
+            cylX(vb, x * 1.01, 0.9, -0.6, 0.42, 0.57, 8, C(0xb9b4a8));
+            cylX(vb, x * 0.8, 0.5, 1.45, 0.5, 0.36, 10, C(0x1d1e20));
+          }
+          beacon = [0, 2.98, -0.55];
+        } else {
+          // a hay wagon: a flatbed stacked with bales
+          vb.box(0, 1.0, 0, 2.3, 0.2, 3.6, C(0x9a7550));
+          vb.box(0, 0.7, 2.2, 0.15, 0.15, 0.9, dark); // tow bar
+          for (const x of [-1.05, 1.05]) for (const z of [-1.1, 1.1]) cylX(vb, x, 0.45, z, 0.45, 0.3, 8, C(0x1d1e20));
+          const bale = C(0xd9b860);
+          for (let a = 0; a < 2; a++) for (let b2 = 0; b2 < 3; b2++) vb.box(-0.55 + a * 1.1, 1.45, -1.15 + b2 * 1.15, 1.05, 0.7, 1.1, b2 % 2 ? bale : bale.clone().multiplyScalar(0.93));
+          for (let a = 0; a < 2; a++) for (let b2 = 0; b2 < 2; b2++) vb.box(-0.55 + a * 1.1, 2.15, -0.6 + b2 * 1.2, 1.05, 0.7, 1.1, bale.clone().multiplyScalar(0.97));
+        }
+        const car = new THREE.Mesh(vb.geometry(), G.CarModel.material());
+        car.castShadow = true;
+        car.visible = false;
+        group.add(car);
+        let bm = null;
+        if (beacon) {
+          const bg = new G.CarModel.GB();
+          bg.box(beacon[0], beacon[1], beacon[2], 0.22, 0.2, 0.22, C(0xffa21a));
+          bm = new THREE.Mesh(bg.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+          car.add(bm);
+        }
+        const tp = {}, q2 = {};
+        group.userData.animFns.push(() => {
+          const t = env().t, p = track.dynPos(o, t, tp);
+          if (!p) { car.visible = false; return; }
+          car.visible = true;
+          track.query(p.x, p.z, o.i, q2);
+          const onRoad = Math.abs(q2.lat) < track.W[q2.i] + 0.4;
+          car.position.set(p.x, onRoad ? track.heightAt(q2.i, q2.lat) : ground(p.x, p.z) - 0.05, p.z);
+          car.rotation.y = Math.atan2(p.vx, p.vz);
+          if (bm) bm.visible = Math.floor(t * 3.2) % 2 === 0;
+        });
+        continue;
+      }
       if (o.k === 'train') {
         // v5.4 level crossing. Built in the crossing's own frame: local X runs
         // ALONG the rails (across the road), local Z along the road.
@@ -1662,7 +1872,10 @@
           const pq = track.pointAt(d, 0);
           const lat = side * (track.wallD[pq.i] + 0.8 + rng() * 2.5);
           const pt = track.pointAt(d, lat);
-          ico(rb, pt.x, (_gH ? _gH(pt.x, pt.z) : track.Y[pt.i]) + 0.2, pt.z, 0.4 + rng() * 0.7, C(rng() < 0.5 ? 0x8f857c : 0x7a716a));
+          if (o.look === 'debris') {
+            const s = 0.5 + rng() * 0.9, g2 = _gH ? _gH(pt.x, pt.z) : track.Y[pt.i];
+            rb.box(pt.x, g2 + s * 0.22, pt.z, s * 1.5, s * 0.45, s, C(rng() < 0.5 ? 0x8e8c88 : 0x6e6c68), rng() * 3);
+          } else ico(rb, pt.x, (_gH ? _gH(pt.x, pt.z) : track.Y[pt.i]) + 0.2, pt.z, 0.4 + rng() * 0.7, C(rng() < 0.5 ? 0x8f857c : 0x7a716a));
         }
         for (const e of [-1, 1]) {
           const d = o.at + e * (o.len / 2 + 12), pq = track.pointAt(d, 0);
@@ -1677,7 +1890,8 @@
           rub.castShadow = true;
           group.add(rub);
         }
-        const rock = new THREE.Mesh(geo('rock'), G.CarModel.material());
+        const deb = o.look === 'debris'; // (v5.6.1: concrete off a building)
+        const rock = new THREE.Mesh(geo(deb ? 'slab' : 'rock'), G.CarModel.material());
         rock.userData.sharedGeo = true;
         rock.scale.setScalar(o.r / 1.3);
         rock.castShadow = true;
@@ -1701,6 +1915,8 @@
             track.query(p.x, p.z, o.i, q);
             gy = track.elevAlong(q.along) + track.bankH(q.i, U.clamp(q.lat, -q.hw, q.hw));
             rock.rotation.set(n * 1.3, n * 2.1, 0);
+            const cam = group.userData.cam;
+            if (deb && cam && G.Audio && env().t > 0) G.Audio.debrisCrack(U.clamp(1.1 - Math.hypot(cam.fx - p.x, cam.fz - p.z) / 90, 0, 1));
           }
           const end = Math.min(o.every, 1.5 + o.stay);
           const sink = U.clamp((ph - (end - 0.5)) / 0.5, 0, 1);
@@ -1716,7 +1932,7 @@
             const cam = group.userData.cam;
             if (cam && G.Audio && env().t > 0) G.Audio.rockImpact(U.clamp(1.1 - Math.hypot(cam.fx - p.x, cam.fz - p.z) / 90, 0, 1));
             const fx = group.userData.fx;
-            if (fx) for (let k = 0; k < 18; k++) fx.emit(k < 11 ? 'dust' : 'debris', p.x, gy + 0.6, p.z, (Math.random() - 0.5) * 12, 1 + Math.random() * 4.5, (Math.random() - 0.5) * 12, 1.5, [0.55, 0.5, 0.45]);
+            if (fx) for (let k = 0; k < 18; k++) fx.emit(k < 11 ? 'dust' : 'debris', p.x, gy + 0.6, p.z, (Math.random() - 0.5) * 12, 1 + Math.random() * 4.5, (Math.random() - 0.5) * 12, 1.5, deb ? [0.64, 0.64, 0.62] : [0.55, 0.5, 0.45]);
           }
         });
       }
@@ -1953,7 +2169,7 @@
   }
 
   // ======================================================================
-  // v5.6 scenery for the Megastore, Harrow City and El Toro Run (Gilroy to Morgan Hill).
+  // v5.6 scenery for the Megastore, Harrow City and Harvest Run.
   // Prop geometries first (extraGeo, called from propGeo), then one builder
   // per theme (SCENES), each a generator that yields between chunks so a
   // track built in the background never holds a frame for long.
@@ -2264,36 +2480,156 @@
       cyl(gb, 0, 3.6, 0, 1.9, 2.6, 10, C(0x5a4636));
       cone(gb, 0, 4.9, 0, 2.05, 1.1, 10, C(0x3b312a));
     }
-    // ---------------- El Toro Run (Gilroy to Morgan Hill)
-    else if (kind[0] === 'h' && kind.length === 2) {
-      // houses: 14 wide, 10 deep, the lawn and driveway out front to z = +13
-      const P = {
-        hA: [0xe3d3b3, 0xb5563a, 'hip', 1], hB: [0xf0e6d0, 0x6b6f75, 'gable', -1], hC: [0xcdb58f, 0x5f5a55, 'two', 1],
-        hD: [0xf3efe6, 0xb0502f, 'hip', -1], hE: [0xb9c8d4, 0x3d4146, 'gable', 1],
-      }[kind];
-      const wall = C(P[0]), roof = C(P[1]), g = P[3]; // g: garage side
-      const two = P[2] === 'two', h = two ? 5.8 : 3.0;
-      flat(gb, 0, 0.04, 9, 14, 8, C(0x6ea44b)); // lawn
-      flat(gb, g * 4.5, 0.05, 9, 5, 8, C(0xcfcac0)); // driveway
-      flat(gb, -g * 1.2, 0.05, 7.2, 1.1, 4.4, C(0xc6c1b6)); // path
-      gb.box(0, h / 2, 0, 14, h, 10, wall);
-      if (kind === 'hE') gb.box(0, 0.5, 5.02, 14, 1, 0.05, C(0x8a4d3a)); // brick wainscot
-      if (P[2] === 'hip') hipRoof(gb, 0, h, 0, 15, 2.6, 11, roof);
-      else roofGable(gb, 0, h, 0, 15, 2.4, 11, roof);
-      // garage door, front door, windows with white trim
-      gb.box(g * 4.5, 1.1, 5.03, 4.2, 2.2, 0.05, C(0xf4f3ee));
-      for (let k = 1; k < 4; k++) gb.box(g * 4.5, k * 0.55, 5.06, 4.2, 0.03, 0.02, C(0xc9c6bd));
-      gb.box(-g * 1.2, 1.05, 5.03, 1, 2.1, 0.05, C(0x6b4a33));
-      for (const wx of [-g * 4, -g * 5.9]) {
-        gb.box(wx, 1.6, 5.03, 1.5, 1.2, 0.05, C(0xf4f3ee));
-        gb.box(wx, 1.6, 5.06, 1.3, 1.0, 0.03, C(0x33475b));
+    // ---------------- Harvest Run: street trees, yard trees, crops, odds and ends
+    else if (kind === 'olive') {
+      const bark = C(0x6e655a);
+      gb.beam([0, 0, 0], [0.3, 1.4, 0.1], 0.45, 0.45, bark);
+      gb.beam([0.3, 1.4, 0.1], [-0.6, 2.4, -0.3], 0.3, 0.3, bark);
+      gb.beam([0.3, 1.4, 0.1], [1.0, 2.3, 0.4], 0.3, 0.3, bark);
+      for (const [x, y, z, r, c] of [[-0.7, 2.9, -0.3, 1.4, 0x8a9a6c], [1.0, 2.8, 0.4, 1.35, 0x7d8f62], [0.2, 3.4, 0.1, 1.5, 0x95a576], [0.1, 2.7, 1.0, 1.1, 0x86976a]]) ico(gb, x, y, z, r, C(c));
+    } else if (kind === 'crepeP' || kind === 'crepeV') {
+      // crepe myrtle: a knot of pale trunks and a cloud of summer flowers
+      const bark = C(0xb9a48c), fl = kind === 'crepeP' ? [0xd9669a, 0xe68ab4] : [0xa071c4, 0xb68ad2];
+      for (const [x, z] of [[0.5, 0.2], [-0.4, 0.3], [0, -0.5]]) gb.beam([x * 0.3, 0, z * 0.3], [x * 1.6, 2.6, z * 1.6], 0.16, 0.16, bark);
+      for (const [x, y, z, r, k] of [[0, 3.6, 0, 1.5, 0], [0.9, 3.2, 0.4, 1.1, 1], [-0.8, 3.3, 0.3, 1.1, 0], [0.1, 3.1, -0.9, 1.05, 1], [0, 4.3, 0.2, 0.9, 2]]) ico(gb, x, y, z, r, C(k === 2 ? 0x5f8a3e : fl[k]));
+    } else if (kind === 'maple') {
+      gb.beam([0, 0, 0], [0, 3, 0], 0.4, 0.4, C(0x5e5046));
+      for (const [x, y, z, r] of [[0, 4.6, 0, 2.3], [-1.3, 4.0, 0.4, 1.6], [1.2, 4.1, -0.5, 1.7], [0.2, 5.8, 0.2, 1.5]]) ico(gb, x, y, z, r, C(0x5b8f3a));
+    } else if (kind === 'sweetgum' || kind === 'sweetgumR') {
+      // tall and pointed; now and then one already turning red
+      gb.beam([0, 0, 0], [0, 4, 0], 0.38, 0.38, C(0x5a4d42));
+      const cols = kind === 'sweetgum' ? [0x4a7a34, 0x55863a, 0x5f9040] : [0xb8452a, 0xc8702c, 0x8e2c34];
+      for (const [y, r, k] of [[3.4, 2.1, 0], [5.0, 2.0, 1], [6.5, 1.6, 2], [7.8, 1.1, 0], [8.8, 0.6, 1]]) ico(gb, 0, y, 0, r, C(cols[k]));
+    } else if (kind === 'citrus') {
+      gb.beam([0, 0, 0], [0, 1, 0], 0.22, 0.22, C(0x5a4d42));
+      ico(gb, 0, 2.1, 0, 1.5, C(0x3d6a2e));
+      ico(gb, 0.3, 2.9, 0.2, 1.0, C(0x467634));
+      for (let k = 0; k < 6; k++) ico(gb, Math.cos(k * 1.05) * 1.25, 1.7 + (k % 3) * 0.45, Math.sin(k * 1.05) * 1.25, 0.16, C(k % 2 ? 0xf0a030 : 0xf2c440));
+    } else if (kind === 'sycamore') {
+      // big, pale mottled trunk, a broad loose crown
+      const bark = C(0xd3cab6), bark2 = C(0xa89c84);
+      gb.beam([0, 0, 0], [0.5, 4.5, 0.2], 0.7, 0.7, bark);
+      gb.beam([0.5, 4.5, 0.2], [-2.2, 7.4, -0.6], 0.42, 0.42, bark2);
+      gb.beam([0.5, 4.5, 0.2], [2.6, 7.2, 1.0], 0.42, 0.42, bark);
+      gb.beam([0.5, 4.5, 0.2], [0.8, 8.2, -1.6], 0.36, 0.36, bark);
+      for (const [x, y, z, r, c] of [[-2.4, 8.2, -0.6, 2.4, 0x6f9a45], [2.8, 8.0, 1.0, 2.5, 0x78a24b], [0.8, 9.2, -1.6, 2.3, 0x6a943f], [0.2, 9.6, 0.8, 2.2, 0x7fa851], [-0.8, 7.4, 1.8, 1.8, 0x6f9a45]]) ico(gb, x, y, z, r, C(c));
+    } else if (kind === 'cypress') {
+      // the tall dark column you see by old farmhouses and along drives
+      const c = C(0x2f4d2c);
+      cyl(gb, 0, 1.4, 0, 0.75, 2.4, 8, c);
+      cone(gb, 0, 2.5, 0, 0.95, 8.5, 8, c.clone().multiplyScalar(1.08));
+    } else if (kind === 'eucalyptus') {
+      // windbreak gums: tall pale trunks, thin blue-green crowns
+      const bark = C(0xd8cfbf), bark2 = C(0xb0a390);
+      gb.beam([0, 0, 0], [0.6, 11, 0.2], 0.7, 0.7, bark);
+      gb.beam([0.6, 11, 0.2], [-1.6, 16.5, -0.4], 0.4, 0.4, bark2);
+      gb.beam([0.6, 11, 0.2], [2.2, 17.5, 0.6], 0.4, 0.4, bark);
+      for (const [x, y, z, r, c] of [[-1.8, 16.5, -0.4, 2.3, 0x6f8a6a], [2.3, 17.8, 0.6, 2.6, 0x7a967a], [0.4, 19.4, 0, 2.0, 0x6a8466], [0.8, 14.2, 1.2, 1.8, 0x7d9a78]]) ico(gb, x, y, z, r, C(c));
+    } else if (kind === 'oakF') {
+      // a far oak on the hills: the same dark crown, a third of the triangles
+      gb.beam([0, 0, 0], [0.3, 2.4, 0.1], 0.6, 0.6, C(0x5e5448));
+      ico(gb, 0, 4.2, 0, 2.8, C(0x4f6b35));
+      ico(gb, 1.6, 3.8, 0.6, 2.0, C(0x46612f));
+    } else if (kind === 'hedge') {
+      gb.box(0, 0.6, 0, 4, 1.2, 0.9, C(0x3f6b33));
+      gb.box(0, 1.22, 0, 3.9, 0.06, 0.8, C(0x4d7d3c));
+    } else if (kind === 'succulent') {
+      gb.box(0.5, 0.18, 0.3, 0.6, 0.36, 0.5, C(0x9a8f80));
+      ico(gb, -0.2, 0.3, 0, 0.45, C(0x7f9e88));
+      ico(gb, 0.3, 0.22, -0.4, 0.3, C(0x8fae7a));
+      cone(gb, -0.2, 0.4, 0, 0.1, 1.3, 5, C(0xb09a58)); // (a flower spike)
+    } else if (kind === 'umbR' || kind === 'umbG' || kind === 'umbC') {
+      // a cafe table on the sidewalk: umbrella, two chairs
+      const dark = C(0x3b3d42);
+      cyl(gb, 0, 0.73, 0, 0.45, 0.06, 10, C(0xd8d4cc));
+      gb.box(0, 0.36, 0, 0.08, 0.72, 0.08, dark);
+      gb.box(0, 1.3, 0, 0.05, 1.9, 0.05, dark);
+      cone(gb, 0, 2.05, 0, 1.35, 0.5, 8, C({ umbR: 0xb8352c, umbG: 0x2f6b4f, umbC: 0xece2c8 }[kind]));
+      for (const s of [-1, 1]) {
+        gb.box(s * 0.8, 0.23, 0, 0.42, 0.46, 0.42, dark);
+        gb.box(s * 1.0, 0.65, 0, 0.06, 0.45, 0.42, dark);
       }
-      if (two) for (const wx of [-4.5, -1, 2.5, 5.5]) {
-        gb.box(wx, 4.4, 5.03, 1.5, 1.2, 0.05, C(0xf4f3ee));
-        gb.box(wx, 4.4, 5.06, 1.3, 1.0, 0.03, C(0x33475b));
+    } else if (kind === 'planter') {
+      gb.box(0, 0.3, 0, 1.2, 0.6, 1.2, C(0xa9573a));
+      ico(gb, 0, 0.95, 0, 0.6, C(0x4f8a3a));
+      for (let k = 0; k < 4; k++) ico(gb, Math.cos(k * 1.57) * 0.4, 1.0, Math.sin(k * 1.57) * 0.4, 0.16, C([0xe84a6a, 0xf2d04a, 0xffffff, 0xb06ad0][k]));
+    } else if (kind === 'bench') {
+      gb.box(0, 0.45, 0, 1.8, 0.08, 0.5, C(0x8a6a48));
+      gb.box(0, 0.8, -0.22, 1.8, 0.4, 0.06, C(0x8a6a48));
+      for (const s of [-1, 1]) gb.box(s * 0.8, 0.22, 0, 0.08, 0.45, 0.45, C(0x2b2e33));
+    } else if (kind === 'play') {
+      // a playground: a tower with a roof, a slide, a set of swings
+      const post = C(0x2f6bb0), deck = C(0xd8a040);
+      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) gb.box(x, 1.6, z, 0.14, 3.2, 0.14, post);
+      gb.box(0, 1.5, 0, 2.2, 0.12, 2.2, deck);
+      hipRoof(gb, 0, 3.2, 0, 2.6, 1, 2.6, C(0xc8352c));
+      gb.beam([0, 1.5, 1.1], [0, 0.2, 3.6], 0.8, 0.08, C(0xf2c230));
+      for (const x of [3, 6]) {
+        gb.beam([x, 0, -0.8], [x, 2.6, 0], 0.12, 0.12, post);
+        gb.beam([x, 0, 0.8], [x, 2.6, 0], 0.12, 0.12, post);
       }
-      for (const sx of [-6, -3.2, 2.6]) ico(gb, sx * (g > 0 ? 1 : -1) + (g > 0 ? 0 : 0), 0.45, 5.9, 0.6, C(0x4f7d3a)); // shrubs
-      gb.box(g * 4.5, 0.05, 5.05, 4.4, 0.1, 0.1, C(0xb9b4a8));
+      gb.box(4.5, 2.6, 0, 3.2, 0.12, 0.12, post);
+      for (const x of [3.9, 5.1]) gb.box(x, 0.55, 0, 0.5, 0.06, 0.25, C(0x2b2e33));
+      flat(gb, 1.5, 0.03, 0.5, 10, 7, C(0xc9a878)); // wood chips
+    } else if (kind === 'picnic') {
+      gb.box(0, 0.75, 0, 0.8, 0.08, 2, C(0x8a6a48));
+      for (const s of [-1, 1]) {
+        gb.box(s * 0.7, 0.45, 0, 0.3, 0.06, 2, C(0x8a6a48));
+        gb.box(s * 0.25, 0.37, 0, 0.08, 0.75, 1.6, C(0x6b5238));
+      }
+    } else if (kind === 'pump') {
+      gb.box(0, 0.12, 0, 1.2, 0.24, 4, C(0xb9b4a8));
+      for (const z of [-1, 1]) {
+        gb.box(0, 0.95, z, 0.6, 1.5, 0.8, C(0xf2f2ee));
+        gb.box(0, 1.5, z, 0.62, 0.3, 0.82, C(0xc8352c));
+      }
+    } else if (kind === 'slab') {
+      // v5.6.1 Harrow City: a lump of concrete off a building, rebar sticking out
+      gb.box(0, 0, 0, 2.0, 0.7, 1.5, C(0x8e8c88));
+      gb.box(0.3, 0.45, -0.2, 1.1, 0.35, 0.9, C(0x7a7874));
+      gb.box(-0.5, -0.1, 0.5, 0.9, 0.5, 0.7, C(0x9a9894));
+      for (const [a, b] of [[[-0.8, 0.2, 0.7], [-1.1, 0.9, 1.3]], [[0.5, 0.3, 0.75], [0.8, 1.1, 1.2]], [[0.9, 0.1, -0.6], [1.5, 0.5, -1.0]]]) gb.beam(a, b, 0.06, 0.06, C(0x5a3a2a));
+    } else if (kind === 'stopsign') {
+      gb.box(0, 1.2, 0, 0.08, 2.4, 0.08, C(0x8a9097));
+      const red = C(0xc8262c), P = (k, z) => [Math.cos(((k + 0.5) * Math.PI) / 4) * 0.4, 2.3 + Math.sin(((k + 0.5) * Math.PI) / 4) * 0.4, z];
+      for (let k = 0; k < 8; k++) for (const z of [0.05, -0.05]) gb.tri([0, 2.3, z], P(k, z), P(k + 1, z), red, 0, 2.3, 0);
+      gb.box(0, 2.3, 0.06, 0.46, 0.12, 0.02, C(0xffffff));
+    } else if (kind === 'cornrow') {
+      gb.box(0, 1.0, 0, 0.55, 2.0, 24, C(0x6f9a3c));
+      gb.box(0, 2.1, 0, 0.3, 0.25, 24, C(0xc9b25a));
+    } else if (kind === 'croprow') {
+      gb.box(0, 0.18, 0, 0.7, 0.36, 24, C(0x5c9a3a));
+      gb.box(0, 0.38, 0, 0.4, 0.06, 24, C(0x74b04a));
+    } else if (kind === 'vinerowR') {
+      // a young block: shorter vines, the trellis wire showing
+      for (let k = -3; k <= 3; k++) gb.box(0, 0.7, k * 4, 0.1, 1.4, 0.1, C(0x7a6450));
+      gb.box(0, 1.3, 0, 0.04, 0.04, 24, C(0x8a8f95));
+      gb.box(0, 0.8, 0, 0.45, 0.45, 24, C(0x78a445));
+    } else if (kind === 'pots') {
+      // a nursery row: young trees in black pots
+      for (let k = -1.5; k <= 1.5; k++) {
+        gb.box(0, 0.3, k * 0.9, 0.6, 0.6, 0.6, C(0x26282b));
+        ico(gb, 0, 1.3, k * 0.9, 0.55, C(k > 0 ? 0x5a8a3c : 0x4d7d34));
+      }
+    } else if (kind === 'greenhouse') {
+      // a hoop house, 8 wide and 32 long, milky plastic on low sides
+      const film = C(0xe6ebe8), n = 7;
+      const P = (k, z) => [Math.cos((Math.PI * k) / n) * 4, 0.6 + Math.sin((Math.PI * k) / n) * 3.2, z];
+      for (let k = 0; k < n; k++) {
+        gb.quad(P(k, -16), P(k + 1, -16), P(k + 1, 16), P(k, 16), k % 2 ? film : film.clone().multiplyScalar(0.94), 0, 0.6, 0);
+        for (const z of [-16, 16]) gb.tri(P(k, z), P(k + 1, z), [0, 0.6, z], film.clone().multiplyScalar(0.88), 0, 0.6, 0);
+      }
+      for (const s of [-1, 1]) gb.box(s * 4, 0.3, 0, 0.08, 0.6, 32, C(0xa9b0b4));
+    } else if (kind === 'tractor') {
+      const g = C(0x3a7a3a), dark = C(0x1d1e20);
+      gb.box(0, 1.1, 0.6, 1.1, 0.9, 2.4, g);
+      gb.box(0, 1.9, -0.6, 1.3, 1.5, 1.2, C(0x2b2e33));
+      gb.box(0, 2.7, -0.6, 1.5, 0.1, 1.4, g);
+      gb.box(0.35, 2.2, 1.4, 0.1, 1.0, 0.1, dark);
+      for (const s of [-1, 1]) {
+        cylX(gb, s * 0.95, 0.85, -0.7, 0.85, 0.5, 10, dark);
+        cylX(gb, s * 0.75, 0.45, 1.5, 0.45, 0.35, 8, dark);
+      }
     } else if (kind === 'fenceW') {
       const c = C(0x8a6a4a);
       gb.box(0, 0.9, 0, 4, 1.8, 0.06, c);
@@ -2333,20 +2669,15 @@
         const a = (k / 9) * Math.PI * 2;
         gb.beam([0, 13.4, 0], [Math.cos(a) * 1.8, 13.1 + (k % 2) * 0.4, Math.sin(a) * 1.8], 0.7, 0.06, C(k % 2 ? 0x3f7a3a : 0x356b33));
       }
-    } else if (kind === 'sttree') {
-      gb.box(0, 1.3, 0, 0.35, 2.6, 0.35, C(0x6b5a48));
-      for (const [y, r] of [[3.4, 1.7], [4.6, 1.4], [5.6, 0.9]]) ico(gb, 0, y, 0, r, C(y > 5 ? 0x6a9a48 : 0x5d8f3f));
     } else if (kind === 'vinerow') {
       flat(gb, 0, 0.03, 0, 1.6, 24, C(0x8a6a48));
-      for (let k = -3; k <= 3; k++) gb.box(0, 0.8, k * 4, 0.1, 1.6, 0.1, C(0x7a6450));
+      for (let k = -1; k <= 1; k++) gb.box(0, 0.8, k * 11, 0.1, 1.6, 0.1, C(0x7a6450)); // (end and middle posts: the rest hide in the leaves)
       gb.box(0, 1.15, 0, 0.7, 0.6, 24, C(0x5f8c3a));
       gb.box(0, 1.5, 0, 0.5, 0.2, 23.6, C(0x6f9c44));
     } else if (kind === 'ranchfence') {
       const w = C(0x7a6450);
       for (const x of [-2, 2]) gb.box(x, 0.65, 0, 0.14, 1.3, 0.14, w);
       for (const y of [0.55, 1.05]) gb.box(0, y, 0, 4.1, 0.12, 0.06, w.clone().multiplyScalar(1.08));
-    } else if (kind === 'field') {
-      flat(gb, 0, 0.03, 0, 30, 26, C(0x8a6a48));
     } else if (kind === 'garlicrow') {
       gb.box(0, 0.2, 0, 0.5, 0.4, 24, C(0x9cb56a));
       gb.box(0, 0.42, 0, 0.25, 0.1, 24, C(0xb8cf86));
@@ -2378,7 +2709,7 @@
       cone(gb, 0, 3.2, 0, 0.55, 1.6, 8, wc);
       cone(gb, 0, 4.6, 0, 0.18, 0.8, 6, C(0xd8cfb8));
     } else if (kind === 'oldhall') {
-      // Gilroy's old city hall: mission revival, a tall tower with a dome
+      // the old civic hall: Mission revival, a tall tower with a dome
       const wall = C(0xd8c3a0), trim = C(0xb59a74), tile = C(0xa9502f);
       gb.box(0, 4, 0, 22, 8, 14, wall);
       roofGable(gb, 0, 8, 0, 23, 2, 15, tile);
@@ -2397,13 +2728,6 @@
       }
       ico(gb, 0, 24, 5, 2.6, C(0xc9b28a));
       cone(gb, 0, 25.6, 5, 0.3, 2, 6, C(0x8a7a5a));
-    } else if (kind === 'mainst') {
-      const brick = C(0x9a5a44);
-      gb.box(0, 4, 0, 13, 8, 10, brick);
-      gb.box(0, 8.4, 5.05, 13, 0.8, 0.3, C(0xd8cbb4));
-      gb.box(0, 1.6, 5.03, 11.5, 3, 0.05, C(0x2c3a4a));
-      gb.box(0, 3.4, 5.6, 12, 0.12, 1.4, C(0x2f6b4f)); // awning
-      for (const x of [-4.5, -1.5, 1.5, 4.5]) gb.box(x, 5.8, 5.03, 1.4, 1.8, 0.05, C(0x2c3a4a));
     } else if (kind === 'citysign') {
       gb.box(-1.4, 1.2, 0, 0.12, 2.4, 0.12, C(0x8a9097));
       gb.box(1.4, 1.2, 0, 0.12, 2.4, 0.12, C(0x8a9097));
@@ -2603,7 +2927,7 @@
         if (pillar) by.pillar.push({ x: cx, z: cz, r: 0 });
         if (cx > b.x1 + 50) {
           // the warehouse: racking in rows
-          for (const oz of [-9, 9]) for (const ox of [-7, 7]) if (lat(cx + ox, cz + oz) > 8) by.rack.push({ x: cx + ox, z: cz + oz, r: 0 });
+          for (const oz of [-9, 9]) for (const ox of [-7, 7]) if (lat(cx + ox, cz + oz) > 8 && !track.nearRail(cx + ox, cz + oz, 6)) by.rack.push({ x: cx + ox, z: cz + oz, r: 0 });
           continue;
         }
         for (const [ox, oz] of [[-11.5, -11.5], [11.5, -11.5], [-11.5, 11.5], [11.5, 11.5]]) {
@@ -2611,6 +2935,7 @@
           if (lat(x, z) < 6.5 || rng() < 0.16) continue;
           const k = kinds[Math.floor(rng() * kinds.length)];
           const r = Math.floor(rng() * 4) * (Math.PI / 2);
+          if (track.nearRail(x, z, 6)) continue; // (v5.6.1: a forklift lane)
           by[k].push({ x, z, r });
           for (const L of LAMPS[k] || []) {
             const p = rotPt(x, z, r, L[0], L[2]);
@@ -2640,7 +2965,7 @@
     for (let k = 0; k < 60 * detail; k++) {
       const gx = Math.round(U.lerp(b.x0 - 150, b.x1 + 150, rng()) / G0) * G0, z = U.lerp(b.z0 - 150, b.z1 + 150, rng());
       const x = gx + (rng() - 0.5) * 8;
-      if (lat(x, z) > 1.5 && lat(x, z) < reach) by.cart.push({ x, z, r: rng() * 6.28 });
+      if (lat(x, z) > 1.5 && lat(x, z) < reach && !track.nearRail(x, z, 2)) by.cart.push({ x, z, r: rng() * 6.28 });
     }
     yield 'store signs';
     resume();
@@ -2994,121 +3319,553 @@
     resume();
   }
 
-  // ------------------------------------------ El Toro Run (Gilroy to Morgan Hill)
+  // ---------------------------------------------------------- Harvest Run
+  // v5.6.1: rebuilt after it came out bland (the same five houses over and
+  // over on golden dirt, like a desert). Now it is drawn from photos of a
+  // real farm-valley town (no real names anywhere in the game): a green
+  // valley floor with golden hills and dark oak woods above it, streets full
+  // of mature trees, every house built on its own (size, storeys, roof,
+  // colours, garage, porch, chimney, solar), parks, a church, a strip mall
+  // and a gas station between the houses, downtown fronts with awnings,
+  // signs and cafe tables, and farmland of vines, row crops, corn,
+  // orchards, a nursery and greenhouses behind eucalyptus windbreaks.
+  const HOUSE_WALLS = [0xece0c4, 0xdcc9a6, 0xc9ae88, 0xb8c0a0, 0xf2efe8, 0xe9c8a8, 0xc8c9c4, 0xb8c6cf, 0xefe2a8, 0xd9b99a, 0xe4d6b8, 0xa9b89a];
+  const TILE = [0xb0573a, 0xa24a32, 0xb8653f, 0x9c4630], COMP = [0x6b5a4a, 0x6e7176, 0x4a4e54, 0x7a6a58, 0x585650];
+  const DOORS = [0x7a2a26, 0x2a3f6a, 0x2f5a3a, 0x6b4a33, 0x3b3d42, 0xc9a24a];
+  const SHOP_WALLS = [0x9a5a44, 0x8a4a38, 0xe8dcc0, 0xd9c3a0, 0xa9b48f, 0xf0ece2, 0xc9b28a, 0x7d6a58, 0xdcc4a4];
+  const AWN = [0x2f6b4f, 0x7a2a32, 0x2a3f6a, 0x3b3d42, 0x8a5a2a];
+  const SHOPS = ['CAFE', 'BAKERY', 'BOOKS', 'PIZZA', 'WINE', 'DELI', 'TACOS', 'FLOWERS', 'HARDWARE', 'ANTIQUES', 'BIKES', 'SALON', 'DINER', 'GIFTS', 'SUSHI', 'MUSIC', 'OLIVE OIL', 'TEA'];
+  const MALL = ['DONUTS', 'LAUNDRY', 'NAILS', 'PHO', 'TAQUERIA', 'PIZZA', 'DENTIST', 'TAX', 'BOBA', 'VIDEO'];
+  const pickR = (rng, a) => a[Math.floor(rng() * a.length)];
+  // a patch of ground cover that follows the terrain: four world corners
+  // [x, z], cut into n x m cells so it never floats over a dip or sinks into
+  // a rise (a flat field quad on a slope used to cut into the road)
+  function gpatch(gb, A, B, Cc, D, col, dy, n, m) {
+    const L = (p, q, t) => [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+    const Y = (_gH && _gH.mesh) || gy; // (on the terrain mesh itself where the theme allows)
+    const V = (u, v) => {
+      const p = L(L(A, B, u), L(D, Cc, u), v);
+      return [p[0], Y(p[0], p[1]) + dy, p[1]];
+    };
+    for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) gb.quadN(V(i / n, j / m), V((i + 1) / n, j / m), V((i + 1) / n, (j + 1) / m), V(i / n, (j + 1) / m), col, [0, 1, 0]);
+  }
+  // the same in a lot's own frame: centre (lx, lz), size w x d, turned r
+  function lpatch(gb, x, z, r, lx, lz, w, d, col, dy) {
+    const P = (a, c) => rotPt(x, z, r, lx + a, lz + c);
+    gpatch(gb, P(-w / 2, -d / 2), P(w / 2, -d / 2), P(w / 2, d / 2), P(-w / 2, d / 2), col, dy || 0.05, Math.max(1, Math.round(w / 5)), Math.max(1, Math.round(d / 5)));
+  }
+  // a roof over a w x d box at (x, y0, z) turned r: 'hip' or 'gable' (the
+  // ridge runs along the box's width)
+  function roofW(gb, x, y0, z, r, w, d, rh, kind, col) {
+    const W = (lx, ly, lz) => {
+      const p = rotPt(x, z, r, lx, lz);
+      return [p[0], y0 + ly, p[1]];
+    };
+    const hw = w / 2 + 0.4, hd = d / 2 + 0.4, c2 = col.clone().multiplyScalar(0.84), c3 = col.clone().multiplyScalar(0.93);
+    const A = W(-hw, 0, -hd), B = W(hw, 0, -hd), Cc = W(hw, 0, hd), D = W(-hw, 0, hd), cy = y0 + rh / 2;
+    const k = kind === 'hip' ? Math.min(hw, hd) * 0.92 : 0;
+    const T0 = W(-hw + k, rh, 0), T1 = W(hw - k, rh, 0);
+    gb.quad(A, B, T1, T0, c2, x, cy, z);
+    gb.quad(D, Cc, T1, T0, col, x, cy, z);
+    gb.tri(A, D, T0, c3, x, cy, z);
+    gb.tri(B, Cc, T1, c3, x, cy, z);
+  }
+  // one house, all its own. The front (local +z) faces the street; the
+  // yard runs 7 m out front. Returns spots in the yard: the drive (car),
+  // trees, and succulents (succ) in a dry garden.
+  function houseW(gb, x, z, r, rng, y0, newer) {
+    const w = 9 + rng() * 4.5, d = 9 + rng() * 3, two = rng() < (newer ? 0.55 : 0.18), h = two ? 5.7 : 3.0;
+    const st = rng(), style = st < (newer ? 0.55 : 0.3) ? 'hip' : st < 0.84 ? 'gable' : 'flat';
+    const wall = C(pickR(rng, HOUSE_WALLS)), trim = C(0xf4f2ec), tiled = style !== 'gable' || rng() < 0.3;
+    const roofC = C(tiled ? pickR(rng, TILE) : pickR(rng, COMP));
+    const g = rng() < 0.5 ? 1 : -1, gw = 6.2, hx = -g * 3.1; // g: the garage's side; hx: the house body's centre
+    // (bodies go a metre into the ground so a sloping lot shows no gap)
+    boxAt(gb, x, y0, z, r, hx, (h - 1) / 2, 0, w, h + 1, d, wall);
+    if (style === 'flat') {
+      boxAt(gb, x, y0, z, r, hx, h + 0.35, 0, w, 0.7, d, wall.clone().multiplyScalar(0.95));
+      for (const s of [-1, 1]) boxAt(gb, x, y0, z, r, hx, h + 0.6, s * (d / 2 - 0.3), w + 0.2, 0.2, 0.7, roofC); // tile caps
+    } else {
+      const p = rotPt(x, z, r, hx, 0);
+      roofW(gb, p[0], y0 + h, p[1], r, w, d, 1.8 + rng() * 0.8, style, roofC);
+    }
+    // the garage, lower, with its own roof, set a little forward
+    const gx = g * (w / 2 - 0.2), gd = d * 0.85;
+    boxAt(gb, x, y0, z, r, gx, 0.95, 0.4, gw, 3.9, gd, wall.clone().multiplyScalar(0.96));
+    {
+      const p = rotPt(x, z, r, gx, 0.4);
+      roofW(gb, p[0], y0 + 2.9, p[1], r, gw, gd, 1.2, style === 'gable' ? 'gable' : 'hip', roofC);
+    }
+    const gdoor = C(rng() < 0.6 ? 0xf4f3ee : pickR(rng, [0xdcd3c0, 0x8a6a4a, 0x6e7176]));
+    faceQuad(gb, x, y0, z, r, 'f', gd / 2 + 0.4, gx, 1.1, 4.8, 2.2, gdoor, 0.04);
+    for (let k = 1; k < 4; k++) faceQuad(gb, x, y0, z, r, 'f', gd / 2 + 0.4, gx, k * 0.55, 4.8, 0.035, C(0xbdb7aa), 0.05);
+    // the door, windows in white trim (shutters now and then), upstairs
+    const dx = hx + g * w * 0.2;
+    faceQuad(gb, x, y0, z, r, 'f', d / 2, dx, 1.05, 1.0, 2.1, C(pickR(rng, DOORS)), 0.04);
+    const shut = rng() < 0.3 ? C(pickR(rng, [0x2f5a3a, 0x2a3f6a, 0x3b3d42, 0x7a2a26])) : null, glass = C(0x33475b);
+    for (const wx of [hx - g * w * 0.3, hx - g * w * 0.05]) {
+      faceQuad(gb, x, y0, z, r, 'f', d / 2, wx, 1.55, 1.7, 1.35, trim, 0.03);
+      faceQuad(gb, x, y0, z, r, 'f', d / 2, wx, 1.55, 1.45, 1.1, glass, 0.05);
+      if (shut) for (const s of [-1, 1]) faceQuad(gb, x, y0, z, r, 'f', d / 2, wx + s * 1.05, 1.55, 0.4, 1.35, shut, 0.04);
+    }
+    if (two) for (let k = 0; k < 3; k++) {
+      const wx = hx - w / 2 + 2 + (k * (w - 4)) / 2;
+      faceQuad(gb, x, y0, z, r, 'f', d / 2, wx, 4.3, 1.5, 1.2, trim, 0.03);
+      faceQuad(gb, x, y0, z, r, 'f', d / 2, wx, 4.3, 1.3, 1.0, glass, 0.05);
+    }
+    // a porch roof on posts, a chimney, solar panels on the front slope
+    if (rng() < 0.3) {
+      boxAt(gb, x, y0, z, r, dx, 2.75, d / 2 + 1.1, 3.4, 0.15, 2.2, roofC);
+      for (const s of [-1, 1]) boxAt(gb, x, y0, z, r, dx + s * 1.5, 1.35, d / 2 + 2, 0.15, 2.7, 0.15, trim);
+    }
+    if (rng() < 0.3) boxAt(gb, x, y0, z, r, hx + (rng() - 0.5) * w * 0.5, h + 1.8, -d * 0.2, 0.8, 2.4, 0.8, C(rng() < 0.5 ? 0x8a4a38 : 0xb9b2a4));
+    if (style !== 'flat' && rng() < 0.28) {
+      const a = rotPt(x, z, r, hx, d / 2 - 0.5), bb = rotPt(x, z, r, hx, 1.2);
+      gb.beam([a[0], y0 + h + 0.6, a[1]], [bb[0], y0 + h + 1.6, bb[1]], 2.5 + rng() * 2.5, 0.08, C(0x1d2d4a));
+    }
+    // the yard: a lawn or a dry garden of gravel and succulents; the drive; a path
+    const lawn = rng() < 0.72;
+    lpatch(gb, x, z, r, hx, d / 2 + 3.6, w, 7, C(lawn ? pickR(rng, [0x6ea44b, 0x79aa52, 0x64984a, 0x86ad58]) : pickR(rng, [0xc9b89a, 0xbfae8c, 0xd4c4a4])), 0.05);
+    lpatch(gb, x, z, r, gx, gd / 2 + 0.4 + 3.4, 5, 6.8, C(0xcfcac0), 0.07);
+    lpatch(gb, x, z, r, dx, d / 2 + 3.6, 1.1, 7, C(0xc6c1b6), 0.08);
+    lpatch(gb, x, z, r, 0, -d / 2 - 5, w + 7, 10, C(pickR(rng, [0x6a9a48, 0x72a24c, 0x5f9444])), 0.04); // the back yard
+    const cp = rotPt(x, z, r, gx, gd / 2 + 4);
+    const yard = [{ x: cp[0], z: cp[1], car: true }]; // (the drive, for a parked car)
+    const tp = rotPt(x, z, r, hx - g * w * 0.25, d / 2 + 3.5 + (rng() - 0.5) * 2);
+    yard.push({ x: tp[0], z: tp[1] });
+    if (rng() < 0.4) {
+      const bp = rotPt(x, z, r, hx + (rng() - 0.5) * w, -d / 2 - 4);
+      yard.push({ x: bp[0], z: bp[1] }); // one in the back yard too
+    }
+    if (!lawn) for (let k = 0; k < 4; k++) {
+      const sp = rotPt(x, z, r, hx - g * (1 + rng() * w * 0.4), d / 2 + 1.5 + rng() * 5);
+      yard.push({ x: sp[0], z: sp[1], succ: true });
+    }
+    return yard;
+  }
+  // a board on a front (local +z face at `half`) with a word on it
+  function signBoard(gb, txt, x, y0, z, r, half, u, v, w, h, word, dark) {
+    faceQuad(gb, x, y0, z, r, 'f', half, u, v, w, h, C(dark ? 0x23262b : 0xf2ede0), 0.06);
+    const fp = rotPt(x, z, r, u, half + 0.1), ux = rotPt(0, 0, r, 1, 0), f = rotPt(0, 0, r, 0, 1);
+    pixText(txt, word, [fp[0], y0 + v, fp[1]], [ux[0], 0, ux[1]], [0, 1, 0], Math.min((h * 0.75) / 7, (w * 0.88) / (word.length * 6)), C(dark ? 0xf2e6c8 : 0x2a2d33), [f[0], 0, f[1]]);
+  }
+  // a downtown front: one or two storeys, a parapet (flat, stepped or
+  // Mission), a shopfront, an awning and a sign with the shop's name
+  function shopW(gb, txt, x, z, r, w, rng, y0) {
+    const two = rng() < 0.55, h = two ? 8.2 : 5, d = 11;
+    const wall = C(pickR(rng, SHOP_WALLS)), trim = C(pickR(rng, [0xf0ece2, 0xd8cbb4, 0x3b3d42]));
+    boxAt(gb, x, y0, z, r, 0, (h - 1) / 2, 0, w, h + 1, d, wall);
+    const ps = rng();
+    if (ps < 0.35) boxAt(gb, x, y0, z, r, 0, h + 0.35, d / 2 - 0.2, w + 0.2, 0.7, 0.5, trim);
+    else if (ps < 0.7) for (let k = 0; k < 3; k++) boxAt(gb, x, y0, z, r, 0, h + 0.3 + k * 0.45, d / 2 - 0.25, w * (1 - k * 0.28), 0.45, 0.4, k ? wall : trim);
+    else {
+      boxAt(gb, x, y0, z, r, 0, h + 0.3, d / 2 - 0.25, w, 0.6, 0.4, wall);
+      boxAt(gb, x, y0, z, r, 0, h + 0.9, d / 2 - 0.25, w * 0.4, 0.8, 0.4, wall);
+      boxAt(gb, x, y0, z, r, 0, h + 1.45, d / 2 - 0.25, w * 0.16, 0.5, 0.4, trim);
+    }
+    const glass = C(0x2c3a4a);
+    faceQuad(gb, x, y0, z, r, 'f', d / 2, 0, 1.55, w * 0.78, 2.7, glass, 0.04);
+    faceQuad(gb, x, y0, z, r, 'f', d / 2, w * 0.3, 1.2, 1.1, 2.4, C(pickR(rng, DOORS)), 0.05);
+    if (two) for (let k = 0; k < 3; k++) faceQuad(gb, x, y0, z, r, 'f', d / 2, -w / 3 + (k * w) / 3, 5.8, 1.4, 1.8, glass, 0.04);
+    // the awning: plain or striped
+    const awC = C(pickR(rng, AWN));
+    if (rng() < 0.3) for (let k = 0; k < 8; k++) boxAt(gb, x, y0, z, r, -w * 0.4 + (k + 0.5) * ((w * 0.8) / 8), 3.35, d / 2 + 0.8, (w * 0.8) / 8, 0.1, 1.6, k % 2 ? C(0xf4f3ee) : awC);
+    else boxAt(gb, x, y0, z, r, 0, 3.35, d / 2 + 0.8, w * 0.82, 0.1, 1.6, awC);
+    signBoard(gb, txt, x, y0, z, r, d / 2, 0, 3.95, w * 0.62, 0.8, pickR(rng, SHOPS), rng() < 0.6);
+    for (let k = Math.floor(rng() * 3); k >= 0; k--) boxAt(gb, x, y0, z, r, (rng() - 0.5) * (w - 3), h + 0.5, (rng() - 0.5) * 6, 1.4, 1, 1.2, C(0xb9bcc0)); // rooftop units
+  }
+  // behind a downtown front: flats or offices over the alley, or a car park
+  function backW(gb, x, z, r, w, rng, y0, add) {
+    if (rng() < 0.55) {
+      const fl = 2 + Math.floor(rng() * 2), h = fl * 3.2, wall = C(pickR(rng, SHOP_WALLS));
+      boxAt(gb, x, y0, z, r, 0, (h - 1) / 2, 0, w, h + 1, 12, wall);
+      boxAt(gb, x, y0, z, r, 0, h + 0.25, 0, w + 0.3, 0.5, 12.3, wall.clone().multiplyScalar(0.9));
+      for (let f = 0; f < fl; f++) for (let k = 0; k < Math.floor(w / 3.2); k++) faceQuad(gb, x, y0, z, r, 'f', 6, -w / 2 + 1.6 + k * 3.2, 1.6 + f * 3.2, 1.3, 1.5, C(0x2c3a4a), 0.04);
+      if (rng() < 0.6) boxAt(gb, x, y0, z, r, (rng() - 0.5) * (w - 3), h + 1, 0, 1.6, 1, 1.4, C(0xb9bcc0));
+    } else {
+      lpatch(gb, x, z, r, 0, 0, w, 12, C(0x5a5d61), 0.05);
+      for (let k = 0; k < 2; k++) if (rng() < 0.7) {
+        const p = rotPt(x, z, r, (rng() - 0.5) * (w - 3), (rng() - 0.5) * 6);
+        add(pickR(rng, ['carA', 'carB', 'carC', 'truck']), { x: p[0], z: p[1], r: r + (rng() < 0.5 ? 0 : Math.PI) });
+      }
+    }
+  }
+
   function* sceneSuburb(track, group, detail, resume) {
-    const rng = U.rng(U.hashStr(track.id + 'valley'));
+    const rng = U.rng(U.hashStr(track.id + 'harvest'));
+    const XG = !!(track.xings && track.xings.length);
     const b = track.bounds, q = {};
     const lat = (x, z) => {
       track.query(x, z, -1, q);
       return Math.abs(q.lat) - q.wall;
     };
     const fits = (x, z, r, w, d, m) => {
-      for (const [a, c] of [[0, 0], [-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2]]) {
+      for (const [a, c] of [[0, 0], [-w / 2, -d / 2], [w / 2, -d / 2], [-w / 2, d / 2], [w / 2, d / 2], [0, d / 2], [-w / 2, 0], [w / 2, 0]]) {
         const p = rotPt(x, z, r, a, c);
-        if (lat(p[0], p[1]) < m) return false;
+        if (lat(p[0], p[1]) < m || (XG && track.nearRail(p[0], p[1], 2))) return false;
       }
       return true;
     };
     const P = {};
-    const add = (k, it) => (P[k] || (P[k] = [])).push(it);
-    const wgb = new G.CarModel.GB(), txt = new G.CarModel.GB();
-    const HOUSES = ['hA', 'hB', 'hC', 'hD', 'hE'], CARS = ['carA', 'carB', 'carC', 'truck'];
+    // (v5.6.1: nothing in the tractor's lane; a fence panel is 8 m long)
+    const add = (k, it) => {
+      if (XG && track.nearRail(it.x, it.z, k === 'ranchfence' ? 4.5 : 1.5)) return;
+      (P[k] || (P[k] = [])).push(it);
+    };
+    const hg = new G.CarModel.GB(), txt = new G.CarModel.GB(), wgb = new G.CarModel.GB(), soil = new G.CarModel.GB();
     const L0 = track.length;
-    const zone = (a) => (a < 170 ? 'dtg' : a < 700 ? 'gil' : a < 1690 ? 'farm' : a < L0 - 360 ? 'mh' : 'dtm');
+    // zones along the road: downtown Clovehaven, its neighbourhoods, the
+    // farm valley, Oak Valley's neighbourhoods, downtown Oak Valley
+    const zone = (a) => (a < 170 ? 'dtg' : a < 700 ? 'town' : a < 1690 ? 'farm' : a < L0 - 360 ? 'town' : 'dtm');
     const face = (i, side) => track.H[i] + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
     const at = (i, side, off, along) => {
       const L = side * (track.wallD[i] + off);
-      const tx = track.TX[i] * (along || 0), tz = track.TZ[i] * (along || 0);
-      return [track.X[i] + track.NX[i] * L + tx, track.Z[i] + track.NZ[i] * L + tz];
+      return [track.X[i] + track.NX[i] * L + track.TX[i] * (along || 0), track.Z[i] + track.NZ[i] * L + track.TZ[i] * (along || 0)];
     };
     const placed = [];
     const free = (x, z, rr) => !placed.some((p) => Math.hypot(p[0] - x, p[1] - z) < rr + p[2]);
-    // 1. houses, yards and streets; downtown blocks at each end
-    for (let i = 0; i < track.N; i += 10) {
-      const zn = zone(track.D[i]);
-      for (const side of [1, -1]) {
-        const r = face(i, side);
-        if (zn === 'dtg' || zn === 'dtm') {
-          const [x, z] = at(i, side, 5.5 + 5);
-          if (!fits(x, z, r, 13, 10, 2) || !free(x, z, 6)) continue;
-          placed.push([x, z, 7]);
-          add('mainst', { x, z, r, t: 0.85 + rng() * 0.3 });
+    const YARD = ['olive', 'crepeP', 'crepeV', 'maple', 'sweetgum', 'olive', 'citrus', 'cypress', 'maple'];
+    const STREET = ['sycamore', 'sweetgum', 'sweetgum', 'olive', 'sycamore', 'maple', 'sweetgumR', 'fanpalm', 'sycamore'];
+    const CARS = ['carA', 'carB', 'carC', 'truck'];
+    // (every tree gets a tint: in a kind where some are tinted and some not,
+    // the untinted ones draw black)
+    const tree = (k, x, z, s) => add(k, { x, z, r: rng() * 6.28, s: s || 0.85 + rng() * 0.35, t: 0.9 + rng() * 0.2 });
+    // ---- the special lots between the houses (each returns its half-width)
+    const SPECIAL = {
+      park(x, z, r) {
+        lpatch(hg, x, z, r, 0, 0, 32, 24, C(0x6aa447), 0.05);
+        lpatch(hg, x, z, r, 0, 4, 2, 16, C(0xcfc8b8), 0.08);
+        const pl = rotPt(x, z, r, -7, -2);
+        add('play', { x: pl[0], z: pl[1], r: r + (rng() - 0.5) * 0.4 });
+        for (const [a, c] of [[8, 6], [-12, 8], [11, -8], [2, -9], [-13, -7]]) {
+          const p = rotPt(x, z, r, a + (rng() - 0.5) * 3, c + (rng() - 0.5) * 3);
+          tree(rng() < 0.5 ? 'sycamore' : 'oak', p[0], p[1], 0.9 + rng() * 0.3);
+        }
+        for (const [a, c, k] of [[3, 9, 'bench'], [-3, 9, 'bench'], [7, -2, 'picnic'], [10, 1, 'picnic']]) {
+          const p = rotPt(x, z, r, a, c);
+          add(k, { x: p[0], z: p[1], r: r + (k === 'picnic' ? rng() : 0) });
+        }
+        return 17;
+      },
+      church(x, z, r, y0) {
+        const wall = C(0xf2ede2), tile = C(pickR(rng, TILE)), wood = C(0x5a3d2a);
+        boxAt(hg, x, y0, z, r, 2, 3, -2, 11, 8, 18, wall);
+        const rp = rotPt(x, z, r, 2, -2);
+        roofW(hg, rp[0], y0 + 7, rp[1], r + Math.PI / 2, 18, 11, 3.6, 'gable', tile);
+        // the front: a stepped Mission parapet, an arched door, two windows
+        boxAt(hg, x, y0, z, r, 2, 8.4, 7.05, 11.6, 2.8, 0.5, wall);
+        boxAt(hg, x, y0, z, r, 2, 10.3, 7.05, 5, 1.2, 0.5, wall);
+        boxAt(hg, x, y0, z, r, 2, 11.2, 7.05, 1.8, 0.8, 0.5, wall);
+        faceQuad(hg, x, y0, z, r, 'f', 7, 2, 1.6, 2.4, 3.2, wood, 0.04);
+        faceQuad(hg, x, y0, z, r, 'f', 7, 2, 3.4, 1.6, 0.5, wood, 0.04);
+        for (const s of [-1, 1]) faceQuad(hg, x, y0, z, r, 'f', 7, 2 + s * 3.4, 3.6, 1, 2.4, C(0x5a6a88), 0.04);
+        // the bell tower beside it
+        boxAt(hg, x, y0, z, r, -6.5, 6.5, 4, 4, 15, 4, wall);
+        faceQuad(hg, x, y0, z, r, 'f', 6, -6.5, 11.5, 1.6, 2.4, C(0x2a2d33), 0.03);
+        faceQuad(hg, x, y0, z, r, 'l', 8.5, 4, 11.5, 1.6, 2.4, C(0x2a2d33), 0.03);
+        const tp = rotPt(x, z, r, -6.5, 4);
+        roofW(hg, tp[0], y0 + 14, tp[1], r, 4, 4, 2.4, 'hip', tile);
+        lpatch(hg, x, z, r, 2, 10, 14, 5, C(0x6ea44b), 0.05);
+        lpatch(hg, x, z, r, 2, 10, 3, 5.2, C(0xd8cfbe), 0.08);
+        for (const a of [-2.5, 6.5]) {
+          const p = rotPt(x, z, r, a, 10.5);
+          tree('cypress', p[0], p[1], 1);
+        }
+        const op = rotPt(x, z, r, 10.5, 9);
+        tree('olive', op[0], op[1], 1.1);
+        return 13;
+      },
+      mall(x, z, r, y0) {
+        // a strip mall: a long low block, its lot and a few cars
+        const wall = C(pickR(rng, [0xe4d6b8, 0xd9c3a0, 0xcfc6b4])), trim = C(pickR(rng, TILE));
+        boxAt(hg, x, y0, z, r, 0, 2.3, -7, 34, 6.6, 10, wall);
+        boxAt(hg, x, y0, z, r, 0, 5.8, -1.6, 34.4, 0.5, 1.2, trim);
+        const names = MALL.slice().sort(() => rng() - 0.5).slice(0, 4);
+        for (let k = 0; k < 4; k++) {
+          const u = -12.75 + k * 8.5;
+          faceQuad(hg, x, y0, z, r, 'f', -2, u, 1.5, 6.6, 2.6, C(0x2c3a4a), 0.04);
+          signBoard(hg, txt, x, y0, z, r, -1.9, u, 4.4, 6.8, 1.0, names[k], rng() < 0.5);
+        }
+        lpatch(hg, x, z, r, 0, 6, 34, 16, C(0x5a5d61), 0.05);
+        for (let k = -4; k <= 4; k++) lpatch(hg, x, z, r, k * 3.4, 3, 0.12, 5, C(0xe8e8e2), 0.08);
+        for (let k = 0; k < 4; k++) if (rng() < 0.7) {
+          const p = rotPt(x, z, r, (Math.floor(rng() * 8) - 4) * 3.4 + 1.7, 3);
+          add(pickR(rng, CARS), { x: p[0], z: p[1], r: r + (rng() < 0.5 ? 0 : Math.PI) });
+        }
+        return 18;
+      },
+      gas(x, z, r, y0) {
+        // a gas station: canopy, pumps, a little shop, the tall sign
+        lpatch(hg, x, z, r, 0, 2, 26, 22, C(0xb9b4a8), 0.05);
+        boxAt(hg, x, y0, z, r, 0, 5.1, 4, 14, 0.7, 9, C(0xf4f4f0));
+        boxAt(hg, x, y0, z, r, 0, 5.1, 4, 14.1, 0.25, 9.1, C(0xc8352c));
+        for (const [a, c] of [[-5, 1], [5, 1], [-5, 7], [5, 7]]) boxAt(hg, x, y0, z, r, a, 2.4, c, 0.4, 4.8, 0.4, C(0xe8e8e4));
+        for (const a of [-3.5, 3.5]) {
+          const p = rotPt(x, z, r, a, 4);
+          add('pump', { x: p[0], z: p[1], r });
+        }
+        boxAt(hg, x, y0, z, r, 0, 1.5, -7, 12, 5, 7, C(0xe8dcc0));
+        faceQuad(hg, x, y0, z, r, 'f', -3.5, 0, 1.5, 8, 2.4, C(0x2c3a4a), 0.04);
+        signBoard(hg, txt, x, y0, z, r, -3.5, 0, 3.6, 7, 0.9, 'FOOD MART', false);
+        const sp = rotPt(x, z, r, 11, 10), sy = gy(sp[0], sp[1]);
+        boxAt(hg, sp[0], sy, sp[1], r, 0, 4, 0, 0.4, 8, 0.4, C(0x8a9097));
+        boxAt(hg, sp[0], sy, sp[1], r, 0, 8.3, 0, 3.4, 2.4, 0.4, C(0xc8352c));
+        signBoard(hg, txt, sp[0], sy, sp[1], r, 0.2, 0, 8.6, 3, 1.2, 'GAS', false);
+        return 15;
+      },
+    };
+    // 1. the neighbourhoods, both sides: every house its own, set back by
+    //    its own amount, a street tree in front of most, a house behind on
+    //    the next street; now and then a park, the church, a strip mall or a
+    //    gas station in place of a house
+    // straight enough here for a street behind the houses? (on a bend the
+    // offset would fold over itself)
+    const straight = (i) => {
+      const k = Math.round(15 / track.sp), dh = track.H[track.idx(i + k)] - track.H[track.idx(i - k)];
+      return Math.abs(Math.atan2(Math.sin(dh), Math.cos(dh))) < 0.2;
+    };
+    const ASPH = C(0x55585c), WALK = C(0xcac5b9);
+    for (const side of [1, -1]) {
+      const deck = ['park', 'mall', 'church', 'gas', 'park', 'mall'].sort(() => rng() - 0.5);
+      let a = 175 + rng() * 10, lastSp = -1e9, lastX = -1e9;
+      while (a < L0 - 360) {
+        const i = track.idx(Math.round(a / track.sp)), zn = zone(a);
+        if (zn !== 'town') {
+          a += 25;
           continue;
         }
-        if (zn !== 'gil' && zn !== 'mh') continue;
-        const [x, z] = at(i, side, 14);
-        if (!fits(x, z, r, 14, 26, 0.5) || !free(x, z, 9)) continue;
-        placed.push([x, z, 10]);
-        const kind = HOUSES[Math.floor(rng() * HOUSES.length)], g = { hA: 1, hB: -1, hC: 1, hD: -1, hE: 1 }[kind];
-        add(kind, { x, z, r, t: 0.9 + rng() * 0.18 });
-        if (rng() < 0.6) {
-          const c = rotPt(x, z, r, g * 4.5, 9);
-          add(CARS[Math.floor(rng() * CARS.length)], { x: c[0], z: c[1], r: r + (rng() < 0.5 ? 0 : Math.PI) });
-        }
-        const mb = rotPt(x, z, r, g * 2, 12.6);
-        add('mailbox', { x: mb[0], z: mb[1], r });
-        const fe = rotPt(x, z, r, 9.6, 2);
-        add('fenceW', { x: fe[0], z: fe[1], r: r + Math.PI / 2, sv: [2.2, 1, 1] });
-        if (rng() < 0.15) {
-          const hp = rotPt(x, z, r, g * 6.9, 12.2);
-          add('hoop', { x: hp[0], z: hp[1], r: r + Math.PI });
-        }
-        const tr = at(i, side, 2.3, 10);
-        if (lat(tr[0], tr[1]) > 1.2) add(rng() < 0.28 ? 'fanpalm' : 'sttree', { x: tr[0], z: tr[1], r: rng() * 6.28, s: 0.85 + rng() * 0.3 });
-        // the house behind, on the next street over (its back to us)
-        const [bx, bz] = at(i, side, 44);
-        if (fits(bx, bz, r + Math.PI, 14, 26, 2) && free(bx, bz, 9)) {
-          placed.push([bx, bz, 10]);
-          add(HOUSES[Math.floor(rng() * HOUSES.length)], { x: bx, z: bz, r: r + Math.PI, t: 0.9 + rng() * 0.18 });
-        }
-      }
-      if (i % 100 === 0) {
-        yield 'valley houses';
-        resume();
-      }
-    }
-    // 2. the farmland along Monterey Road, right up to the fence: vines and
-    //    garlic in rows along the road, orchards, a ranch fence, oaks
-    for (let i = 0; i < track.N; i += 24) {
-      if (zone(track.D[i]) !== 'farm') continue;
-      for (const side of [1, -1]) {
-        const r = track.H[i];
-        const kind = rng();
-        for (let L = 7; L <= 34; L += kind < 0.4 ? 3.2 : 2.4) {
-          for (const al of [-12, 12]) {
-            const [x, z] = at(i, side, L, al);
-            if (lat(x, z) < 5 || !free(x, z, 1)) continue;
-            if (kind < 0.4) add('vinerow', { x, z, r });
-            else if (kind < 0.7) add('garlicrow', { x, z, r });
-            else if (kind < 0.85 && (Math.round(L) % 6 < 3)) add('orchard', { x, z, r: rng() * 6, s: 0.85 + rng() * 0.3 });
+        const newer = a > 1000, r = face(i, side) + (rng() - 0.5) * 0.05;
+        if (deck.length && a - lastSp > 120 && rng() < 0.12) {
+          const [x, z] = at(i, side, 17);
+          if (fits(x, z, r, 34, 24, 0.6) && free(x, z, 17)) {
+            const kind = deck.pop(), half = SPECIAL[kind](x, z, r, gy(x, z));
+            placed.push([x, z, half]);
+            lastSp = a;
+            a += half * 2 + 2;
+            continue;
           }
         }
-        if (kind >= 0.4 && kind < 0.7) {
-          const [fx, fz] = at(i, side, 20.5);
-          if (lat(fx, fz) > 5) add('field', { x: fx, z: fz, r: r + Math.PI / 2, sv: [1.8, 1, 1.85] });
+        // now and then a side street off the road, out to the next street over
+        if (a - lastX > 90 && a - lastSp > 30 && straight(i) && rng() < 0.16) {
+          const [cx, cz] = at(i, side, 34.5), rr = face(i, side);
+          const clearOf = [-24, -8, 8, 24].every((o) => {
+            const p = rotPt(cx, cz, rr, 0, o);
+            return free(p[0], p[1], 4);
+          });
+          if (fits(cx, cz, rr, 8, 69, 0) && clearOf) {
+            lpatch(hg, cx, cz, rr, 0, 0, 8, 69, ASPH, 0.06);
+            for (const s of [-1, 1]) lpatch(hg, cx, cz, rr, s * 4.8, -1, 1.6, 67, WALK, 0.06);
+            lpatch(hg, cx, cz, rr, 2, 31.5, 3.6, 0.45, C(0xf2f2ee), 0.08); // the stop line
+            for (const o of [-24, -8, 8, 24]) {
+              const p = rotPt(cx, cz, rr, 0, o);
+              placed.push([p[0], p[1], 5]);
+            }
+            const sp = rotPt(cx, cz, rr, 4.8, 32);
+            add('stopsign', { x: sp[0], z: sp[1], r: rr });
+            lastX = a;
+            a += 14;
+            continue;
+          }
         }
+        const gap = 20 + rng() * 6, set = 14 + rng() * 2.5;
+        const [x, z] = at(i, side, set);
+        if (fits(x, z, r, 20, 24, 0.6) && free(x, z, 9.5)) {
+          placed.push([x, z, 9.5]);
+          for (const y of houseW(hg, x, z, r, rng, gy(x, z), newer)) {
+            if (y.car) {
+              if (rng() < 0.55) add(pickR(rng, CARS), { x: y.x, z: y.z, r: r + (rng() < 0.5 ? 0 : Math.PI) });
+            } else if (y.succ) add('succulent', { x: y.x, z: y.z, r: rng() * 6, s: 0.8 + rng() * 0.6 });
+            else if (rng() < 0.8) tree(pickR(rng, YARD), y.x, y.z);
+          }
+          const mb = rotPt(x, z, r, (rng() - 0.5) * 8, set - 1.2);
+          add('mailbox', { x: mb[0], z: mb[1], r });
+          const fe = rotPt(x, z, r, 10.2, 0);
+          if (rng() < 0.4) add('hedge', { x: fe[0], z: fe[1], r: r + Math.PI / 2, sv: [2.3, 0.8 + rng() * 0.6, 1] });
+          else add('fenceW', { x: fe[0], z: fe[1], r: r + Math.PI / 2, sv: [2.3, 1, 1] });
+          if (rng() < 0.1) {
+            const hp = rotPt(x, z, r, 6.5, 11);
+            add('hoop', { x: hp[0], z: hp[1], r: r + Math.PI });
+          }
+          // the house behind, its back to us, facing the next street over
+          const [bx, bz] = at(i, side, set + 30 + rng() * 4);
+          if (fits(bx, bz, r + Math.PI, 20, 24, 2) && free(bx, bz, 9.5)) {
+            placed.push([bx, bz, 9.5]);
+            for (const y of houseW(hg, bx, bz, r + Math.PI, rng, gy(bx, bz), newer)) if (!y.succ && !y.car && rng() < 0.6) tree(pickR(rng, YARD), y.x, y.z, 1 + rng() * 0.4);
+          }
+        }
+        const [tx, tz] = at(i, side, 2.4, gap / 2);
+        if (lat(tx, tz) > 1.2 && rng() < 0.88) tree(pickR(rng, STREET), tx, tz);
+        a += gap;
+      }
+      yield 'valley houses';
+      resume();
+    }
+    // the next street over, where the road runs straight, and a third row of
+    // houses facing it
+    for (const side of [1, -1]) {
+      let a = 180, nextHouse = 0;
+      while (a < L0 - 360) {
+        if (zone(a) !== 'town') {
+          a += 10;
+          continue;
+        }
+        const i = track.idx(Math.round(a / track.sp)), r = face(i, side), [sx, sz] = at(i, side, 68);
+        if (straight(i) && lat(sx, sz) > 60 && free(sx, sz, 3.5)) {
+          lpatch(hg, sx, sz, r, 0, 0, 10.6, 7, ASPH, 0.06);
+          for (const s of [-1, 1]) lpatch(hg, sx, sz, r, 0, s * 4.3, 10.6, 1.6, WALK, 0.06);
+          if (rng() < 0.3) {
+            const [tx, tz] = at(i, side, 73.8);
+            tree(pickR(rng, STREET), tx, tz);
+          }
+          if (a >= nextHouse) {
+            const [cx, cz] = at(i, side, 88);
+            if (fits(cx, cz, r, 20, 24, 60) && free(cx, cz, 9.5)) {
+              placed.push([cx, cz, 9.5]);
+              nextHouse = a + 20 + rng() * 6;
+              for (const y of houseW(hg, cx, cz, r, rng, gy(cx, cz), a > 1000)) {
+                if (y.car) {
+                  if (rng() < 0.5) add(pickR(rng, CARS), { x: y.x, z: y.z, r: r + (rng() < 0.5 ? 0 : Math.PI) });
+                } else if (!y.succ && rng() < 0.7) tree(pickR(rng, YARD), y.x, y.z);
+              }
+            }
+          }
+        }
+        a += 10;
       }
     }
-    for (let i = 0; i < track.N; i += 2) {
+    yield 'valley streets';
+    resume();
+    // 2. downtown at both ends: fronts of different widths, awnings, signs,
+    //    cafe tables, planters and trees on the sidewalk
+    for (const side of [1, -1]) {
+      let a = 20;
+      while (a < L0 - 20) {
+        const zn = zone(a);
+        if (zn !== 'dtg' && zn !== 'dtm') {
+          a += 30;
+          continue;
+        }
+        const w = 9 + rng() * 6, i = track.idx(Math.round(a / track.sp)), r = face(i, side);
+        const [x, z] = at(i, side, 11);
+        if (fits(x, z, r, w, 11, 1.5) && free(x, z, w / 2)) {
+          placed.push([x, z, w / 2 + 0.5]);
+          shopW(hg, txt, x, z, r, w, rng, gy(x, z));
+          const [bx, bz] = at(i, side, 30);
+          if (fits(bx, bz, r, w, 12, 12) && free(bx, bz, w / 2)) {
+            placed.push([bx, bz, w / 2 + 0.5]);
+            backW(hg, bx, bz, r, w, rng, gy(bx, bz), add);
+          }
+          if (rng() < 0.55) {
+            const u = rotPt(x, z, r, (rng() - 0.5) * w * 0.5, 7.4);
+            add(pickR(rng, ['umbR', 'umbG', 'umbC']), { x: u[0], z: u[1], r: rng() * 6 });
+          }
+          if (rng() < 0.5) {
+            const pl = rotPt(x, z, r, w / 2 - 0.7, 7);
+            add('planter', { x: pl[0], z: pl[1], r });
+          }
+        }
+        const [tx, tz] = at(i, side, 2, w / 2 + 0.5);
+        if (lat(tx, tz) > 1 && rng() < 0.65) tree(rng() < 0.6 ? 'sweetgum' : 'olive', tx, tz, 0.8 + rng() * 0.3);
+        a += w + 0.3;
+      }
+    }
+    yield 'valley downtown';
+    resume();
+    const SOIL = { vine: [0x8a6a48, 0x7c9c4a], corn: [0x8a6a48], rows: [0x7d5e40, 0x8a6a48], orchard: [0x7fa04c, 0x94a85a], nursery: [0xb8ad98], stubble: [0xc9b27a] };
+    const cropOf = (roll) => (roll < 0.22 ? 'vine' : roll < 0.34 ? 'corn' : roll < 0.52 ? 'rows' : roll < 0.66 ? 'orchard' : roll < 0.73 ? 'nursery' : roll < 0.8 ? 'greenhouse' : roll < 0.88 ? 'stubble' : 'pasture');
+    // one field: road distance a..a+len, n0..n1 metres out from the fence.
+    // Soil and rows go in pieces of 25 m or less, each lined up with the road
+    // where it is, so a field bends with the road instead of cutting across
+    // it on a curve.
+    const field = (side, a, len, n0, n1) => {
+      const roll = rng(), crop = cropOf(roll), segs = Math.ceil(len / 25), segL = len / segs;
+      const soilC = SOIL[crop] && C(pickR(rng, SOIL[crop])).multiplyScalar(0.92 + rng() * 0.12);
+      const rowStep = { vine: 3, corn: 2.2, rows: 1.8 }[crop], citrusy = rng() < 0.35, young = rng() < 0.15;
+      for (let s = 0; s < segs; s++) {
+        const ia = track.idx(Math.round((a + s * segL) / track.sp)), ib = track.idx(Math.round((a + (s + 1) * segL) / track.sp));
+        const im = track.idx(Math.round((a + (s + 0.5) * segL) / track.sp)), r = track.H[im];
+        if (soilC) gpatch(soil, at(ia, side, n0), at(ib, side, n0), at(ib, side, n1), at(ia, side, n1), soilC, 0.06, Math.max(1, Math.round(segL / 5)), Math.max(2, Math.round((n1 - n0) / 5)));
+        if (rowStep) for (let L = n0 + 1.5; L <= n1 - 1; L += rowStep) {
+          const [x, z] = at(im, side, L);
+          if (lat(x, z) < n0 - 0.5) continue;
+          const kind = crop === 'vine' ? (young ? 'vinerowR' : 'vinerow') : crop === 'corn' ? 'cornrow' : L - n0 < 12 === roll < 0.43 ? 'garlicrow' : 'croprow';
+          add(kind, { x, z, r, sv: [1, 1, (segL - 0.8) / 24] });
+        }
+      }
+      const i = track.idx(Math.round((a + len / 2) / track.sp)), r = track.H[i];
+      if (crop === 'orchard' || crop === 'nursery') {
+        for (let L = n0 + 3; L <= n1 - 2; L += crop === 'orchard' ? 6 : 4) for (let al = 4; al <= len - 4; al += crop === 'orchard' ? 6 : 5) {
+          const ii = track.idx(Math.round((a + al) / track.sp)), [x, z] = at(ii, side, L);
+          if (lat(x, z) < n0) continue;
+          if (crop === 'orchard') add(citrusy ? 'citrus' : 'orchard', { x, z, r: rng() * 6, s: 0.85 + rng() * 0.3 });
+          else add('pots', { x, z, r: track.H[ii] });
+        }
+      }
+      if (crop === 'greenhouse') for (const L of [n0 + 6, n0 + 18]) {
+        const [x, z] = at(i, side, L);
+        if (lat(x, z) > n0 + 1) add('greenhouse', { x, z, r, sv: [1, 1, Math.min(len - 6, 50) / 32] });
+      }
+      if (crop === 'stubble' || crop === 'pasture') for (let k = 0; k < 5; k++) {
+        const ii = track.idx(Math.round((a + 4 + rng() * (len - 8)) / track.sp)), [x, z] = at(ii, side, n0 + 4 + rng() * (n1 - n0 - 8));
+        if (lat(x, z) > n0 + 1) {
+          if (crop === 'stubble') add('hay', { x, z, r: rng() * 6, s: 0.8 + rng() * 0.5 });
+          else tree('oak', x, z, 0.8 + rng() * 0.5);
+        }
+      }
+    };
+    // 3. the farm valley: blocks of two fields deep along the road, each
+    //    field its own crop; windbreaks between some blocks; a farmhouse and
+    //    barn behind now and then
+    for (const side of [1, -1]) {
+      let a = 705 + rng() * 20;
+      while (a < 1660) {
+        let len = Math.min(44 + rng() * 30, 1685 - a);
+        // (a block stops short of the tractor's lane; the next starts past it)
+        const xg = XG && track.xings.find((x) => a + len > x.at - 9 && a < x.at + 9);
+        if (xg) {
+          len = xg.at - 9 - a;
+          if (len < 20) {
+            a = xg.at + 9;
+            continue;
+          }
+        }
+        if (len < 20) break;
+        field(side, a, len, 8, 34);
+        field(side, a, len, 38, 64);
+        const i = track.idx(Math.round((a + len / 2) / track.sp));
+        // a windbreak of eucalyptus or cypress down the block's edge
+        if (rng() < 0.4) {
+          const kind = rng() < 0.6 ? 'eucalyptus' : 'cypress', ie = track.idx(Math.round((a + len + 1) / track.sp));
+          for (let L = 9; L <= 66; L += kind === 'cypress' ? 2.6 : 4.5) {
+            const [x, z] = at(ie, side, L);
+            if (lat(x, z) > 7) tree(kind, x, z);
+          }
+        }
+        // now and then a farmhouse and a barn behind the fields
+        if (rng() < 0.35) {
+          const fr = face(i, side), [hx, hz] = at(i, side, 80);
+          if (free(hx, hz, 12) && fits(hx, hz, fr, 20, 24, 60)) {
+            placed.push([hx, hz, 12]);
+            for (const y of houseW(hg, hx, hz, fr, rng, gy(hx, hz), false)) if (!y.succ && !y.car) tree(rng() < 0.5 ? 'oak' : 'sycamore', y.x, y.z, 1.1);
+            const [bx, bz] = at(i, side, 84, 20);
+            if (fits(bx, bz, fr, 12, 16, 60) && free(bx, bz, 9)) {
+              placed.push([bx, bz, 9]);
+              add('barn', { x: bx, z: bz, r: fr + (rng() - 0.5) * 0.3 });
+            }
+            if (rng() < 0.6) add('tractor', { x: hx + 9, z: hz - 6, r: rng() * 6 });
+          }
+        }
+        a += len + 2;
+      }
+    }
+    // a ranch fence along the farm road; power poles and wires on one side
+    const fstep = Math.max(1, Math.round(8 / track.sp)); // (8 m panels)
+    for (let i = 0; i < track.N; i += fstep) {
       if (zone(track.D[i]) !== 'farm') continue;
       for (const side of [1, -1]) {
         const [x, z] = at(i, side, 4.2);
-        if (lat(x, z) > 3.5 && (side > 0 || i % 22 > 2)) add('ranchfence', { x, z, r: track.H[i] + Math.PI / 2 });
+        if (lat(x, z) > 3.5 && (side > 0 || i % (fstep * 6) >= fstep)) add('ranchfence', { x, z, r: track.H[i] + Math.PI / 2, sv: [(fstep * track.sp) / 4.05, 1, 1] });
       }
     }
-    // oaks on the golden grass, thicker away from town
-    for (let k = 0; k < 300 * detail; k++) {
-      const x = U.lerp(b.x0 - 380, b.x1 + 380, rng()), z = U.lerp(b.z0 - 260, b.z1 + 260, rng());
-      const d = lat(x, z);
-      if (d < 6 || !free(x, z, 5)) continue;
-      track.query(x, z, -1, q);
-      const zn = zone(q.along);
-      if ((zn === 'gil' || zn === 'mh' || zn.startsWith('dt')) && d < 70 && rng() < 0.85) continue;
-      add('oak', { x, z, r: rng() * 6.28, s: 0.8 + rng() * 0.6, t: 0.85 + rng() * 0.25 });
-    }
-    yield 'valley farms';
-    resume();
-    // 3. power poles and wires along Monterey Road
     let prev = null;
     for (let i = 0; i < track.N; i += 22) {
       if (zone(track.D[i]) !== 'farm') {
@@ -3121,6 +3878,7 @@
         continue;
       }
       const r = track.H[i] + Math.PI / 2;
+      if (XG && track.nearRail(x, z, 3)) continue; // (the wires carry on over the tractor's lane)
       add('pole', { x, z, r });
       const y = gy(x, z) + 10.45, cur = [];
       for (const o of [-1.1, 0, 1.1]) {
@@ -3128,33 +3886,45 @@
         cur.push([p[0], y, p[1]]);
       }
       if (prev) for (let k = 0; k < 3; k++) {
-        const a = prev[k], c = cur[k], m = [(a[0] + c[0]) / 2, (a[1] + c[1]) / 2 - 0.7, (a[2] + c[2]) / 2];
-        wgb.beam(a, m, 0.04, 0.04, C(0x2a2d33));
+        const a2 = prev[k], c = cur[k], m = [(a2[0] + c[0]) / 2, (a2[1] + c[1]) / 2 - 0.7, (a2[2] + c[2]) / 2];
+        wgb.beam(a2, m, 0.04, 0.04, C(0x2a2d33));
         wgb.beam(m, c, 0.04, 0.04, C(0x2a2d33));
       }
       prev = cur;
     }
-    // 4. landmarks: the old city hall and the garlic in Gilroy, a farm
-    //    stand, barns, the city-limit signs, and El Toro over Morgan Hill
+    yield 'valley farms';
+    resume();
+    // 4. oaks: clumps in the gaps and on the rising ground, thickening into
+    //    woods on the hills beyond the valley floor (gold grass, dark oaks)
+    for (let k = 0; k < 340 * detail; k++) {
+      const x = U.lerp(b.x0 - 420, b.x1 + 420, rng()), z = U.lerp(b.z0 - 280, b.z1 + 280, rng());
+      const d = lat(x, z);
+      if (d < 10 || !free(x, z, 4)) continue;
+      track.query(x, z, -1, q);
+      const zn = zone(q.along);
+      if (zn !== 'farm' && d < 75) continue;
+      if (zn === 'farm' && d < 60 && rng() < 0.8) continue; // (the valley floor is farmed)
+      const n = 1 + Math.floor(rng() * 3), far = d > 110;
+      for (let c = 0; c < n; c++) add(far ? 'oakF' : 'oak', { x: x + (rng() - 0.5) * 14, z: z + (rng() - 0.5) * 14, r: rng() * 6.28, s: 0.8 + rng() * 0.6, t: 0.85 + rng() * 0.25 });
+    }
+    // 5. landmarks: the civic hall and the giant garlic at the start, a
+    //    fruit stand, a water tower, the town signs (made-up towns), and the
+    //    peak over the finish
     const spot = (along, side, off) => {
       const i = track.idx(Math.round(along / track.sp));
       return [...at(i, side, off), face(i, side), i];
     };
     {
       const [x, z, r] = spot(115, 1, 17);
-      if (fits(x, z, r, 22, 16, 1)) add('oldhall', { x, z, r });
+      if (fits(x, z, r, 22, 16, 1) && free(x, z, 11)) add('oldhall', { x, z, r });
       const [gx, gz] = spot(30, -1, 5);
       add('garlic', { x: gx, z: gz, r: 0, s: 1.1 });
       const [fx, fz, fr] = spot(1160, 1, 7);
       if (lat(fx, fz) > 2) add('farmstand', { x: fx, z: fz, r: fr });
-      for (const [a, s] of [[900, -1], [1420, 1]]) {
-        const [bx, bz, br] = spot(a, s, 28);
-        if (fits(bx, bz, br, 12, 16, 2) && free(bx, bz, 9)) add('barn', { x: bx, z: bz, r: br + 0.3 });
-      }
-      const [wx, wz] = spot(1300, -1, 22);
-      if (lat(wx, wz) > 4) add('watertower', { x: wx, z: wz });
-      for (const [a, s, word] of [[60, -1, 'GILROY'], [1700, -1, 'MORGAN HILL']]) {
-        const [sx, sz, sr, si] = spot(a, s, 1.6);
+      const [wx, wz] = spot(1300, -1, 40);
+      if (lat(wx, wz) > 4 && free(wx, wz, 5)) add('watertower', { x: wx, z: wz });
+      for (const [a, s, word] of [[60, -1, 'CLOVEHAVEN'], [1700, -1, 'OAK VALLEY']]) {
+        const [sx, sz, , si] = spot(a, s, 1.6);
         const r2 = track.H[si] + Math.PI;
         add('citysign', { x: sx, z: sz, r: r2 });
         const u = rotPt(0, 0, r2, 1, 0), f = rotPt(0, 0, r2, 0, 1), y = gy(sx, sz) + 2.4;
@@ -3162,13 +3932,15 @@
         pixText(txt, 'CITY LIMIT', [sx + f[0] * 0.04, y - 0.35, sz + f[1] * 0.04], [u[0], 0, u[1]], [0, 1, 0], 0.035, C(0xffffff), [f[0], 0, f[1]]);
       }
     }
+    worldMesh(group, soil, null, 'fields');
+    worldMesh(group, hg, null, 'valleyBuildings', true);
     worldMesh(group, wgb, null, 'wires');
     worldMesh(group, txt, null, 'signText');
-    // El Toro: the steep peak west of Morgan Hill, oaks up its sides
+    // the peak over the finish: oak woods up its sides, gold grass on top
     {
-      const ex = -650, ez = b.z1 - 250, base = gy(ex + 400, ez), n = 28, rings = 9;
+      const ex = -650, ez = b.z1 - 250, base = gy(ex + 400, ez), n = 30, rings = 10;
       const pos = [], col = [];
-      const gold = C(0xb89a5c), oakc = C(0x55693a), tmpc = new THREE.Color();
+      const gold = C(0xc2a462), green = C(0x7e9a4a), oakc = C(0x3f5a2c), tmpc = new THREE.Color();
       const hAt = (k, j) => {
         const f = j / rings, a = (k / n) * Math.PI * 2;
         const R = 460 * (1 - f) + 12, h = 330 * Math.pow(f, 0.8) * (1 + 0.06 * Math.sin(a * 3 + j));
@@ -3177,8 +3949,8 @@
       for (let j = 0; j < rings; j++) {
         for (let k = 0; k < n; k++) {
           const A = hAt(k, j), B = hAt(k + 1, j), Cc = hAt(k + 1, j + 1), D = hAt(k, j + 1);
-          const shade = 0.85 + ((k * 7 + j * 3) % 5) * 0.04;
-          tmpc.copy(gold).lerp(oakc, ((k * 13 + j * 7) % 9) / 14 + (j > 5 ? 0.2 : 0)).multiplyScalar(shade);
+          const noise = ((k * 13 + j * 7) % 9) / 9;
+          tmpc.copy(j >= rings - 2 ? gold : noise < 0.6 ? oakc : noise < 0.82 ? green : gold).multiplyScalar(0.86 + ((k * 7 + j * 3) % 5) * 0.04);
           for (const tri of [[A, B, Cc], [A, Cc, D]]) {
             for (const v of tri) pos.push(v[0], v[1], v[2]);
             for (let v = 0; v < 3; v++) col.push(tmpc.r, tmpc.g, tmpc.b);
@@ -3190,13 +3962,19 @@
       g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
       g.computeVertexNormals();
       const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }));
-      m.name = 'elToro';
+      m.name = 'thePeak';
       group.add(m);
     }
     yield 'valley landmarks';
     resume();
-    for (const k in P) instanced(k, P[k], group, !['field', 'garlicrow', 'mailbox', 'fenceW', 'vinerow'].includes(k));
-    // the street lamps downtown
+    const flatK = ['garlicrow', 'croprow', 'mailbox', 'fenceW', 'vinerow', 'vinerowR', 'succulent', 'hedge', 'ranchfence', 'bench', 'picnic', 'pots', 'cornrow'];
+    // (each kind in 400 m chunks along the valley, so the chase camera's
+    // frustum can skip most of a 2.7 km sprint's scenery, and its shadows)
+    for (const k in P) {
+      const ch = {};
+      for (const it of P[k]) (ch[Math.floor(it.z / 400)] || (ch[Math.floor(it.z / 400)] = [])).push(it);
+      for (const c in ch) instanced(k, ch[c], group, !flatK.includes(k));
+    }
     const lamps = [];
     for (let i = 0; i < track.N; i += 9) {
       const zn = zone(track.D[i]);

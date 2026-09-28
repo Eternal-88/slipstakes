@@ -1389,6 +1389,27 @@
       }
       this.noiseHit(3.2, 90, 0.35 * k, 'lowpass', 'sfx', 0.2, 60);
     },
+    // v5.6.1 crossings that aren't railways: a forklift's reversing beeper,
+    // a tractor's horn and diesel; and concrete cracking off a building
+    forkBeep(k) {
+      if (!this.ok() || k < 0.03) return;
+      for (let i = 0; i < 5; i++) this.tone(1040, 0.24, 'square', 0.03 * k, 0, 'sfx', i * 0.5);
+      this.noiseHit(1.6, 500, 0.05 * k, 'bandpass', 'sfx', 0, 900, 2);
+    },
+    tractorHorn(k) {
+      if (!this.ok() || k < 0.03) return;
+      for (const f of [196, 247]) {
+        this.tone(f, 0.35, 'sawtooth', 0.045 * k);
+        this.tone(f, 0.5, 'sawtooth', 0.045 * k, 0, 'sfx', 0.5);
+      }
+      for (let i = 0; i < 10; i++) this.noiseHit(0.09, 160, 0.12 * k, 'lowpass', 'sfx', 1.1 + i * 0.13, 90);
+    },
+    debrisCrack(k) {
+      if (!this.ok() || k < 0.03) return;
+      this.noiseHit(0.18, 2600, 0.14 * k, 'bandpass', 'sfx', 0, 900, 3);
+      this.tone(140, 0.7, 'sawtooth', 0.03 * k, 70, 'sfx', 0.05);
+      this.glass(0.5 * k);
+    },
     whoosh(k) {
       if (!this.ok() || k < 0.03) return;
       this.noiseHit(0.7, 300, 0.2 * k, 'bandpass', 'sfx', 0, 1100, 1.2);
@@ -1910,7 +1931,7 @@
     welcome: ['Welcome In', 'Lounge', 'Main menu'],
     megastore: ['Aisle Infinity', 'Store jazz-funk', 'Megastore'],
     evacuation: ['Evacuation', 'Dark and tense', 'Harrow City'],
-    southvalley: ['Garlic Summer', 'Sunny groove', 'El Toro Run'],
+    southvalley: ['Garlic Summer', 'Sunny groove', 'Harvest Run'],
     sunsetdrive: ['Sunset Drive', 'City pop', 'Races'],
     nightline: ['Night Line', 'Liquid drum and bass', 'Races, day or night'],
     final: ['Champion', 'Anthem', 'The final standings'],

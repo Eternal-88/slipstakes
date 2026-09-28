@@ -58,7 +58,7 @@
       nightLight: { hemiSky: 0xb4c4e2, hemiI: 1.3, sunCol: 0xe2eaff, sunI: 0.5 }, surfCol: { tarmac: [0xcbcdd0, 0xc6c8cb], concrete: [0xbcbfc3, 0xb6b9bd] } },
     deadcity: { song: 'evacuation', ground: 0x2b2f34, ground2: 0x272b30, hill: 0x2f3338, patch: 0x33302c, runoff: 'concrete', sky: 0x1a2227, fog: 0x1f282d, trees: 'none', rocks: 0, props: 'deadcity', puddle: 0x3d4c5c, wall: [0xff7a1a, 0xe6e2d8], night: 1, rain: 1, neon: 1, lamps: 1, stand: 0, hills: 0, fogNear: 60, fogFar: 380,
       nightLight: { hemiSky: 0x6a8292, hemiI: 1.15, sunCol: 0xa9c2d2, sunI: 0.45 }, surfCol: { tarmac: [0x34383e, 0x31353b], wet: [0x2a3036, 0x272c32], concrete: [0x4a4f55, 0x454a50] } },
-    southvalley: { song: 'southvalley', ground: 0xc9ad6e, ground2: 0xc0a466, hill: 0xcdb27a, patch: 0x94a85c, runoff: 'grass', sky: 0x8ccbf2, fog: 0xd9e7ef, trees: 'none', rocks: 0, props: 'suburb', wall: [0xf2efe6, 0xa3a8ae], mtn: 0xae9058, sunCol: 0xfff0d2, sunI: 2.4, hemiI: 1.7, hills: 0.5, fogNear: 280, fogFar: 950, tufts: 'dry',
+    southvalley: { song: 'southvalley', ground: 0x8fae58, ground2: 0x86a552, hill: 0xc4aa6c, patch: 0xa8a860, runoff: 'grass', sky: 0x8ccbf2, fog: 0xd9e7ef, trees: 'none', rocks: 0, props: 'suburb', wall: [0xf2efe6, 0xa3a8ae], mtn: 0x9a8a5a, sunCol: 0xfff0d2, sunI: 2.4, hemiI: 1.7, hills: 0.5, hillRel: 7, smoothGround: 1, fogNear: 280, fogFar: 950, tufts: 'grass',
       surfCol: { concrete: [0xc9c6bd, 0xc2bfb6] } },
     endu: { ground: 0x78b862, ground2: 0x68a655, hill: 0x8cc472, patch: 0xb9cc72, runoff: 'grass', sky: 0x9cd4ff, fog: 0xd2ecff, trees: 'round', props: 'stands', wall: [0x14b8a6, 0xf4f1e8], mtn: 0x809fa8, tufts: 'grass', todTo: 1, lamps: 1, fogNear: 190, fogFar: 600 },
   };
@@ -537,7 +537,7 @@
       // of wide concrete aisles between showroom islands, pillars that go up
       // into the fog, price signs hanging on wires, the ceiling panels on.
       id: 'megastore', name: 'Megastore', format: 'circuit', laps: 2, theme: 'store', runoff: 4, isNew: 1,
-      blurb: 'An endless furniture store after closing time. Square corners between the showrooms, pillars that vanish into the fog where the ceiling should be - and somebody has just mopped the floor.',
+      blurb: 'An endless furniture store after closing time. Square corners between the showrooms, pillars that vanish into the fog where the ceiling should be, forklifts still moving stock across the aisles - and somebody has just mopped the floor.',
       pts: [
         [0, 0, { w: 7.5, s: 'tarmac', kerb: 0 }],
         [300, 0, { r: 22 }],
@@ -557,6 +557,9 @@
         { k: 'water', x: 360, z: 300, len: 18, hw: 6 },
         { k: 'oil', x: -180, z: 90, lat: 1.5, len: 10, hw: 2.4 },
         { k: 'boost', x: 100, z: 420, lat: 2 },
+        // v5.6.1: forklifts out of the stockrooms, across the aisle
+        { k: 'train', look: 'forklift', x: 218, z: 421, cars: 2, gap: 2.4, speed: 6, span: 22, every: 13, r: 1.25, off: 3 },
+        { k: 'train', look: 'forklift', x: 298, z: 64, cars: 2, gap: 2.4, speed: 6, span: 22, every: 14, r: 1.25, off: 9, dir: -1 },
       ],
     },
     {
@@ -564,7 +567,7 @@
       // an elevated railway over the start straight, fires, wrecks and
       // barricades in the side streets.
       id: 'harrow', name: 'Harrow City', format: 'circuit', laps: 2, theme: 'deadcity', runoff: 3.5, isNew: 1,
-      blurb: 'A city that emptied overnight: rain, fires, abandoned police cars and barricades, and the elevated railway still running over the start. Standing water on the avenue and the back street - lift before you get there.',
+      blurb: 'A city that emptied overnight: rain, fires, abandoned police cars and barricades, and the elevated railway still running over the start. Concrete falls off the buildings on the east street - watch for shadows. Standing water on the avenue and the back street - lift before you get there.',
       pts: [
         [0, 0, { w: 7, s: 'tarmac', kerb: 0 }],
         [260, 0, { r: 20 }],
@@ -587,17 +590,23 @@
         { k: 'barrels', x: -80, z: 270, lat: -2.6, r: 0.95 },
         { k: 'oil', x: 120, z: 460, lat: -1.4, len: 10, hw: 2.4 },
         { k: 'boost', x: 150, z: 0, lat: -2 },
+        // v5.6.1: concrete falling off the buildings on the east street. It
+        // comes off the fronts, so it lands in the outer lanes on each side
+        // (all over the road, the bots swerved into the walls dodging it)
+        { k: 'rockfall', look: 'debris', x: 260, z: 75, lat: 4, len: 80, spread: 1.5, every: 6.5, stay: 4, r: 1.1, count: 2 },
+        { k: 'rockfall', look: 'debris', x: 260, z: 75, lat: -4, len: 80, spread: 1.5, every: 6.5, stay: 4, r: 1.1, count: 2, off: 1.6 },
       ],
       // (trackmesh.js: the elevated railway, from/to in world metres)
       elRail: [[90, -120, 90, 300], [-160, 400, 300, 400]],
     },
     {
-      // v5.5.8: up the South Valley, from a Gilroy neighbourhood to downtown
-      // Morgan Hill: tract homes, then Monterey Road through the San Martin
-      // farmland (vineyards, garlic, oaks on golden hills, the afternoon
-      // wind), then Morgan Hill with El Toro over the rooftops.
-      id: 'southvalley', name: 'El Toro Run', format: 'sprint', theme: 'southvalley', runoff: 3, startAt: 40, finishBack: 150, isNew: 1,
-      blurb: 'A sprint up the South Valley: through a Gilroy neighbourhood, out along Monterey Road past the vineyards and garlic fields of San Martin (mind the afternoon wind), and into downtown Morgan Hill under El Toro.',
+      // v5.6: a sprint up a green farm valley, from little downtown
+      // Clovehaven through its neighbourhoods, along the old highway past
+      // vineyards, corn, orchards and greenhouses (and the afternoon wind),
+      // into downtown Oak Valley under the peak. Made-up towns. (v5.6.1:
+      // the scenery rebuilt - trackmesh.js sceneSuburb.)
+      id: 'southvalley', name: 'Harvest Run', format: 'sprint', theme: 'southvalley', runoff: 3, startAt: 40, finishBack: 150, isNew: 1,
+      blurb: 'A sprint up a green farm valley: out of little downtown Clovehaven (say hello to the giant garlic), through the neighbourhoods, along the old highway past vineyards, cornfields, orchards and greenhouses (mind the afternoon wind and the tractor hauling hay across the road), and into downtown Oak Valley under the peak.',
       pts: [
         [0, -40, { w: 6, s: 'tarmac', kerb: 0, y: 0, ro: 3, rs: 'concrete' }],
         [0, 120, { r: 18 }],
@@ -624,6 +633,8 @@
         { k: 'boost', x: 60, z: 900, lat: 0 },
         { k: 'mud', x: 55, z: 1250, lat: 2, len: 10, hw: 2.5 },
         { k: 'oil', x: 40, z: 1400, lat: -1.2, len: 10, hw: 2.4 },
+        // v5.6.1: a tractor and two hay wagons crossing between the barns
+        { k: 'train', look: 'tractor', x: 44, z: 755, cars: 3, gap: 4.3, speed: 6, span: 38, every: 20, r: 1.45, off: 5 },
       ],
     },
   ];

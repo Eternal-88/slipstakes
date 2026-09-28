@@ -24,12 +24,12 @@
     // Oil: almost no grip for a moment — lift and keep it straight.
     { id: 'oil', name: 'Oil', grip: 0.34, rr: 0.012, rough: 0.0, wet: 0, loose: 0, fx: 'oil' },
     // Mud: slow and draggy, rally tyres and trucks cope best.
-    { id: 'mud', name: 'Mud', grip: 0.55, rr: 0.15, rough: 0.5, wet: 0, loose: 1, fx: 'mud' },
+    { id: 'mud', name: 'Mud', grip: 0.55, rr: 0.35, rough: 0.5, wet: 0, loose: 1, fx: 'mud' }, // (v5.6.1: rr 0.15 -> 0.35, and it clogs the tread: physics.js mudHold)
     // Ice: glassy. Narrow tyres help (uses the WET multiplier), wide ones hurt.
     { id: 'ice', name: 'Ice', grip: 0.44, rr: 0.01, rough: 0.0, wet: 0, icy: 1, loose: 0, fx: 'ice' },
     // v5 water splash (fords, flooded dips): heavy drag and little grip.
     // (Surface codes pack into 4 bits per wheel over the network: 15 is the last.)
-    { id: 'water', name: 'Water', grip: 0.62, rr: 0.13, rough: 0.15, wet: 1, loose: 0, fx: 'splash' },
+    { id: 'water', name: 'Water', grip: 0.62, rr: 0.3, rough: 0.15, wet: 1, loose: 0, fx: 'splash' }, // (v5.6.1: rr 0.13 -> 0.3, and fronts aquaplane: physics.js aqua)
   ];
   const SI = {};
   SURF.forEach((s, i) => {
@@ -327,6 +327,9 @@
     //       'swing' {amp, period, r, off}        a wrecking ball swinging across the road
     //   v5.4: 'rockfall' takes count: that many staggered streams of rocks
     //       'train' {cars, gap, speed, span, every, off, dir}  a level crossing
+    //   v5.6.1: 'train' look: 'forklift' | 'tractor' (a crossing that isn't a
+    //       railway: same timing, physics and bots, its own vehicles), and
+    //       'rockfall' look: 'debris' (concrete off a building, not rocks)
     _hazards() {
       const N = this.N, sp = this.sp;
       this.patches = [];
@@ -383,7 +386,7 @@
           // which is why Serpent Pass's rockfall felt like nothing much.
           const streams = sw ? 1 : Math.max(1, h.count || 1), every = h.every || 14, r0 = h.r || (sw ? 1.3 : 1.1);
           for (let si = 0; si < streams; si++) {
-            this.dyn.push({ k: h.k, i: ic, at, lat, r: si ? r0 * (0.8 + 0.4 * ((si * 0.618) % 1)) : r0, len: h.len || 30, spread: h.spread != null ? h.spread : 5, every, stay: h.stay || 7, off: (h.off || 0) + (si * every) / streams + si * 0.37, amp: h.amp || 5, period: h.period || 6, seed: Math.round(at * 10) + si * 101, stream: si });
+            this.dyn.push({ k: h.k, i: ic, at, lat, r: si ? r0 * (0.8 + 0.4 * ((si * 0.618) % 1)) : r0, len: h.len || 30, spread: h.spread != null ? h.spread : 5, every, stay: h.stay || 7, off: (h.off || 0) + (si * every) / streams + si * 0.37, amp: h.amp || 5, period: h.period || 6, seed: Math.round(at * 10) + si * 101, stream: si, look: h.look || '' });
           }
         } else if (h.k === 'train') {
           // v5.4 level crossing: every `every` s a train of `cars` carriages
@@ -391,8 +394,9 @@
           // its own moving hazard, so physics, the bots and the minimap need
           // nothing new; the barriers leave a gap where the rails cross.
           const cars = h.cars || 8, gap = h.gap || 3.4, speed = h.speed || 20, span = h.span || 48, every = h.every || 16;
-          for (let j = 0; j < cars; j++) this.dyn.push({ k: 'train', i: ic, at, lat: 0, r: h.r || 1.55, span, speed, every, off: h.off || 0, car: j, cars, gap, dir: h.dir || 1, len: 0, seed: Math.round(at * 10) + j });
-          this.xings.push({ i: ic, at, hw: 3.4, span });
+          const look = h.look || 'train';
+          for (let j = 0; j < cars; j++) this.dyn.push({ k: 'train', i: ic, at, lat: 0, r: h.r || 1.55, span, speed, every, off: h.off || 0, car: j, cars, gap, dir: h.dir || 1, len: 0, seed: Math.round(at * 10) + j, look });
+          this.xings.push({ i: ic, at, hw: 3.4, span, look });
         } else {
           const o = { k: h.k, i: ic, at, lat, r: h.r || 0.9, x: this.X[ic] + this.NX[ic] * lat, z: this.Z[ic] + this.NZ[ic] * lat };
           this.obs.push(o);

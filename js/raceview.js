@@ -59,6 +59,18 @@
       else world.freeCam(dt, opts.keys, focus ? focus.rs : null);
       if (v.practice && v.me) v.me.lapCount = Math.max(1, v.me.lapCount);
       hud.update(v, dt, world);
+      // v5.6.1: say what a hazard just did to your car (physics.js oilT / mudT / aqua)
+      const mr = v.me && !v.me.finished && v.me.rs;
+      if (mr) {
+        const sp = Math.hypot(mr.vx || 0, mr.vz || 0), s = mr.surf || [];
+        const aqua = sp > 21 && (s[0] === G.SI.water || s[1] === G.SI.water);
+        if (mr.oilT > 1.45 && !this._oilSaid) hud.banner('OIL', 'on your tyres - no grip, weak brakes for a moment', 1.3, 'warn');
+        else if (mr.mudT > 1.15 && !this._mudSaid) hud.banner('MUD', 'in your tyres - slow and slippery for a moment', 1.2, 'warn');
+        else if (aqua && !this._aquaSaid) hud.banner('AQUAPLANING', 'the front tyres are riding on water - no steering', 1.2, 'warn');
+        this._oilSaid = mr.oilT > 0;
+        this._mudSaid = mr.mudT > 0;
+        this._aquaSaid = aqua || (this._aquaSaid && sp > 15 && (s[0] === G.SI.water || s[1] === G.SI.water));
+      }
       // Sound: own engine + surfaces + nearby cars + countdown ticks.
       if (G.Audio && opts.silent) {
         G.Audio.update(null, 0); // paused

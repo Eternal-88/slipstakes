@@ -219,6 +219,7 @@
       this.inCorner = corner;
       if (this.err && (this.err.t -= dt) <= 0) this.err = null;
       if (track.obs.length || track.patches.length || track.pads.length || track.dyn.length) laneT = this._hazards(track, q, laneT, speed);
+      if (st.oilT > 0.2) this._cap = Math.min(this._cap, speed * 0.96); // (oily tyres: no throttle until they clear)
       // (A lane rate-limit was tried here to calm high-power weaves: it
       // delayed dodges and hazard swerves, and an 8-track A/B went from 13 to
       // 69 respawns. The weave is handled by the yaw damping + traction limit.)
@@ -509,12 +510,14 @@
           }
         }
       }
-      if (this.skill >= 0.9) {
-        for (const p of track.patches) {
-          const d = ahead(p.at);
-          if (d < -p.hl || d > look) continue;
-          away(p.lat, p.hw + 1.4);
-        }
+      // (v5.6.1: a patch now bites - oil throws the car sideways, water
+      //  aquaplanes, mud drags - so most bots steer round one, and a bot that
+      //  can't get round it lifts for it instead of taking it flat out)
+      for (const p of track.patches) {
+        const d = ahead(p.at);
+        if (d < -p.hl || d > look) continue;
+        if (this.skill >= 0.8) away(p.lat, p.hw + 1.4);
+        if (d < 34 && d > -p.hl && Math.abs(q.lat - p.lat) < p.hw + 1.2) this._cap = Math.min(this._cap, (p.k === 'water' ? 19 : p.k === 'mud' ? 21 : p.k === 'oil' ? 20 : 24) + Math.max(0, d) * 0.55);
       }
       // speed pads: take one only with speed to spare for what comes next
       // (lastDv = target minus actual speed last frame); otherwise steer round

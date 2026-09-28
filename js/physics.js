@@ -63,7 +63,19 @@
     saV0: 8, // m/s: assist starts fading in…
     saV1: 8.01, // …and is fully on (a speed fade measured no benefit)
     saBeta: 0.05, // only while body slip |β| < this (rad): understeer, not slides
+    // v5.6.1 hazards that stay with you. A patch used to matter only while a
+    // wheel was ON it - a quarter of a second at speed, and low grip hardly
+    // matters going straight, so you drove through oil and felt nothing.
+    oilHold: 1.6, // s the tyres stay oily after the last touch (grip and brakes come back as it wears off)
+    oilGrip: 0.5, // grip lost to fresh oil on the tyres (fading to none)
+    oilBrake: 0.45, // brake force lost to fresh oil
+    oilKick: 0.75, // rad/s of yaw when oil catches one side (x speed / 28, up to 1.2x)
+    mudHold: 1.3, // s of clogged tread after mud
+    mudGrip: 0.22, // grip lost to fresh mud in the tread
+    mudDrag: 0.12, // extra rolling resistance from a clogged tread (fading)
+    aqua: 0.72, // front grip a tyre loses aquaplaning on standing water (from 19 m/s, all of it by 31)
   };
+  const SI_OIL = G.SI.oil, SI_MUD = G.SI.mud, SI_WATER = G.SI.water;
   const _drv = [0, 0, 0, 0]; // per-wheel drive force scratch
 
   function createCar(x, z, h) {
@@ -90,11 +102,12 @@
       // v5 endurance (only drain when the race env has `endu`): fuel left in
       // the tank 0..1, tyre wear since the last change 0..1+, held in the pit box
       tank: 1, tw: 0, pit: 0,
+      oilT: 0, mudT: 0, // v5.6.1: oil on the tyres / mud in the tread, s left
     };
   }
 
   // Core state that must round-trip for prediction/reconciliation.
-  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit', 'revCut'];
+  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit', 'revCut', 'oilT', 'mudT'];
   function copyCore(dst, src) {
     for (let i = 0; i < CORE.length; i++) dst[CORE[i]] = src[CORE[i]];
     for (let i = 0; i < 4; i++) dst.fy[i] = src.fy[i];
@@ -270,6 +283,27 @@
       if (fzs[i] < 0) fzs[i] = 0;
     }
     car.offT = off >= 2 ? car.offT + dt : 0;
+    // v5.6.1 oil coats the tyres and mud clogs the tread: both stay with you
+    // for a moment after the patch. Oil that catches one side more than the
+    // other snaps the car round (grip gone on one side, not the other).
+    let oilL = 0, oilR = 0, mudN = 0;
+    for (let i = 0; i < 4; i++) {
+      const id = car.surf[i];
+      if (id === SI_OIL) {
+        if (_lv[i] > 0) oilL++;
+        else oilR++;
+      } else if (id === SI_MUD) mudN++;
+    }
+    if (oilL + oilR > 0 && !frozen) {
+      if (!(car.oilT > 0) && speed > 6) {
+        const side = Math.sign(oilL - oilR) || Math.sign(car.w) || Math.sign(car.steer) || 1;
+        car.w += side * U.clamp(speed / 28, 0.3, 1.2) * TUNE.oilKick;
+      }
+      car.oilT = TUNE.oilHold;
+    } else if (car.oilT > 0) car.oilT = Math.max(0, car.oilT - dt);
+    if (mudN > 0 && !frozen) car.mudT = TUNE.mudHold;
+    else if (car.mudT > 0) car.mudT = Math.max(0, car.mudT - dt);
+    const oilK = car.oilT > 0 ? car.oilT / TUNE.oilHold : 0, mudK = car.mudT > 0 ? car.mudT / TUNE.mudHold : 0;
 
     // ---- 5b. Speed pads (v4) ------------------------------------------------
     // Driving over a pad kicks the car forward along the track (+dv m/s, never
@@ -450,7 +484,7 @@
 
     // ---- 7. Per-wheel tyre forces -------------------------------------------
     let FU = 0, FV = 0, TQ = 0;
-    const brakeTot = s.brakeForce * brakeAmt * brakeEff;
+    const brakeTot = s.brakeForce * brakeAmt * brakeEff * (1 - TUNE.oilBrake * oilK); // (v5.6.1: oily tyres barely stop)
     let spinMask = 0, lockMask = 0, slipSum = 0, dryWheels = 0;
     const wet = car.surf;
     for (let i = 0; i < 4; i++) {
@@ -474,6 +508,8 @@
       if ((sf.wet || wetEnv > 0.6) && s.aqua) mu *= 1 - 0.3 * U.clamp((speed - 18) / 25, 0, 1); // wide tyres aquaplane
       mu *= 1 - s.loadSens * (Fz / s.fzNom - 1);
       mu *= 1 - sf.rough * s.roughGrip;
+      if (oilK > 0) mu *= 1 - TUNE.oilGrip * oilK; // v5.6.1: oil on the tyres, wearing off
+      if (mudK > 0) mu *= 1 - TUNE.mudGrip * mudK; // v5.6.1: mud in the tread
       if (!front) mu *= s.rearGrip * TUNE.rearGrip;
       // Setup multipliers (pressure, camber) differ for lateral and
       // longitudinal grip — camber helps cornering but costs braking/traction.
@@ -500,7 +536,7 @@
         // Near zero speed brakes act like a damper so the car doesn't jitter.
         Fx += Math.abs(wl) > 0.5 ? -Math.sign(wl) * bw : -U.clamp(wl * bw * 2, -bw, bw);
       }
-      Fx -= U.clamp(wl * 4, -1, 1) * Fz * sf.rr;
+      Fx -= U.clamp(wl * 4, -1, 1) * Fz * (sf.rr + TUNE.mudDrag * mudK);
       // ABS (every car — it's an arcade racer): when the BRAKE asks a tyre for
       // more than it can give, hold it just under its peak instead of locking.
       // Full pedal (all a keyboard can do) is then the shortest stop and still
@@ -510,6 +546,9 @@
       const absCap = FmaxL * TUNE.abs;
       if (bw > 0 && (front || !hb) && Fx * wl < 0 && Math.abs(Fx) > absCap) Fx = Math.sign(Fx) * absCap;
       let latScale = 1;
+      // v5.6.1 aquaplaning: a front tyre on standing water at speed rides up
+      // on it and stops steering - the car ploughs straight on
+      if (front && sf.code === SI_WATER) latScale *= 1 - TUNE.aqua * U.clamp((speed - 19) / 12, 0, 1);
       if (!front && hb) {
         // Handbrake: rear wheels lock. Sliding friction, lateral grip collapses.
         Fx = -U.clamp(wl * 3, -1, 1) * Fmax * 0.75;
