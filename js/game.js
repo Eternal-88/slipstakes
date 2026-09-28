@@ -1105,7 +1105,7 @@
           .map((s) => {
             const other = s.from === me ? s.toName : s.fromName;
             const res = s.winner == null ? 'refunded' : s.winner === me ? U.fmtSigned(s.stake) : U.fmtSigned(-s.stake);
-            return ln('⚔ vs ' + U.esc(other), res);
+            return ln(G.ic('swords') + ' vs ' + U.esc(other), res);
           })
           .join('')}</div>`;
       } else {

@@ -3,8 +3,19 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.5.6';
+  G.VERSION = '5.6';
   G.CHANGELOG = [
+    {
+      v: '5.6', name: 'Open Late', items: [
+        ['🗺', 'Three new tracks', 'Megastore: race through an endless furniture store after closing time - square corners between the showrooms, pillars that vanish into the fog where the ceiling should be, price signs on wires, and a freshly mopped floor. Harrow City: a city that emptied overnight - rain, fires, abandoned police cars and fire engines, barricades, neon, and the elevated railway still running over the start. El Toro Run: a sprint up the South Valley, from downtown Gilroy (say hello to the giant garlic) through the neighbourhoods, out along Monterey Road past the vineyards and garlic fields (mind the afternoon crosswind), and into downtown Morgan Hill under El Toro.'],
+        ['🎵', 'Ten new songs and a music player', 'Four new garage songs - Showroom (bossa nova), Night Shift (lo-fi), Spare Parts (smooth funk) and Closing Time (slow and dreamy) - and the garage plays a different one each visit. Each new track has its own song, there are two new race songs (Sunset Drive, city pop; Night Line, drum and bass) so most tracks have a song of their own, and the menu now takes turns with a lounge tune. Settings → Music (or Esc → Music) lists all 18: press play to hear any of them, or keep one for the garage. Every note is played live by the game - there are no recordings.'],
+        ['🔊', 'Turbo flutter you can hear in a race', 'The blow-off valve, the crackle, burble and bangs when you lift almost never went off in a race. They waited for the throttle to snap shut inside a single frame, and only the garage’s Listen button ever did that - so Listen and a real race sounded different. Now every proper lift in a race sets them off. And the flutter is the real stu-tu-tu-tu: bursts of air about 20 a second, slowing to 10 as the pressure runs out (a big turbo lower and slower). Recirculated is a soft whoosh on every turbo now; a big turbo used to flutter on it too, so picking Flutter changed nothing.'],
+        ['🤖', 'Bots with more personality', '140 bot names. A bot’s car sounds like the way it drives - power and drag drivers like bangs, a lopey idle and a turbo flutter; grip drivers keep it tidy. Each one has its own habits too: a touch later or earlier on the brakes, neater or looser lines, more or fewer mistakes. Every difficulty level is as fast as before; it just isn’t eight copies of one driver any more. Hover a bot in the lobby to see how it drives.'],
+        ['📈', 'Catch-up, any amount', 'Off, Mild (10%) and Wild (25%) are still there, or type any number from 0 to 100 - in the lobby for the host, and on the menu for quick races.'],
+        ['🌐', 'One Play online button', 'Host and Join are gone from the menu: Play online opens the server list, which does both (Host a room and Join with a code are at the bottom). The online button in the corner now shows up by itself and counts the other people online - 0 when it’s just you. This version can’t play with older ones: everyone reloads the page (Ctrl+Shift+R), host first.'],
+        ['🎨', 'Icons instead of emoji', 'Menus, the garage, the lobby and Settings use drawn icons now. Emoji look different on every computer and some Chromebooks show them as boxes; the icons look the same everywhere and match the game.'],
+      ],
+    },
     {
       v: '5.5.6', name: 'Lights Out', items: [
         ['🚦', 'No more freezes between races', 'The next race’s track used to be built all at once as the race started - up to a second and a half of frozen screen on a Chromebook, right on the grid - and the garage and the background race built a track of their own every round too. Now the next track is built a little at a time while you are in the garage, the betting board’s background race runs on it, and the race starts on it with nothing left to build; the garage’s test track is built once and kept. On a slowed-down test laptop, from the second round on, the start of a race, opening the garage and leaving it each take a hundredth of a second instead of up to a second and a half. In a room, the start lights are no longer hidden behind the race name at the top of the screen, and a sprint no longer says LAP SPRINT over lap times it can’t have.'],
@@ -231,7 +242,7 @@
   // The "What's new" modal body (menu + pause menu).
   G.newsHtml = function (n) {
     return G.CHANGELOG.slice(0, n || 2)
-      .map((c, k) => `<div class="news ${k ? 'old' : ''}"><h3>v${c.v} — ${c.name}</h3>${c.items.map(([ic, t, d]) => `<div class="news-i"><span>${ic}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}</div>`)
+      .map((c, k) => `<div class="news ${k ? 'old' : ''}"><h3>v${c.v} — ${c.name}</h3>${c.items.map(([ic, t, d]) => `<div class="news-i"><span>${G.Icon ? G.Icon.fromEmoji(ic) : ic}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}</div>`)
       .join('');
   };
 })(window.G);

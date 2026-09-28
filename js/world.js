@@ -247,12 +247,13 @@
       this.trackGroup.userData.env = this.env; // v5: moving hazards follow race time
       this.trackGroup.userData.fx = this.fx;
       this.trackGroup.userData.cam = this.cam; // v5: hazard sounds by distance
+      this.trackGroup.userData.camera = this.camera; // v5.5.8: overhead set pieces fade out of the camera's way
       const th = track.theme;
       this.scene.background = new THREE.Color(th.fog);
       this.scene.fog = new THREE.Fog(th.fog, th.fogNear || 170, th.fogFar || 560);
       // v5: a car headlight that really lights the road, only on tracks that
       // get dark (adding a light recompiles every material: do it at load)
-      const dark = !!(th.night || (th.todTo || 0) >= 0.7);
+      const dark = !!(th.night || (th.todTo || 0) >= 0.7) && !th.indoor; // (v5.5.8: a lit store needs no headlight beam)
       if (dark && !this.headL) {
         this.headL = new THREE.SpotLight(0xfff0d0, 0, 70, 0.5, 0.55, 1.1);
         this.scene.add(this.headL, this.headL.target);
@@ -962,7 +963,8 @@
       this._atmKey = key;
       const A = this._atm || (this._atm = { sky: new THREE.Color(), fog: new THREE.Color(), hs: new THREE.Color(), sc: new THREE.Color(), t: new THREE.Color(), grey: new THREE.Color() });
       const day = { sky: th.sky, fog: th.fog, hemiSky: th.hemiSky || 0xe6f4ff, hemiI: th.hemiI || 1.6, sunCol: th.sunCol || 0xfff1d8, sunI: th.sunI || 2.3 };
-      const night = th.night ? Object.assign({}, TOD.night, { sky: th.sky, fog: th.fog }) : TOD.night;
+      // (v5.5.8: nightLight - the ambient light of a lit store or a burning city instead of moonlight)
+      const night = th.night ? Object.assign({}, TOD.night, { sky: th.sky, fog: th.fog }, th.nightLight || {}) : TOD.night;
       const [a, b, f] = tod <= 0.5 ? [day, TOD.dusk, tod * 2] : [TOD.dusk, night, (tod - 0.5) * 2];
       const col = (out, k) => out.set(a[k]).lerp(A.t.set(b[k]), f);
       col(A.sky, 'sky');
@@ -993,8 +995,8 @@
       const sun = this.sky.userData.sun, stars = this.sky.userData.stars;
       sun.material.color.set(0xfff6d8).lerp(A.t.set(0xdfe6ff), night01);
       sun.scale.setScalar(1 - 0.45 * night01);
-      sun.visible = wet < 0.6;
-      stars.material.opacity = night01 * (1 - wet) * 0.9;
+      sun.visible = wet < 0.6 && !th.indoor; // (indoors: a roof up there in the fog, no sky)
+      stars.material.opacity = th.indoor ? 0 : night01 * (1 - wet) * 0.9;
       stars.visible = stars.material.opacity > 0.02;
       this.env.tod = tod;
       this.env.night = night01;

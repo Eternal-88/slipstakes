@@ -215,6 +215,130 @@
       setTimeout(() => G.Game.closeRoom('An admin closed the room.'), 300); // (the reply goes out first)
       return 'Closing the room…';
     },
+    // v5.5.7 the lobby's catch-up and weather, from here (from the next race)
+    roomSet(c, X) {
+      const st = X.s.state;
+      if (c.catchup != null && String(c.catchup).trim() !== '') {
+        const p = G.Settings.cuPct(c.catchup);
+        if (p == null || +c.catchup > 100) return 'Catch-up: a number from 0 to 100.';
+        st.settings.catchup = p;
+      }
+      if (c.weather && G.RaceEnv.MODES.includes(c.weather)) st.settings.weather = c.weather;
+      return `Catch-up ${G.Settings.cuLabel(st.settings.catchup)}, ${st.settings.weather || 'auto'} weather (from the next race).`;
+    },
+    // v5.5.7 the bot editor: c.pid and whatever one section changed
+    bot(c, X) {
+      const t = who(X, c.pid);
+      if (!t || !t.isBot) return 'No such bot.';
+      const K = G.BotKit, P = G.Parts, g = t.garage, done = [];
+      P.fixGarage(g);
+      if (c.name != null) {
+        const n = String(c.name).replace(/⚙/g, '').replace(/\s+/g, ' ').trim().slice(0, 16);
+        if (n) {
+          t.name = n + ' ⚙';
+          done.push('name');
+        }
+      }
+      if (c.style && K.STYLES[c.style]) {
+        t.botStyle = c.style;
+        done.push('style');
+      }
+      if (c.level != null) {
+        t.botLevel = K.LEVELS[c.level] ? c.level : null; // '' = the room's level
+        if (c.skill == null) t.botSkill = K.skillFor(t.botLevel || X.s.state.settings.botLevel || 'normal');
+        done.push('level');
+      }
+      if (c.skill != null && String(c.skill).trim() !== '' && isFinite(+c.skill)) {
+        t.botSkill = +U.clamp(+c.skill, 0.6, 1.1).toFixed(3);
+        t.botLock = true; // (a room-wide level change would undo it otherwise)
+        done.push('skill ' + t.botSkill);
+      }
+      if (c.car && P.CARS[c.car]) {
+        if (!g.cars.includes(c.car)) g.cars.push(c.car);
+        t.carId = g.carId = c.car;
+        for (const sl of P.SLOTS) if (!P.optAllowed(c.car, sl.id, g.installed[sl.id])) g.installed[sl.id] = P.STOCK[sl.id]; // parts that don't fit it come off
+        done.push(P.CARS[c.car].name);
+      }
+      const fit = (slot, id) => {
+        if (!P.optAllowed(t.carId, slot, id)) return false;
+        if (!g.owned[slot].includes(id)) g.owned[slot].push(id);
+        g.installed[slot] = id;
+        return true;
+      };
+      if (c.parts && typeof c.parts === 'object') {
+        let n = 0;
+        for (const sl of P.SLOTS) if (c.parts[sl.id] != null && fit(sl.id, String(c.parts[sl.id]))) n++;
+        if (n) {
+          t.botLock = true;
+          done.push(n + ' part' + (n === 1 ? '' : 's'));
+        }
+      }
+      if (c.preset) {
+        for (const sl of P.SLOTS) {
+          const legal = sl.options.filter((o) => P.optAllowed(t.carId, sl.id, o.id));
+          if (c.preset === 'stock') fit(sl.id, P.STOCK[sl.id]);
+          else if (c.preset === 'max' && legal.length) fit(sl.id, legal[legal.length - 1].id);
+        }
+        if (c.preset === 'style') {
+          for (const sl of P.SLOTS) fit(sl.id, P.STOCK[sl.id]);
+          const lv = K.level(t.botLevel || X.s.state.settings.botLevel);
+          const b = K.parts(t.botStyle || 'allround', lv.budget || 2200, Math.random, t.carId);
+          for (const s in b.parts) fit(s, b.parts[s]);
+        }
+        t.botLock = c.preset !== 'style' || t.botLock;
+        done.push({ stock: 'stock parts', max: 'every best part', style: 'a new ' + (K.STYLE_NAMES[t.botStyle] || 'all-round') + ' build' }[c.preset] || 'parts');
+      }
+      if (c.sound && typeof c.sound === 'object') {
+        const s = {};
+        for (const k of P.SOUND_KEYS) if (c.sound[k] != null) s[k] = String(c.sound[k]);
+        g.look = P.cleanLook(g.look, s, t.carId, g.skins);
+        done.push('sound');
+      }
+      if (c.look && typeof c.look === 'object') {
+        const l = {};
+        for (const k of ['paint', 'accent', 'livery', 'rims', 'kit', 'spoiler', 'num', 'finish']) if (k in c.look) l[k] = c.look[k];
+        g.look = P.cleanLook(g.look, l, t.carId, g.skins);
+        done.push('looks');
+      }
+      if (c.reroll === 'look') {
+        g.look = P.cleanLook(g.look, K.look(), t.carId, g.skins);
+        done.push('new looks');
+      } else if (c.reroll === 'sound') {
+        g.look = P.cleanLook(g.look, K.sound(t.botStyle), t.carId, g.skins);
+        done.push('a new sound');
+      } else if (c.reroll === 'traits') {
+        t.botTraits = K.traits();
+        done.push('new habits');
+      }
+      if (c.traits && typeof c.traits === 'object') {
+        const T = c.traits, n = (v, lo, hi, d) => (isFinite(+v) ? U.clamp(+v, lo, hi) : d);
+        t.botTraits = { brake: n(T.brake, -0.04, 0.04, 0), line: n(T.line, -0.4, 0.4, 0), mistake: n(T.mistake, 0.2, 3, 1), rival: ['on', 'off'].includes(T.rival) ? T.rival : 'auto' };
+        done.push('habits');
+      }
+      if (c.lock != null) {
+        t.botLock = !!c.lock;
+        done.push(t.botLock ? 'build kept' : 'shops again');
+      }
+      if (!done.length) return 'Nothing changed.';
+      return `${t.name.replace(' ⚙', '')}: ${done.join(', ')}${X.s.state.phase === 'race' ? ' (from the next race)' : ''}.`;
+    },
+    botAdd(c, X) {
+      const st = X.s.state;
+      if (st.phase === 'race') return 'Bots join between races.';
+      if (X.s.bots().length + X.s.humans().length >= 8) return 'The grid is full (8 cars).';
+      X.s.on_settings(hostOf(X), { bots: (st.settings.bots || 0) + 1 });
+      const b = X.s.bots().slice(-1)[0];
+      return b ? `${b.name.replace(' ⚙', '')} joined.` : 'No room for a bot.';
+    },
+    botDel(c, X) {
+      const t = who(X, c.pid), st = X.s.state;
+      if (!t || !t.isBot) return 'No such bot.';
+      if (st.phase === 'race') return 'Bots leave between races.';
+      delete st.players[t.id];
+      st.order = st.order.filter((x) => x !== t.id);
+      st.settings.bots = Math.max(0, (st.settings.bots || 0) - 1);
+      return `${t.name.replace(' ⚙', '')} left.`;
+    },
     announce(c, X) {
       const text = String(c.text || '').replace(/\s+/g, ' ').trim().slice(0, 140);
       if (!text) return 'Type a message first.';
@@ -234,13 +358,17 @@
       vis: st.settings.vis, max: st.settings.maxPlayers || 8, bots: st.settings.bots || 0, next: (st.schedule || [])[nextIdx(st)] || null,
       idle: Math.round((now - (s.lastActive || now)) / 1000), lobby: st.phase === 'lobby' ? Math.round((now - (st.lobbySince || st.createdAt || now)) / 1000) : 0,
       banned: (st.banned || []).length,
+      cu: G.Settings.cuPct(st.settings.catchup) == null ? 10 : G.Settings.cuPct(st.settings.catchup), wx: st.settings.weather || 'auto', lvl: st.settings.botLevel || 'normal',
       players: (st.order || Object.keys(st.players)).map((id) => st.players[id]).filter(Boolean).map((p) => {
         const L = net && net.byPid ? net.byPid.get(p.id) : null;
         return {
           id: p.id, name: p.name, bot: !!p.isBot, on: !!(p.isBot || p.connected || p.id === st.hostId || p.id === 'me'), host: p.id === st.hostId,
           money: p.money, car: p.carId, w: (p.stats && p.stats.wins) || 0, pod: (p.stats && p.stats.podiums) || 0, r: (p.stats && p.stats.races) || 0,
           rtt: L ? Math.round(L.rtt || 0) : null, via: L ? (L.ctrl && L.ctrl.route ? 'relay' : 'direct') : null,
-          muted: !!(s._opsMuted && s._opsMuted.has(p.id)),
+          muted: !!(s._opsMuted && s._opsMuted.has(p.id)), color: p.color,
+          // v5.5.7 what the Bots tab edits
+          b: p.isBot ? { style: p.botStyle || 'allround', level: p.botLevel || null, skill: p.botSkill, lock: !!p.botLock, traits: p.botTraits || null,
+            parts: Object.assign({}, p.garage.installed), look: Object.fromEntries(['paint', 'accent', 'livery', 'rims', 'kit', 'spoiler', 'num', 'finish', 'tone', 'over', 'bov', 'idle', 'lim'].map((k) => [k, p.garage.look[k]])) } : undefined,
         };
       }),
       race: X.sim ? { phase: X.sim.phase } : null,
@@ -547,7 +675,9 @@
 
   // ------------------------------------------------------------------ panel
   // [id, icon, name]
-  const TABS = [['dir', '🌐', 'All rooms'], ['stats', '📊', 'Stats'], ['data', '📈', 'Activity'], ['room', '🏁', 'This room'], ['players', '👥', 'Drivers'], ['hist', '🕘', 'History'], ['debug', '🧰', 'Tools'], ['log', '📜', 'Log']];
+  // v5.5.7: labelled tabs, in two rows (the old row of eight emoji was guesswork)
+  const TABS = [['dir', 'globe', 'Rooms'], ['room', 'checker', 'Room'], ['players', 'users', 'Drivers'], ['bots', 'bot', 'Bots'], ['stats', 'gauge', 'Stats'], ['data', 'chart-column', 'Activity'], ['hist', 'history', 'History'], ['debug', 'terminal', 'Tools'], ['log', 'scroll-text', 'Log'], ['notes', 'notebook-text', 'Changes']];
+  const ic = (n) => G.ic(n);
   const PHASES = { lobby: 'Lobby', carselect: 'Picking cars', entry: 'Entry', betting: 'Betting', race: 'Racing', results: 'Results', intermission: 'Garage break', final: 'Finished' };
   const enc64 = (a) => encodeURIComponent(JSON.stringify(a || {}));
   const btn = (k, label, cls, a) => `<button class="btn small ${cls || ''}" data-o="cmd" data-k="${k}" data-a="${enc64(a)}">${label}</button>`;
@@ -595,7 +725,7 @@
       const det = d && typeof d === 'object' ? d : null;
       const code = det ? det.code : r.code;
       const open = O.rsel === r.lid;
-      h += `<div class="dr${open ? ' sel' : ''}" data-o="loc" data-k="rsel" data-a="${enc64({ v: r.lid })}"><span>${r.vis === 'public' ? '🌐' : '🔒'} ${U.esc(r.name)}</span><code>${code ? U.esc(code) : '·····'}</code><em>${r.players}/${r.max}${r.bots ? ' +' + r.bots + '⚙' : ''}</em></div>`;
+      h += `<div class="dr${open ? ' sel' : ''}" data-o="loc" data-k="rsel" data-a="${enc64({ v: r.lid })}"><span>${ic(r.vis === 'public' ? 'globe' : 'lock')} ${U.esc(r.name)}</span><code>${code ? U.esc(code) : '·····'}</code><em>${r.players}/${r.max}${r.bots ? ' +' + r.bots + '⚙' : ''}</em></div>`;
       if (!open) continue;
       const now = PHASES[r.phase] || r.phase;
       let body = kv([
@@ -606,7 +736,7 @@
       ]);
       if (det)
         body += '<div class="dps">' + det.p
-            .map(([id, name, bot, on, money, host, car]) => `<div class="dp${on ? '' : ' off'}"><span title="${carName(car)}">${host ? '👑 ' : bot ? '⚙ ' : ''}${U.esc(String(name).replace(' ⚙', ''))}</span><b>${U.fmtMoney(money)}</b>${bot || host ? '<i></i>' : `<button class="op-mini" data-o="loc" data-k="dirKick" data-a="${enc64({ lid: r.lid, pid: id, name })}" title="Remove from the room">✖</button>`}</div>`)
+            .map(([id, name, bot, on, money, host, car]) => `<div class="dp${on ? '' : ' off'}"><span title="${carName(car)}">${host ? ic('crown') + ' ' : bot ? ic('bot') + ' ' : ''}${U.esc(String(name).replace(' ⚙', ''))}</span><b>${U.fmtMoney(money)}</b>${bot || host ? '<i></i>' : `<button class="op-mini" data-o="loc" data-k="dirKick" data-a="${enc64({ lid: r.lid, pid: id, name })}" title="Remove from the room">${ic('x')}</button>`}</div>`)
             .join('') + '</div>';
       else body += `<p class="note">${d === 'bad' ? "Couldn't open this room's details." : r.ops ? 'Opening…' : 'No details: this room runs an older version.'}</p>`;
       body += `<div class="row">${code ? btnL('dirJoin', 'Join', 'primary', { code, name: r.name }) + btnL('dirCopy', 'Copy code', 'ghost', { code }) : ''}${det ? btnL('dirAnn', 'Announce', 'ghost', { lid: r.lid, name: r.name }) + btnL('dirClose', 'Close', 'red', { lid: r.lid, name: r.name }) : ''}</div>`;
@@ -672,35 +802,120 @@
 
   function roomHtml(O, S) {
     const g = G.Game, X = ctx();
-    let h = '<h4>Race</h4><div class="row">' + btn('endRace', '🏁 End race') + btn('skipCd', '🚦 Skip countdown', 'ghost') + (g.role ? btn('advance', '⏭ Skip phase', 'ghost') : '') + '</div>';
-    if (!g.role) return h + `<p class="note">${X && X.sim ? 'Practice: these act on your drive.' : 'These work in a room you host or join. To act on any room without joining, use 🌐 All rooms.'}</p>`;
+    let h = `<h4>Race</h4><div class="row">${btn('endRace', ic('checker') + ' End race')}${btn('skipCd', ic('traffic-cone') + ' Skip countdown', 'ghost')}${g.role ? btn('advance', ic('skip-forward') + ' Skip phase', 'ghost') : ''}</div>`;
+    if (!g.role) return h + `<p class="note">${X && X.sim ? 'Practice: these act on your drive.' : 'These work in a room you host or join. To act on any room without joining, use the Rooms tab.'}</p>`;
     if (!S) return h + `<p class="note">${O.remoteErr ? U.esc(O.remoteErr) : 'Asking the host…'}</p>`;
-    h += `<div class="row"><select data-f="track">${G.TrackDefs.TRACKS.map((t) => `<option value="${t.id}"${S.next === t.id ? ' selected' : ''}>${U.esc(t.name)}</option>`).join('')}</select>${btn('nextTrack', 'Set next', 'ghost')}</div>`;
+    h += `<div class="row"><span class="lbl">Next track</span><select data-f="track" class="grow">${G.TrackDefs.TRACKS.map((t) => `<option value="${t.id}"${S.next === t.id ? ' selected' : ''}>${U.esc(t.name)}</option>`).join('')}</select>${btn('nextTrack', 'Set', 'ghost')}</div>`;
     h += '<h4>Room</h4>';
-    h += `<div class="row">${btn('vis', S.vis === 'public' ? '🌐 Public · make private' : '🔒 Private · make public', 'ghost', { v: S.vis === 'public' ? 'private' : 'public' })}</div>`;
-    h += `<div class="row">Max ${btn('max', '−', 'ghost', { n: S.max - 1 })}<b class="num">${S.max}</b>${btn('max', '+', 'ghost', { n: S.max + 1 })}<span class="sp"></span>Bots ${btn('bots', '−', 'ghost', { n: S.bots - 1 })}<b class="num">${S.bots}</b>${btn('bots', '+', 'ghost', { n: S.bots + 1 })}</div>`;
-    h += `<div class="row">Bot skill <select data-f="skill">${G.BotKit.LEVEL_ORDER.map((k) => `<option value="${k}"${k === 'normal' ? ' selected' : ''}>${G.BotKit.LEVELS[k].name}</option>`).join('')}</select>${btn('botSkill', 'Set', 'ghost')}</div>`;
-    h += `<div class="row">${btn('extend', '⏳ Reset idle', 'ghost')}${btn('unban', `Clear bans (${S.banned})`, 'ghost')}${btn('close', '✖ Close room', 'red')}</div>`;
-    h += '<h4>Announce</h4><div class="row"><input data-f="ann" maxlength="140" placeholder="A message on everyone\'s screen" class="grow">' + btn('announce', 'Send', 'primary') + '</div>';
+    h += `<div class="seg">${btn('vis', ic('lock') + ' Private', S.vis === 'public' ? 'ghost' : 'on', { v: 'private' })}${btn('vis', ic('globe') + ' Public', S.vis === 'public' ? 'on' : 'ghost', { v: 'public' })}</div>`;
+    h += `<div class="grid2"><div class="stp"><span>Max drivers</span>${btn('max', '−', 'ghost', { n: S.max - 1 })}<b class="num">${S.max}</b>${btn('max', '+', 'ghost', { n: S.max + 1 })}</div>
+      <div class="stp"><span>Bots</span>${btn('bots', '−', 'ghost', { n: S.bots - 1 })}<b class="num">${S.bots}</b>${btn('bots', '+', 'ghost', { n: S.bots + 1 })}</div></div>`;
+    h += `<div class="row"><span class="lbl">Bot level</span><select data-f="skill" data-k="botSkill" data-auto="1" class="grow">${G.BotKit.LEVEL_ORDER.map((k) => `<option value="${k}"${k === S.lvl ? ' selected' : ''}>${G.BotKit.LEVELS[k].name}</option>`).join('')}</select></div>`;
+    h += `<div class="row"><span class="lbl">Catch-up</span><input data-f="cu" type="number" min="0" max="100" step="1" value="${S.cu}" class="w52"><span class="note">%</span><select data-f="wx" class="grow">${[['auto', 'Changeable weather'], ['dry', 'Always dry'], ['rain', 'Rain']].map(([k, l]) => `<option value="${k}"${k === S.wx ? ' selected' : ''}>${l}</option>`).join('')}</select>${btn('roomSet', 'Set', 'ghost')}</div>`;
+    h += `<div class="row">${btn('extend', ic('hourglass') + ' Reset idle', 'ghost')}${btn('unban', `Clear bans (${S.banned})`, 'ghost')}${btn('close', ic('x') + ' Close room', 'red')}</div>`;
+    h += `<h4>Announce</h4><div class="row"><input data-f="ann" maxlength="140" placeholder="A message on everyone's screen" class="grow">${btn('announce', ic('megaphone') + ' Send', 'primary')}</div>`;
     return h;
   }
 
   function playersHtml(O, S) {
     if (!S) return `<p class="note">${O.remoteErr ? U.esc(O.remoteErr) : G.Game.role ? 'Asking the host…' : 'Nobody here.'}</p>`;
     const rows = S.players
-      .map((p) => `<div class="pl${O.sel === p.id ? ' sel' : ''}" data-o="sel" data-id="${U.esc(p.id)}"><span class="${p.on ? '' : 'off'}">${p.host ? '👑 ' : p.bot ? '⚙ ' : ''}${U.esc(p.name.replace(' ⚙', ''))}${p.muted ? ' 🔇' : ''}</span><b>${U.fmtMoney(p.money)}</b><em>${p.bot ? 'bot' : !p.on ? 'offline' : p.rtt != null ? `${p.rtt} ms ${p.via}` : ''}</em></div>`)
+      .map((p) => `<div class="pl${O.sel === p.id ? ' sel' : ''}" data-o="sel" data-id="${U.esc(p.id)}"><span class="${p.on ? '' : 'off'}">${p.host ? ic('crown') + ' ' : p.bot ? ic('bot') + ' ' : ''}${U.esc(p.name.replace(' ⚙', ''))}${p.muted ? ' ' + ic('volume-x') : ''}</span><b>${U.fmtMoney(p.money)}</b><em>${p.bot ? 'bot' : !p.on ? 'offline' : p.rtt != null ? `${p.rtt} ms ${p.via}` : ''}</em></div>`)
       .join('');
     const t = S.players.find((p) => p.id === O.sel);
     let act = '<p class="note">Pick a driver.</p>';
     if (t) {
-      const a = { pid: t.id };
-      act = `<h4>${U.esc(t.name)}</h4><p class="note">${carName(t.car)} · ${t.w} win${t.w === 1 ? '' : 's'}, ${t.pod} podium${t.pod === 1 ? '' : 's'} in ${t.r} race${t.r === 1 ? '' : 's'}</p>
-        <div class="row">${btn('money', '+$1k', 'ghost', { pid: t.id, v: 1000 })}${btn('money', '+$10k', 'ghost', { pid: t.id, v: 10000 })}${btn('money', '−$1k', 'ghost', { pid: t.id, v: -1000 })}<input data-f="money" type="number" min="0" step="100" placeholder="$" class="w72">${btn('moneySet', 'Set', 'ghost', a)}</div>
-        <div class="row"><select data-f="car">${G.Parts.CAR_ORDER.map((id) => `<option value="${id}">${U.esc(G.Parts.CARS[id].name)}</option>`).join('')}</select>${btn('giveCar', 'Give', 'ghost', a)}${btn('giveParts', 'All parts', 'ghost', a)}${btn('repair', 'Repair', 'ghost', a)}</div>
-        <div class="row">${btn('respawn', 'Respawn', 'ghost', a)}${t.bot ? '' : btn('mute', t.muted ? 'Unmute' : 'Mute', 'ghost', a) + (t.host ? '' : btn('kick', 'Kick & ban', 'red', a))}</div>
-        <div class="row">Skin <select data-f="skin">${Object.values(G.Parts.SKINS).map((k) => `<option value="${k.id}">${U.esc(k.name)} · ${U.esc(G.Parts.CARS[k.car].name)}</option>`).join('')}</select>${btn('skin', 'Give', 'ghost', a)}${btn('skinTake', 'Take', 'ghost', a)}</div>`;
+      const a = { pid: t.id }, s = { s: t.id };
+      act = `<h4>${U.esc(t.name.replace(' ⚙', ''))}</h4><p class="note">${carName(t.car)} · ${t.w} win${t.w === 1 ? '' : 's'}, ${t.pod} podium${t.pod === 1 ? '' : 's'} in ${t.r} race${t.r === 1 ? '' : 's'}</p>
+        <div class="row"><span class="lbl">Money</span>${btn('money', '+$1k', 'ghost', { pid: t.id, v: 1000 })}${btn('money', '+$10k', 'ghost', { pid: t.id, v: 10000 })}${btn('money', '−$1k', 'ghost', { pid: t.id, v: -1000 })}<input data-f="money" data-s="${U.esc(t.id)}" type="number" min="0" step="100" placeholder="$" class="w72">${btn('moneySet', 'Set', 'ghost', a)}</div>
+        <div class="row"><span class="lbl">Car</span><select data-f="car" data-s="${U.esc(t.id)}" class="grow">${G.Parts.CAR_ORDER.map((id) => `<option value="${id}"${id === t.car ? ' selected' : ''}>${U.esc(G.Parts.CARS[id].name)}</option>`).join('')}</select>${btn('giveCar', 'Give', 'ghost', a)}</div>
+        <div class="row">${btn('giveParts', ic('cog') + ' All parts', 'ghost', a)}${btn('repair', ic('wrench') + ' Repair', 'ghost', a)}${btn('respawn', ic('refresh-cw') + ' Respawn', 'ghost', a)}</div>
+        <div class="row">${t.bot ? btnL('toBots', ic('bot') + ' Edit this bot →', '', a) : btn('mute', ic(t.muted ? 'volume-2' : 'volume-x') + (t.muted ? ' Unmute' : ' Mute'), 'ghost', a) + (t.host ? '' : btn('kick', ic('ban') + ' Kick & ban', 'red', a))}</div>
+        <div class="row"><span class="lbl">Skin</span><select data-f="skin" data-s="${U.esc(t.id)}" class="grow">${Object.values(G.Parts.SKINS).map((k) => `<option value="${k.id}">${U.esc(k.name)} · ${U.esc(G.Parts.CARS[k.car].name)}</option>`).join('')}</select>${btn('skin', 'Give', 'ghost', a)}${btn('skinTake', 'Take', 'ghost', a)}</div>`;
+      void s;
     }
     return `<div class="pls">${rows}</div>${act}`;
+  }
+
+  // v5.5.7 Bots: every bot in the room, and everything about the one picked -
+  // who it is and how good, its car and parts, how it sounds and looks, and
+  // its habits at the wheel. Each section sends only its own changes.
+  const BRAKE = [[-0.03, 'Much earlier'], [-0.015, 'Earlier'], [0, 'As its level'], [0.015, 'Later'], [0.03, 'Much later']];
+  const LINE = [[-0.3, 'Much looser'], [-0.15, 'Looser'], [0, 'As its level'], [0.15, 'Tidier'], [0.3, 'Much tidier']];
+  const MISTAKE = [[0.3, 'Almost never'], [0.6, 'Fewer'], [1, 'As its level'], [1.5, 'More'], [2.5, 'Lots']];
+  const nearest = (list, v) => list.reduce((b, x) => (Math.abs(x[0] - v) < Math.abs(b[0] - v) ? x : b), list[0])[0];
+  const colHex = (c) => '#' + ((c >>> 0) & 0xffffff).toString(16).padStart(6, '0');
+  function botsHtml(O, S) {
+    const K = G.BotKit, P = G.Parts;
+    if (!G.Game.role) return '<p class="note">Bots are edited in a room you host or join (quick races make a new field every time).</p>';
+    if (!S) return `<p class="note">${O.remoteErr ? U.esc(O.remoteErr) : 'Asking the host…'}</p>`;
+    const bots = S.players.filter((p) => p.bot && p.b);
+    let h = `<div class="row">${btn('botAdd', ic('user-plus') + ' Add a bot', '')}<span class="note">${bots.length} bot${bots.length === 1 ? '' : 's'} · room level ${U.esc(K.level(S.lvl).name)}</span></div>`;
+    h += '<div class="pls">' + bots
+        .map((p) => `<div class="pl${O.bsel === p.id ? ' sel' : ''}" data-o="bsel" data-id="${U.esc(p.id)}"><span><i class="dot" style="background:${colHex(p.color)}"></i>${U.esc(p.name.replace(' ⚙', ''))}${p.b.lock ? ' ' + ic('lock') : ''}</span><b>${carName(p.car)}</b><em>${U.esc(K.level(p.b.level || S.lvl).name)} ${(+p.b.skill || 0).toFixed(2)}</em></div>`)
+        .join('') + '</div>';
+    const t = bots.find((p) => p.id === O.bsel);
+    if (!t) return h + `<p class="note">${bots.length ? 'Pick a bot to edit it.' : 'No bots in this room.'}</p>`;
+    const b = t.b, a = { pid: t.id }, sc = `data-s="${U.esc(t.id)}"`, L = b.look || {}, T = Object.assign({ brake: 0, line: 0, mistake: 1, rival: 'auto' }, b.traits || {});
+    const sel = (f, list, cur, cls) => `<select data-f="${f}" ${sc}${cls ? ` class="${cls}"` : ''}>${list.map(([v, l]) => `<option value="${U.esc(String(v))}"${String(v) === String(cur) ? ' selected' : ''}>${U.esc(l)}</option>`).join('')}</select>`;
+    const sec = (d, title, body, open) => `<details data-d="${d}"${O.dOpen[d] != null ? (O.dOpen[d] ? ' open' : '') : open ? ' open' : ''}><summary>${title}</summary>${body}</details>`;
+    const lvRange = K.level(b.level || S.lvl).skill;
+    h += `<h4>${U.esc(t.name.replace(' ⚙', ''))}</h4><p class="note">${U.esc(K.STYLE_NAMES[b.style] || 'All-rounder')} driver${K.traitText(b.traits) ? ' · ' + U.esc(K.traitText(b.traits)) : ''}${b.lock ? ' · build kept' : ''}</p>`;
+    h += sec('who', ic('user') + ' Driver', `
+      <div class="fg"><label>Name</label><input data-f="bName" ${sc} maxlength="16" value="${U.esc(t.name.replace(' ⚙', ''))}">
+        <label>Style</label>${sel('bStyle', Object.keys(K.STYLES).map((k) => [k, K.STYLE_NAMES[k] || k]), b.style)}
+        <label>Level</label>${sel('bLevel', [['', `Room level (${K.level(S.lvl).name})`]].concat(K.LEVEL_ORDER.map((k) => [k, K.LEVELS[k].name])), b.level || '')}
+        <label>Skill</label><span><input data-f="bSkill" ${sc} type="number" min="0.6" max="1.1" step="0.01" value="${(+b.skill || 0).toFixed(2)}" class="w72"> <span class="note">its level: ${lvRange[0]}–${lvRange[1]}</span></span></div>
+      <label class="tog"><input type="checkbox" data-f="bLock" ${sc}${b.lock ? ' checked' : ''}><span></span>Keep this build: no shopping between races, room level changes leave it alone</label>
+      <div class="row">${btn('botWho', 'Apply', 'primary', a)}${btn('botDel', ic('trash-2') + ' Remove this bot', 'red', a)}</div>`, true);
+    const slots = P.SLOTS.filter((s) => P.partAllowed(t.car, s.id));
+    h += sec('parts', ic('cog') + ' Car and parts', `
+      <div class="row"><span class="lbl">Car</span>${sel('bCar', P.CAR_ORDER.map((id) => [id, P.CARS[id].name]), t.car, 'grow')}${btn('botCar', 'Fit', 'ghost', a)}</div>
+      <div class="fg">${slots.map((s) => `<label>${U.esc(s.name)}</label>${sel('bp-' + s.id, s.options.filter((o) => P.optAllowed(t.car, s.id, o.id)).map((o) => [o.id, o.name + (o.price ? ' · ' + U.fmtMoney(o.price) : '')]), (b.parts || {})[s.id] || P.STOCK[s.id])}`).join('')}</div>
+      <div class="row">${btn('botParts', 'Fit parts', 'primary', a)}${btn('bot', 'Stock', 'ghost', { pid: t.id, preset: 'stock' })}${btn('bot', 'Best of everything', 'ghost', { pid: t.id, preset: 'max' })}${btn('bot', 'New style build', 'ghost', { pid: t.id, preset: 'style' })}</div>`);
+    const SND = [['tone', 'Tone'], ['over', 'Overrun'], ['bov', 'Blow-off'], ['idle', 'Idle'], ['lim', 'Limiter']];
+    const need = (k, v) => (P.soundAllowed(k, v, t.car, b.parts) ? '' : ' (needs parts)');
+    h += sec('sound', ic('volume-2') + ' Sound', `
+      <div class="fg">${SND.map(([k, l]) => `<label>${l}</label>${sel('bs-' + k, P.LOOK[k].map(([v, n]) => [v, n.split(' — ')[0] + need(k, v)]), L[k] || P.LOOK[k][0][0])}`).join('')}</div>
+      <p class="note">A sound that needs a part (a straight pipe, a turbo) plays once the bot has it.</p>
+      <div class="row">${btn('botSound', 'Set sound', 'primary', a)}${btn('bot', ic('shuffle') + ' Random', 'ghost', { pid: t.id, reroll: 'sound' })}</div>`);
+    const LK = P.LOOK;
+    h += sec('look', ic('palette') + ' Looks', `
+      <div class="fg"><label>Paint</label><span><input type="color" data-f="bPaint" ${sc} value="${colHex(L.paint == null ? t.color : L.paint)}"> ${btn('bot', 'Team colour', 'ghost', { pid: t.id, look: { paint: null } })}</span>
+        <label>Accent</label><input type="color" data-f="bAccent" ${sc} value="${colHex(L.accent == null ? 0xf5f5f5 : L.accent)}">
+        <label>Livery</label>${sel('bLivery', LK.liveries, L.livery)}
+        <label>Finish</label>${sel('bFinish', LK.finishes, L.finish)}
+        <label>Wheels</label>${sel('bRims', LK.rims, L.rims)}
+        <label>Body kit</label>${sel('bKit', LK.kits, L.kit)}
+        <label>Spoiler</label>${sel('bSpoiler', LK.spoilers, L.spoiler)}
+        <label>Number</label><input data-f="bNum" ${sc} type="number" min="0" max="99" value="${+L.num || 0}" class="w52"></div>
+      <div class="row">${btn('botLook', 'Set looks', 'primary', a)}${btn('bot', ic('shuffle') + ' Random', 'ghost', { pid: t.id, reroll: 'look' })}</div>`);
+    h += sec('habits', ic('steer') + ' Habits', `
+      <div class="fg"><label>Braking</label>${sel('hBrake', BRAKE, nearest(BRAKE, T.brake))}
+        <label>Lines</label>${sel('hLine', LINE, nearest(LINE, T.line))}
+        <label>Mistakes</label>${sel('hMis', MISTAKE, nearest(MISTAKE, T.mistake))}
+        <label>Rival</label>${sel('hRival', [['auto', 'Its level\'s odds'], ['on', 'Always hunts someone'], ['off', 'Never']], T.rival)}</div>
+      <div class="row">${btn('botHabits', 'Set habits', 'primary', a)}${btn('bot', ic('shuffle') + ' Random', 'ghost', { pid: t.id, reroll: 'traits' })}</div>`);
+    return h;
+  }
+
+  // v5.5.7 Changes: the whole changelog, public and hidden. The hidden half
+  // (the console, skins, messages - what the public one leaves out) is
+  // sealed for the maintainer's key like a room card: only an unlocked
+  // console can read it.
+  function notesHtml(O) {
+    const hid = O.notes || {};
+    let h = `<div class="row"><label class="tog"><input type="checkbox" data-o="hidOnly"${O.hidOnly ? ' checked' : ''}><span></span>Only what the public changelog leaves out</label></div>`;
+    if (!O.notes) h += `<p class="note">${O.notesErr ? "The hidden notes didn't open with this key." : 'Opening the hidden notes…'}</p>`;
+    for (const c of G.CHANGELOG) {
+      const extra = hid[c.v] || [];
+      if (O.hidOnly && !extra.length) continue;
+      h += `<div class="nv"><h4>v${U.esc(c.v)} · ${U.esc(c.name)}</h4>`;
+      h += extra.map(([t, d]) => `<div class="ni hid">${ic('lock')}<div><b>${U.esc(t)}</b><p>${U.esc(d)}</p></div></div>`).join('');
+      if (!O.hidOnly) h += c.items.map(([e, t, d]) => `<div class="ni"><span>${G.Icon.fromEmoji(e)}</span><div><b>${U.esc(t)}</b><p>${U.esc(d)}</p></div></div>`).join('');
+      h += '</div>';
+    }
+    return h;
   }
 
   function histHtml(O) {
@@ -712,7 +927,7 @@
     if (!rooms.length) h += '<p class="note">Rooms you host or join show up here.</p>';
     else
       h += '<div class="pls">' + rooms
-          .map((r) => `<div class="pl${sel && sel.t0 === r.t0 ? ' sel' : ''}" data-o="loc" data-k="histSel" data-a="${enc64({ v: r.t0 })}"><span>${r.role === 'host' ? '👑 ' : ''}${U.esc(r.code || '?')}${r.name ? ' · ' + U.esc(r.name) : ''}</span><b>${Object.keys(r.players || {}).length}</b><em>${r.t1 ? fmtSecs(r.t1 - r.t0) : 'open'}</em></div>`)
+          .map((r) => `<div class="pl${sel && sel.t0 === r.t0 ? ' sel' : ''}" data-o="loc" data-k="histSel" data-a="${enc64({ v: r.t0 })}"><span>${r.role === 'host' ? ic('crown') + ' ' : ''}${U.esc(r.code || '?')}${r.name ? ' · ' + U.esc(r.name) : ''}</span><b>${Object.keys(r.players || {}).length}</b><em>${r.t1 ? fmtSecs(r.t1 - r.t0) : 'open'}</em></div>`)
           .join('') + '</div>';
     if (sel) {
       const ps = Object.values(sel.players || {}).sort((a, b) => (b.ms || 0) - (a.ms || 0));
@@ -730,10 +945,10 @@
     }
     const seen = Object.values(Hist.seen || {}).sort((a, b) => (b.last || 0) - (a.last || 0));
     h += `<h4>Other rooms seen (${seen.length})</h4>`;
-    if (!seen.length) h += '<p class="note">Rooms in 🌐 All rooms are logged here while you\'re unlocked.</p>';
+    if (!seen.length) h += '<p class="note">Rooms in the Rooms tab are logged here while you\'re unlocked.</p>';
     h += seen
       .slice(0, 30)
-      .map((s) => `<div class="hs"><div><b>${U.esc(s.name || '?')}</b>${s.code ? ` <code>${U.esc(s.code)}</code>` : ''} <span>${s.vis === 'public' ? '🌐' : '🔒'}</span></div><span>${U.esc(s.host || '?')} · ${when(s.first)} · seen for ${fmtSecs((s.last || s.first) - s.first)} · up to ${s.peak || 0} online${s.races ? ` · ${s.races} races` : ''}</span>${s.drivers ? `<em>${U.esc(Object.keys(s.drivers).join(', '))}</em>` : ''}</div>`)
+      .map((s) => `<div class="hs"><div><b>${U.esc(s.name || '?')}</b>${s.code ? ` <code>${U.esc(s.code)}</code>` : ''} <span>${ic(s.vis === 'public' ? 'globe' : 'lock')}</span></div><span>${U.esc(s.host || '?')} · ${when(s.first)} · seen for ${fmtSecs((s.last || s.first) - s.first)} · up to ${s.peak || 0} online${s.races ? ` · ${s.races} races` : ''}</span>${s.drivers ? `<em>${U.esc(Object.keys(s.drivers).join(', '))}</em>` : ''}</div>`)
       .join('');
     return h;
   }
@@ -836,7 +1051,7 @@
       <h4>Practice</h4><div class="row">Time ${[0.25, 0.5, 1, 2].map((v) => btnL('time', v + '×', O.timeScale === v ? '' : 'ghost', { v })).join('')}</div>
       <h4>Display</h4><div class="row">Cap ${[0, 30, 60].map((v) => btnL('cap', v ? v + '' : 'off', O.fpsCap === v ? '' : 'ghost', { v })).join('')} · ${btnL('fps', s.showFps ? 'Hide FPS' : 'Show FPS', 'ghost')}</div>
       <div class="row">Quality ${['auto', 'high', 'medium', 'low'].map((v) => btnL('quality', v, s.quality === v ? '' : 'ghost', { v })).join('')}</div>
-      <h4>Sounds</h4><div class="row">${['request', 'join', 'leave', 'drop', 'host', 'warn', 'notify'].map((k) => btnL('snd', k, 'ghost', { v: k })).join('')}${btnL('snd', 'blow-off', 'ghost', { v: 'blowoff' })}${btnL('snd', 'flutter', 'ghost', { v: 'flutter' })}</div>`;
+      <h4>Sounds</h4><div class="row">${['request', 'join', 'leave', 'drop', 'host', 'warn', 'notify'].map((k) => btnL('snd', k, 'ghost', { v: k })).join('')}</div><div class="row">${[['blowoff', 'blow-off'], ['atmo', 'atmo valve'], ['flutter', 'flutter'], ['flutterBig', 'big flutter'], ['crackle', 'crackle'], ['bangs', 'bangs']].map(([v, l]) => btnL('snd', l, 'ghost', { v })).join('')}</div>`;
   }
 
   function logHtml(O) {
@@ -846,7 +1061,7 @@
   }
 
   const CSS = `
-#ops { position: fixed; top: 54px; right: 10px; z-index: 72; width: 330px; height: 440px; max-height: calc(88vh / var(--uiz, 1)); min-width: 270px; min-height: 60px; zoom: var(--uiz, 1);
+#ops { position: fixed; top: 54px; right: 10px; z-index: 72; width: 372px; height: 520px; max-height: calc(88vh / var(--uiz, 1)); min-width: 270px; min-height: 60px; zoom: var(--uiz, 1);
   display: flex; flex-direction: column; resize: both; overflow: hidden; background: rgba(13,18,33,.95); border-radius: 12px;
   box-shadow: 0 12px 36px rgba(0,0,0,.5), inset 0 0 0 1px rgba(255,204,0,.3); font-family: var(--body); font-size: 12px; color: var(--ink); }
 #ops[hidden] { display: none; }
@@ -855,9 +1070,43 @@
 #ops .op-w { flex: 1; min-width: 0; color: var(--muted); font-size: 11px; font-weight: 900; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ops .op-x { width: 22px; height: 22px; border: 0; border-radius: 6px; background: rgba(255,255,255,.08); color: var(--ink); cursor: pointer; font-size: 11px; line-height: 1; }
 #ops .op-x:hover { background: rgba(255,255,255,.16); }
-#ops .op-tabs { display: flex; gap: 3px; width: 100%; margin-top: 3px; }
-#ops .op-tabs button { flex: 1; padding: 3px 0; border: 0; border-radius: 6px; background: rgba(255,255,255,.06); font-size: 13px; line-height: 1.3; cursor: pointer; filter: grayscale(.7); opacity: .8; }
-#ops .op-tabs button.on { background: rgba(255,204,0,.9); filter: none; opacity: 1; }
+#ops .op-tabs { display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; width: 100%; margin-top: 4px; }
+#ops .op-tabs button { display: flex; align-items: center; justify-content: center; gap: 4px; min-width: 0; padding: 4px 2px; border: 0; border-radius: 6px; background: rgba(255,255,255,.06); color: #c9d3ea; font: 800 10.5px var(--body); cursor: pointer; }
+#ops .op-tabs button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#ops .op-tabs button .svi { width: 13px; height: 13px; flex: none; }
+#ops .op-tabs button:hover { background: rgba(255,255,255,.12); }
+#ops .op-tabs button.on { background: var(--yellow); color: #1a1300; }
+#ops .op-x .svi { width: 13px; height: 13px; vertical-align: middle; }
+#ops .btn .svi { width: 12px; height: 12px; vertical-align: -2px; margin-right: 1px; }
+#ops .lbl { min-width: 64px; color: var(--muted); font: 800 11px var(--body); letter-spacing: 0; text-transform: none; }
+#ops .seg { display: flex; gap: 4px; margin: 4px 0; }
+#ops .seg .btn { flex: 1; }
+#ops .btn.small.on { background: var(--yellow); color: #1a1300; }
+#ops .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0; }
+#ops .stp { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-radius: 8px; background: rgba(255,255,255,.04); }
+#ops .stp > span { flex: 1; color: var(--muted); font-weight: 800; font-size: 11px; }
+#ops details { margin: 6px 0; border-radius: 8px; background: rgba(255,255,255,.035); }
+#ops summary { padding: 6px 8px; cursor: pointer; font-weight: 900; list-style: none; display: flex; align-items: center; gap: 6px; }
+#ops summary::-webkit-details-marker { display: none; }
+#ops summary::after { content: '›'; margin-left: auto; color: var(--muted); transition: transform .15s; }
+#ops details[open] summary::after { transform: rotate(90deg); }
+#ops details > :not(summary) { margin-left: 8px; margin-right: 8px; }
+#ops details > .row:last-child { margin-bottom: 8px; }
+#ops .fg { display: grid; grid-template-columns: 74px 1fr; gap: 4px 8px; align-items: center; margin: 4px 0; }
+#ops .fg > label { color: var(--muted); font: 800 11px var(--body); letter-spacing: 0; text-transform: none; }
+#ops .pl em { white-space: nowrap; }
+#ops .pl { grid-template-columns: 1fr auto 84px; }
+#ops .fg select, #ops .fg input:not([type=color]):not(.w72):not(.w52) { width: 100%; min-width: 0; box-sizing: border-box; }
+#ops input[type=color] { width: 44px; height: 24px; padding: 1px 2px; vertical-align: middle; }
+#ops .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+#ops .pl .svi { width: 12px; height: 12px; vertical-align: -2px; }
+#ops .nv { padding: 2px 0 6px; border-bottom: 1px solid rgba(255,255,255,.05); }
+#ops .ni { display: grid; grid-template-columns: 18px 1fr; gap: 6px; padding: 4px 0; }
+#ops .ni .svi { width: 14px; height: 14px; }
+#ops .ni b { display: block; font-weight: 900; }
+#ops .ni p { margin: 1px 0 0; color: #b7c1da; font-size: 11px; line-height: 1.35; }
+#ops .ni.hid { margin: 2px -4px; padding: 5px 4px; border-radius: 6px; background: rgba(255,204,0,.07); }
+#ops .ni.hid > .svi { color: var(--yellow); margin-top: 2px; }
 #ops .op-b { flex: 1; min-height: 0; overflow: auto; padding: 2px 10px 10px; }
 #ops.min { height: auto !important; min-height: 0; resize: none; }
 #ops.min .op-tabs, #ops.min .op-b { display: none; }
@@ -868,7 +1117,7 @@
 #ops .kv b { font-weight: 800; overflow-wrap: anywhere; }
 #ops code { font: 800 12px ui-monospace, Consolas, monospace; color: var(--yellow); letter-spacing: 1px; }
 #ops .row { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 4px 0; }
-#ops .row .sp { width: 8px; }
+#ops .row .gap { width: 8px; }
 #ops .num { min-width: 16px; text-align: center; font-variant-numeric: tabular-nums; }
 #ops .btn.small { padding: 3px 8px; font-size: 11px; border-radius: 7px; }
 #ops input, #ops select { padding: 3px 6px; border: 1px solid rgba(255,255,255,.18); border-radius: 6px; background: #0b1020; color: var(--ink); font: 700 12px var(--body); }
@@ -938,6 +1187,12 @@
     dir: new Map(), // sealed card ciphertext -> details (or null while opening, 'bad')
     known: new Set(),
     alerts: true,
+    form: {}, // v5.5.7: typed or picked, not sent yet (survives redraws)
+    dOpen: {}, // open sections of the bot editor
+    bsel: null, // the bot being edited
+    hidOnly: false,
+    notes: null, // the hidden changelog, once opened
+    NOTES: { hpub: 'BJzr0sxc+iFnxlzJlZkAgEgLTiDOGTpI5apEv0f9E1u4gpo9NpcWUJOJTAhntRu9y53YGwo4Qt4sGla4akJwt9Y=', iv: 'ZJMU3lCsTYJuuXpn', ct: 'mJ7PmxJdMfVq+S6MswVNzcW1CwQGXmAibjLNBl6j6Kd7AaKp8RKTwEtHlQ/hsEkqJKb6tU7aeHoV/XqtA+dFbPegDvbT2x5pznOEfv+IH6lSh83mPjizqfDJkR9y+qh8ZtF61xsdU2mc/w3tu1fJJ9g18kgdeJYAWJKUkFhRP1UO2UODxv+yMcGeszOoz4U1pMzuvfqEc7428NboSAbKdrZk15REr1kcZneJ8tFD029Sqn0nLFZUhfc/l25l5Rg2fPGX/kIOTkwhnyNMRmp2d0JQh8xT5KPM53ptz1rGYyJEifCt60PZHN3n4GI0I9gXk6aJr5m+ZsTHpDDUXivBh9wjjaQCG/RFmYowl2cUVh20yHWoULJzSmuuLiv3D+SFaRf9ghFeTbWwNKL+jJL2iEx9bQmfba3BCscHXxVmSxrABW7o3TpDsGqTXGYKF7GGr364B4P99YJnz4swBLZpQM/nRQjy0WYQ1i+hJl+ahgAbABLjCRUmkxlqNYC72x8lWBkvJx5OjorgMWqIWdXgcsqv++WFos6JwTmpwbXYH1cV36dELDfyZW1kBVA/k6IHGsbveUTHi10YNWvUfnAdcAL+nbI0vnVg6EPzgBYyxV0V7uIhbvr7flJvVnGA+5O2Eu9/xiYchXhMUIN7b0MGB5bNXxRF5g7R73bRXkyPJZo9w6c8+KVkWeIuB8eFR1zOk/YV8Hb/hSPZ8M+XE+Nu7iU4XRkqHZDLXCYaaBvopo6QrupcXQIufwU4bjU1/tGHDpFmKFLJ9AiQXKxy8jcCRMAImIiyyoHDNuGU7flWDoXxXfj+/SQKF2dDTnvX6JDEPMS7/xXMcY46Uq3tjdOQvU8SSrdXRn0CS0zOwxkzYaJIdX/gVf67w29UJoZpq2zj0mFBCUYjx919HWZrVL3LOJUTBVt9ZNwQ1iCM8mPaix9p96HArRianayoy+HTvhNtSyExDi0S7UzfqM20fbsohE6kADQbqvT764QHyzWOPw8uiTGMYD6mrt2kxSvBaLduK2wiRFMznm3eAj/ntyT8jVjcXmqR8OXa2wgKZYPgzvw7HmON3QzWMKUTWqjy0qVfyy5XGsLudLczIhROgEAZXH4J04lmhk+0qoP35Y7o5/h4mRkd8SGshzFbkO9pp2lqo8onpRvCQJh8304OuPW2dVdJRIszBAaZ2eA+mrNRfM57W5hgl7LWK2tezv+QETaA2fdaHN0XBWWztTUQ4/73Qi7A959aOyn/azxFPZr8DkmH2JRI3TTOfbxwJoLSJzxByLsG8SC1QjUE9Ws1yS8wsF2FVPtkzyf+BrWqoR4fi0iPNlDDcph+/ODYAW1XmDQ6OuxdMiVZ+W9R2rtdYtuvh70K+wjBjGclyAj3K+EPtd7E+2Xk6vHJH5Yrji5+z2B3NtT9BviAC1zE8KYJOnbNoPQBV7zzreCHaWpETbRwUP/6Ka8XQi1YNNap+rVY/GzhYOTL4NtdO+5w2DJkuAYRsjLQV8BkOShdGtdsytoDKvjJuc+XXItp96UnXrtnS7AuuoDc0IGw8as2mzCu0LLUl/FGA8F4Tu+jsD7yS3FplpZANtL5C57O2Yu2X2SLwISJpd8tU8nTfJgLl+P67KpPZVuv6CZ8M6ein5aUvTtrBrOT68R37dJY9qgZWo+Y56ZMoTFAw/l7ZXx+Nq8pVkiUVKrQK2iI7F/6L5Vlhs3KXstN8htYpDeHRMvtwnv5t9P4bXDoycSf/m9Vj8FJRL1/VgMRdsL7bGBLQWB2eIWHxDzPUHClj1D0ihbzFOOM6SQXiH1RsXEpL3ItfIvja0cucZGLbywC3H3MIaF6t1fEaa32lRugYxW1tMBN6J2D3U0Hm4m86LV7+A5pJKtVEC+1tNrZDd8hKBoGK6b7MsG9TaQ9VROfVB975UHpX6NB7sQaMBU7qWlc4gKD34zylojTXoVhWjJsj0Dhj2OAwZGZR8o1Ro32GUBbjy9eJqrz17KdORdNXpdVEjbvR4540KYtBJH3cMUQfnScoq52dQ998Zd1U/w3IP8UE6VviBnvdOxekXE+Yr6ookaw4h8doiMtAwULy8aB7V9bnLL/w1Cxm45N0972Jkx6fKloj+aowlt0gWOQaqqF/tCqkObKX5xlW3OOdITqmgny3RG2B/4TzBwmSs8t/RfWVI+9QZRAVlN2p1gjXhlv1fYflDk1Gyp2QAIOc81rR0KwRMy2k7nbvUjZMWTWBczI6UJ01EW2iy+BMxxVDJZXfQoeydPdhnnmhSO22SavJ4TpVeM98wFpBUGn0pVMBtwJMtaU2HReqia1FOuEC8vhZdCvxnRTq9inYU2388ad3Xa5GPd0ayAMJiXLAMhcPiRWlyKyQh+Yc3klwbM67YJH+oWi6x+HA/BdJ+nyOaUFHWkHSq6R5yBzDWAgT59ZMnonpHfvX1vGCp0zvTyxlt5UeZBIKuV+UcYh1OkKgw2QBx716xS+6WeSfjlVSuC8uIIc03ttN64cXQiqcGxw9LKOwM77roMhcoMmGUEHObdqMkifpRCQ+dOivWRGYTZejG6yf/JOiNXthPbTgFIo9Kx8/r8V8AQ9b0cbK9J8JFsVLHvcljJt0GnzuVi5u+XN7Gx/2uqGDc0QGGv8p3Ca8JwkY7OCni3qUmbMqvYJ6VcdmzeU3+Qi++ncTxLTTXxiWdq5r0FigAbXSkFvMRwlHKVOHBIL6nqFDzmbw1mp/RVnfjegYGBvwgLgw5yk9FCB4/h0jeQuIdmC6485sv0/ATjHGoflpH+D5DXv3z9ToPTEDbEHvmc6Vy8g3CuwLTHgMT9DskVQswpgDrSV8G77Y//CmZ7ypz7fo3jJYL8qHMNxJl5mnUhDbE9TaKNLNPA7zebzsthTh57qk+DBasaQcLX2pvh0+lOOywVXWuKtl6mM2O9l8aaHoQGr7XdEyOUpgGFkgApZUZdmkx7ihMv5Jcwu5Cqx6rT1GDT2Nf6XEMPRFkUz99XYaD8HBy0Ci+sGDmOmlEkkK28H2OT7QyhIG/JcYrdSzz11iQGk9cH7nSOEpu1W/SrEgSaj8NO2Qz0dh3E8Ms63Rnf4GzVG7Dz9bH4GPw1c8B5sTzxqyyOXbHJJo5nXbU0827wBEbAcZRBUDOuERk5N9+7WXF7PkVEAYA7jAnqggHWFv1XS+IBRmApdbauxL+2EXq4fzV9w4zTeJtg16pO4iHgOMdU56cWlWImPKkfvIhIhSOROodcnpdnGqCndNu8AGuIBJhSrLM/h1ufH1YlS+cKczL4DpaZnKNAbkc77FeytKnbOOnpgM6QmRJONjFCGM5uilPGqz9b3gyTSeZA/etekXjnUrGQa4B5Ie9qcWP7E+efV3jcMF2l2MEqloAHmcv2x4rhLFY5RUO80AvbgRt5K0XpjSCCCJeKFI0y9OHb8J+3wMB82hhak/CenxPq5VzPhKSXlLLeYAj8ksTQdNLOkdmnjK2f7dhDU4Q+XKsxIQfVhgLYXbjrdYvqhWo5HYRJXfYrXoOThfPeuvKWxT6rSLmlS9TVBqsi2UeOuOXh2M8M2kpQ0E0Y+PBFeFg8C0nrE/IqU7oe1JKEE03X5O+MqCt7Eu1H7tGheSzTQ4P72RNc4MXh3HL4kdavo/vMXQwS3sRsrTaTzCYSlmsrjmUMUS8yd4ZIa+LxPEW07MnZpsJiV6wMwTp52q9QEmoEI+AhS2YyicHVlBU9x3EkkZcQBe7b/ORf2GMno1SScs8u9R/A3kOHNBgUiSpJ6trBFvzgm6dYuRzjFVQB1TruK2Gw/+ybG3Ypn7Shrh//zNdtFQPqfK4FQf3Y5hICRfQfTRj4QZ8Ar50IODgcgBZWbn2XE3ph2LmGDvQx+JpEvNwt2P99z2DJhGmYbc/5xqT4bOMS5nMGQxVZTagO7c6H7RPH7FlSLmDDBZrSA+acyd4Dyj0za1puXVhQLSGzyJkqBoa2/kugHLXYSqt2zcv1zM3LrGt+z7aTkwhyDK1CeBOYDqFqPGy2U10Zxc+h19twyK4uoB60Otuiwm0sCslRtQiwzsj8Kqg66PJm4C0ZuZFqmQNK/rSyZwiY1+q2nxKass/vQT6Jb+a1i5nGXsLCLIe8UQdV3AIebnrtDUx8zioG3QWGBDbWAQoTD9FvpMeXGOxFQb9dV60tsuV9DzrGBNGthD7AU7gASsSeQngTV3+nF/HfIAcn/ywqU1jGFgiO85iBhwoaCXy7FJbu661GovZxbicxAe8Jwi3j0twFN0A2C8A88FKeWESTgCFEcunlb208O5szPRWNmGk3NHZX/C6tRrd6F0t3PaousJ9nsQTR1J+v3Cz/wfuUcn3CaXWHdYjptcho66W4Cx8H+QCTfuYGQxEsMmhH7rSBomoPFS7VMM1ldSMyz5D5bsQMAFohewKHFeoBrYL0n5Dj7QXXdibKD0pFcREicPSGCR8smd7ZxmoZiSscQUUeAVlDq2WNCUbeEUWxbJookK/C7Lh4lsRDkBAzCFBhDG11kuUUbnNIreHpNXjTEFqXVh/RXXsDF+iKaQusJrHmZ0sFc2BZb4fe9Nsr0yDLtAP0oGBVJlw7BD4VXEEUKkBgukb5GDb8=' }, // sealed hidden notes: tools/harness/sealnotes.py writes this line
 
     init() {
       const css = document.createElement('style');
@@ -946,18 +1201,34 @@
       const el = (this.el = document.createElement('div'));
       el.id = 'ops';
       el.hidden = true;
-      el.innerHTML = `<div class="op-h"><b>OPS</b><span class="op-w"></span><button class="op-x" data-o="min" title="Shrink to one line">▁</button><button class="op-x" data-o="lock" title="Lock (forget the key)">🔒</button><button class="op-x" data-o="hide" title="Hide (Ctrl+Shift+\`)">✕</button><div class="op-tabs">${TABS.map(([k, ic, l]) => `<button data-o="tab" data-t="${k}" title="${l}">${ic}</button>`).join('')}</div></div><div class="op-b"></div>`;
+      el.innerHTML = `<div class="op-h"><b>OPS</b><span class="op-w"></span><button class="op-x" data-o="min" title="Shrink to one line">${ic('minus')}</button><button class="op-x" data-o="lock" title="Lock (forget the key)">${ic('lock')}</button><button class="op-x" data-o="hide" title="Hide (Ctrl+Shift+\`)">${ic('x')}</button><div class="op-tabs">${TABS.map(([k, i, l]) => `<button data-o="tab" data-t="${k}" title="${l}">${ic(i)}<span>${l}</span></button>`).join('')}</div></div><div class="op-b"></div>`;
       document.body.appendChild(el);
       this.whereEl = el.querySelector('.op-w');
       this.body = el.querySelector('.op-b');
       el.addEventListener('click', (e) => this._click(e));
       el.addEventListener('change', (e) => {
         const o = e.target.dataset.o;
+        this._remember(e.target);
         if (o === 'relay' && G.NetSim) G.NetSim.forceRelay = e.target.checked;
         if (o === 'alerts') this.alerts = e.target.checked;
         if (o === 'bglog') this.setBgLog(e.target.checked);
+        if (o === 'hidOnly') {
+          this.hidOnly = e.target.checked;
+          this.render(true);
+        }
+        if (e.target.dataset.auto) this._cmd(e.target, {}); // (a pick that applies at once)
       });
+      // v5.5.7: an open section stays open when the panel redraws
+      el.addEventListener('toggle', (e) => {
+        const d = e.target.dataset && e.target.dataset.d;
+        if (d) this.dOpen[d] = e.target.open;
+      }, true);
+      // ...and nothing redraws under a click (the button it started on would vanish)
+      el.addEventListener('pointerdown', () => (this._ptr = true), true);
+      window.addEventListener('pointerup', () => setTimeout(() => (this._ptr = false), 60), true);
+      el.addEventListener('focusout', () => setTimeout(() => this._flush(), 0));
       el.addEventListener('input', (e) => {
+        this._remember(e.target);
         const f = e.target.dataset.f;
         if (f === 'pq') {
           this.pq = e.target.value;
@@ -1317,13 +1588,16 @@
           this.body._html = null;
           this.body.innerHTML = dirControls(this) + '<div class="op-dl"></div>';
         }
-        G.UI.patch(this.body.querySelector('.op-dl'), dirList(this));
+        this._patch(this.body.querySelector('.op-dl'), dirList(this));
         return;
       }
       if (this._bodyTab === 'dir' || this._bodyTab === 'data') this.body._html = null;
       this._bodyTab = this.tab;
       let html;
-      if (this.tab === 'stats') html = statsHtml();
+      if (this.tab === 'notes') {
+        this._openNotes();
+        html = notesHtml(this);
+      } else if (this.tab === 'stats') html = statsHtml();
       else if (this.tab === 'log') html = logHtml(this);
       else if (this.tab === 'hist') html = histHtml(this);
       else if (this.tab === 'data') {
@@ -1348,12 +1622,83 @@
         // This room / Drivers / Tools re-render only when their data changes
         // (a re-render would reset a half-picked dropdown or a typed amount)
         const S = this.tab === 'debug' ? null : this._S();
-        const key = [this.tab, this.sel, g.role, !!(ctx() && ctx().sim), this.remoteErr, S && JSON.stringify(Object.assign({}, S, { idle: 0, lobby: 0 })), this.tab === 'debug' && JSON.stringify([G.NetSim, this.timeScale, this.fpsCap, G.Settings.s.quality, G.Settings.s.showFps]), force && Math.random()].join('|');
+        // (ping times change every second: not a reason to redraw)
+        const still = S && JSON.stringify(S, (kk, v) => (kk === 'rtt' || kk === 'idle' || kk === 'lobby' ? undefined : v));
+        const key = [this.tab, this.sel, this.bsel, g.role, !!(ctx() && ctx().sim), this.remoteErr, still, this.tab === 'debug' && JSON.stringify([G.NetSim, this.timeScale, this.fpsCap, G.Settings.s.quality, G.Settings.s.showFps]), force && Math.random()].join('|');
         if (key === this._key) return;
         this._key = key;
-        html = this.tab === 'room' ? roomHtml(this, S) : this.tab === 'players' ? playersHtml(this, S) : debugHtml(this);
+        html = this.tab === 'room' ? roomHtml(this, S) : this.tab === 'players' ? playersHtml(this, S) : this.tab === 'bots' ? botsHtml(this, S) : debugHtml(this);
       }
-      G.UI.patch(this.body, html);
+      this._patch(this.body, html);
+    },
+    // v5.5.7 redraws that don't fight you. The old one could land between
+    // picking something and clicking its button: Give handed over the first
+    // car in the list, Set money set $0, and a click on a button that had
+    // just been redrawn went nowhere. Now a redraw waits while a box or a
+    // list has focus or a button is being pressed, and puts back anything
+    // typed or picked but not sent yet.
+    _fk(e) {
+      return e.dataset.f + '|' + (e.dataset.s || '');
+    },
+    _remember(e) {
+      if (!e || !e.dataset || !e.dataset.f || e.dataset.auto) return;
+      this.form[this._fk(e)] = e.type === 'checkbox' ? e.checked : e.value;
+    },
+    _restore(root) {
+      for (const e of root.querySelectorAll('[data-f]')) {
+        const k = this._fk(e);
+        if (!(k in this.form)) continue;
+        if (e.type === 'checkbox') e.checked = !!this.form[k];
+        else e.value = this.form[k];
+      }
+    },
+    _busy(el) {
+      if (this._ptr) return true;
+      const a = document.activeElement;
+      if (!a || !el.contains(a)) return false;
+      return a.tagName === 'SELECT' || a.tagName === 'TEXTAREA' || (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'range', 'color'].includes(a.type));
+    },
+    _patch(el, html) {
+      if (!el) return;
+      if (el._html === html) {
+        if (this._later && this._later[0] === el) this._later = null;
+        return;
+      }
+      if (this._busy(el)) {
+        this._later = [el, html];
+        return;
+      }
+      this._later = null;
+      const top = el.scrollTop;
+      el._html = html;
+      el.innerHTML = html;
+      this._restore(el);
+      el.scrollTop = top;
+    },
+    _flush() {
+      if (this._later && !this._busy(this._later[0])) this._patch(this._later[0], this._later[1]);
+    },
+    // v5.5.7 the hidden half of the changelog (see notesHtml)
+    async _openNotes() {
+      if (this.notes || this.notesErr || this._notesBusy || !this.dh) return;
+      const blob = this.NOTES;
+      if (!blob) {
+        this.notesErr = true;
+        return;
+      }
+      this._notesBusy = true;
+      try {
+        const S = subtle();
+        const pub = await S.importKey('raw', unb64(blob.hpub), DH, false, []);
+        const k = await S.deriveKey({ name: 'ECDH', public: pub }, this.dh, { name: 'AES-GCM', length: 256 }, false, ['decrypt']);
+        const d = JSON.parse(new TextDecoder().decode(await S.decrypt({ name: 'AES-GCM', iv: unb64(blob.iv) }, k, unb64(blob.ct))));
+        if (!d || typeof d !== 'object') throw new Error('bad');
+        this.notes = d;
+      } catch (e) {
+        this.notesErr = true;
+      }
+      this._notesBusy = false;
+      if (this.tab === 'notes') this.render(true);
     },
     banner(text) {
       text = String(text || '').slice(0, 140);
@@ -1392,6 +1737,9 @@
       } else if (o === 'sel') {
         this.sel = b.dataset.id;
         this.render(true);
+      } else if (o === 'bsel') {
+        this.bsel = b.dataset.id;
+        this.render(true);
       } else if (o === 'cmd') this._cmd(b, a());
       else if (o === 'loc') {
         this.local(b.dataset.k, a());
@@ -1401,12 +1749,45 @@
     async _cmd(b, a) {
       const k = b.dataset.k, f = (n) => this.el.querySelector(`[data-f="${n}"]`);
       const c = Object.assign({ k }, a);
-      if (k === 'nextTrack') c.id = f('track').value;
-      if (k === 'botSkill') c.v = f('skill').value;
-      if (k === 'announce') c.text = f('ann').value;
-      if (k === 'giveCar') c.car = f('car').value;
-      if (k === 'moneySet') Object.assign(c, { k: 'money', set: 1, v: +f('money').value });
-      if (k === 'skin' || k === 'skinTake') Object.assign(c, { k: 'skin', id: f('skin').value, take: k === 'skinTake' ? 1 : 0 });
+      // v5.5.7 the bot editor sends what was changed in its section
+      const scope = a.pid || '', used = [];
+      const dirty = (n) => (n + '|' + scope) in this.form;
+      const val = (n) => {
+        used.push(n + '|' + scope);
+        const e = f(n);
+        return e ? (e.type === 'checkbox' ? e.checked : e.value) : undefined;
+      };
+      if (k === 'botWho') {
+        c.k = 'bot';
+        for (const [n, key] of [['bName', 'name'], ['bStyle', 'style'], ['bLevel', 'level'], ['bSkill', 'skill'], ['bLock', 'lock']]) if (dirty(n)) c[key] = val(n);
+      }
+      if (k === 'botCar') Object.assign(c, { k: 'bot', car: val('bCar') });
+      if (k === 'botParts') {
+        c.k = 'bot';
+        c.parts = {};
+        for (const e of this.el.querySelectorAll('[data-f^="bp-"]')) if (dirty(e.dataset.f)) c.parts[e.dataset.f.slice(3)] = val(e.dataset.f);
+      }
+      if (k === 'botSound') {
+        c.k = 'bot';
+        c.sound = {};
+        for (const s of G.Parts.SOUND_KEYS) c.sound[s] = val('bs-' + s);
+      }
+      if (k === 'botLook') {
+        c.k = 'bot';
+        c.look = {};
+        const hexN = (v) => parseInt(String(v).replace('#', ''), 16);
+        for (const [n, key, conv] of [['bPaint', 'paint', hexN], ['bAccent', 'accent', hexN], ['bLivery', 'livery'], ['bFinish', 'finish'], ['bRims', 'rims'], ['bKit', 'kit'], ['bSpoiler', 'spoiler'], ['bNum', 'num', (v) => U.clamp(Math.round(+v || 0), 0, 99)]])
+          if (dirty(n)) c.look[key] = conv ? conv(val(n)) : val(n);
+      }
+      if (k === 'botHabits') Object.assign(c, { k: 'bot', traits: { brake: +val('hBrake'), line: +val('hLine'), mistake: +val('hMis'), rival: val('hRival') } });
+      if (k === 'roomSet') Object.assign(c, { catchup: val('cu'), weather: val('wx') });
+      if (k === 'botDel' && !(await G.UI.confirm('Remove this bot?', 'It leaves the room now (between races).', 'Remove', true))) return;
+      if (k === 'nextTrack') c.id = val('track');
+      if (k === 'botSkill') c.v = val('skill');
+      if (k === 'announce') c.text = val('ann');
+      if (k === 'giveCar') c.car = val('car');
+      if (k === 'moneySet') Object.assign(c, { k: 'money', set: 1, v: +val('money') });
+      if (k === 'skin' || k === 'skinTake') Object.assign(c, { k: 'skin', id: val('skin'), take: k === 'skinTake' ? 1 : 0 });
       if (k === 'close' && !(await G.UI.confirm('Close this room?', 'Everyone goes back to the main menu.', 'Close room', true))) return;
       if (k === 'kick' && !(await G.UI.confirm('Kick and ban?', "They can't come back into this room.", 'Kick', true))) return;
       b.disabled = true;
@@ -1414,7 +1795,9 @@
         const r = await this.run(c);
         this._log(`✓ ${c.k}: ${r}`, 'ok');
         G.UI.toast(String(r), 'info', false);
-        if (k === 'announce') f('ann').value = '';
+        for (const u of used) delete this.form[u]; // sent: the host's value shows from now on
+        if (k === 'botDel' && this.bsel === a.pid) this.bsel = null;
+        if (k === 'announce' && f('ann')) f('ann').value = '';
       } catch (e) {
         this._log(`✗ ${c.k}: ${e.message}`, 'bad');
         G.UI.toast(e.message, 'bad');
@@ -1428,6 +1811,10 @@
       const sn = G.NetSim, f = (n) => this.el.querySelector(`[data-f="${n}"]`);
       if (k.slice(0, 3) === 'dir') return void this._dirAct(k, a);
       if (k === 'rsel') this.rsel = this.rsel === a.v ? null : a.v;
+      else if (k === 'toBots') {
+        this.tab = 'bots';
+        this.bsel = a.pid;
+      }
       else if (k === 'copyCode') this._copy(G.Game.code);
       else if (k === 'simApply' && sn) {
         sn.lag = U.clamp(+f('lag').value || 0, 0, 1000);
@@ -1443,7 +1830,11 @@
       else if (k === 'snd' && G.Audio) {
         if (!G.Audio.enabled) G.Audio.setEnabled(true);
         if (a.v === 'blowoff') G.Audio.blowoff(1);
+        else if (a.v === 'atmo') G.Audio.blowoffAtmo(1);
         else if (a.v === 'flutter') G.Audio.flutter(1);
+        else if (a.v === 'flutterBig') G.Audio.flutter(1, null, true);
+        else if (a.v === 'crackle') G.Audio.crackle(1, 1, true);
+        else if (a.v === 'bangs') G.Audio.bangBurst(1);
         else {
           G.Audio._ntT = 0;
           G.Audio.notify(a.v);

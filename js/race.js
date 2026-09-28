@@ -47,7 +47,7 @@
           id: e.id, name: e.name, color: e.color, carId: e.carId, parts: e.parts, entrant: e,
           spec, st, grid: k,
           input: { s: 0, t: 0, b: 0, hb: 0 },
-          bot: e.bot ? new G.Bot(e.bot.skill, U.hashStr(e.id) + (opts.seed || 0), { level: e.bot.level }) : null,
+          bot: e.bot ? new G.Bot(e.bot.skill, U.hashStr(e.id) + (opts.seed || 0), { level: e.bot.level, traits: e.bot.traits }) : null,
           autopilot: null,
           lapCount: 0, maxLap: 0, laps: 0, lastAlong: q.along, raceDist: track.closed ? q.along - track.length : q.along - track.startDist,
           lapStartT: null, lastLap: null, bestLap: null, finished: false, finishMs: null, dnf: false,
@@ -66,7 +66,9 @@
       if (!this.practice) {
         let rivals = 0;
         for (const c of this.cars) {
-          if (c.bot && rivals < 2 && Math.random() < c.bot.L.rival) {
+          if (!c.bot || c.bot.T.rival === 'off') continue;
+          // (v5.5.7: a driver set to always be a rival is one, whatever the count)
+          if (c.bot.T.rival === 'on' || (rivals < 2 && Math.random() < c.bot.L.rival)) {
             c.bot.makeRival();
             rivals++;
           }

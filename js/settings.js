@@ -18,6 +18,7 @@
     sound: true, // v4.4: on by default (browsers still wait for your first click or key)
     vMaster: 80, vEngine: 80, vOthers: 70, vSfx: 85, vUi: 60, vMusic: 58,
     raceMusic: true, // v5: proper race songs now (race / night / rally / endurance)
+    garageSong: 'mix', // v5.5.7: the garage playlist in turn, or one song (audio.js CHILL)
     // camera / HUD
     cam: 'follow', // follow | near | far | fixed
     fovKick: true,
@@ -32,7 +33,7 @@
     steerSpeed: 'normal', // slow | normal | fast (keyboard steering ramp)
     touch: 'auto', // auto (after the first screen touch) | on | off
     botLevel: 'normal', // rookie | easy | normal | hard | pro | legend (single-player bots; bot.js LEVELS)
-    catchup: 'mild', // off | mild | wild (single-player quick races; the host picks for multiplayer)
+    catchup: 10, // % extra power at most for a car far behind (v5.5.7: any 0-100; off | mild | wild still read) - single-player quick races; the host picks for multiplayer
     raceWeather: 'auto', // v5 auto (sometimes a shower mid-race) | dry | rain (single-player quick races)
     // v5.5.1 speech to text in multiplayer chat (Settings -> Voice)
     sttMode: 'ptt', // ptt (hold the talk key) | tap (tap, speak, it sends on a pause) | voice (voice activated) | off
@@ -50,6 +51,18 @@
   const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn', talk: 'Speech to text' };
   // Catch-up strength per setting: the most extra power a car far behind gets.
   const CATCHUP = { off: 0, mild: 0.1, wild: 0.25 };
+  // v5.5.7: catch-up is any whole percentage from 0 to 100 - the three names
+  // above are presets. null = not a catch-up value at all.
+  function cuPct(v) {
+    if (CATCHUP[v] != null) return Math.round(CATCHUP[v] * 100);
+    const n = typeof v === 'number' ? v : typeof v === 'string' && /^\s*\d+(\.\d+)?\s*%?\s*$/.test(v) ? parseFloat(v) : NaN;
+    return isFinite(n) ? U.clamp(Math.round(n), 0, 100) : null;
+  }
+  const cuFrac = (v) => (cuPct(v) == null ? 10 : cuPct(v)) / 100;
+  const cuLabel = (v) => {
+    const p = cuPct(v) == null ? 10 : cuPct(v);
+    return p === 0 ? 'off' : p === 10 ? 'mild (10%)' : p === 25 ? 'wild (25%)' : p + '%';
+  };
 
   const saved = U.store.get('ss.settings', null) || {};
   const s = Object.assign({}, DEF, saved);
@@ -84,7 +97,7 @@
 
   const subs = [];
   const Settings = {
-    DEF, KEY_LABELS, CATCHUP, s,
+    DEF, KEY_LABELS, CATCHUP, cuPct, cuFrac, cuLabel, s,
     get(k) {
       return s[k];
     },

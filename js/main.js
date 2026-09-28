@@ -192,9 +192,9 @@
     // Extra menu buttons for multiplayer (rendered by menu.js).
     menuButtons() {
       const lc = G.Game.lastClient();
-      let h = `<button class="btn big pink span2" data-act="rooms">🌐 Server list <small>find a room from any classroom — or host your own</small></button>
-               <button class="btn big pink" data-act="host">👥 Host <small>open a room · up to 8 drivers</small></button>
-               <button class="btn big pink" data-act="join">🔗 Join <small>with a room code</small></button>`;
+      // (v5.5.7: the separate Host and Join buttons went - the server list
+      //  does both, with "Host a room" and "Join with a code" at the bottom)
+      let h = `<button class="btn big pink span2" data-act="rooms">${G.ic('globe')} Play online <small>server list · join a room, host your own, or type a room code</small></button>`;
       if (lc) h += `<button class="btn ghost span2" data-act="rejoin">↻ Rejoin <b>${U.esc(lc.code)}</b> <small>as ${U.esc(lc.name)}</small></button>`;
       return h;
     },
@@ -441,12 +441,12 @@
       const lvl = G.Settings.s.botLevel;
       for (let k = 0; k < (opts.bots || 0); k++) {
         const f = this._botField()[k % 8];
-        ents.push({ id: 'bot' + k, name: f.name, carId: f.carId, color: G.CarModel.PALETTE[(k + 1) % 8], parts: f.parts, wear: {}, look: f.look, bot: { skill: G.BotKit.skillFor(lvl), level: lvl } });
+        ents.push({ id: 'bot' + k, name: f.name, carId: f.carId, color: G.CarModel.PALETTE[(k + 1) % 8], parts: f.parts, wear: {}, look: f.look, bot: { skill: G.BotKit.skillFor(lvl), level: lvl, traits: f.traits } });
       }
       const quick = !!opts.quick;
       if (quick && ents.length > 3) ents.splice(3, 0, ents.shift()); // you start mid-pack
       // catch-up only in real (quick) races, at the player's chosen strength
-      const catchup = quick ? G.Settings.CATCHUP[G.Settings.s.catchup] || 0 : 0;
+      const catchup = quick ? G.Settings.cuFrac(G.Settings.s.catchup) : 0;
       // v5.1: Endurance Park is always the long race; the other circuits with
       // a pit lane sometimes are (def.enduChance), rolled as the race starts.
       const enduNow = quick && (track.def.endurance || (track.def.enduChance && Math.random() < track.def.enduChance));
@@ -568,18 +568,45 @@
 
     musicFor() {
       const race = G.Settings.s.raceMusic ? this.raceSong() : null;
-      if (this.mode === 'menu') return 'menu';
-      if (this.mode === 'garage') return 'garage';
+      const st = G.Client.state;
+      const racing = this.mode === 'drive' || (this.mode === 'session' && st && st.phase === 'race');
+      const pin = G.Audio.Music.pinned;
+      if (pin && !racing) return pin; // v5.5.7: the song picked in the music player
+      if (this.mode === 'menu') return this.menuSong();
+      if (this.mode === 'garage') return this.garageSong();
       if (this.mode === 'drive') return race;
       if (this.mode === 'session') {
-        const st = G.Client.state;
         if (!st) return 'menu';
         if (st.phase === 'race') return race;
         if (st.phase === 'final') return 'final';
-        if (['intermission', 'results', 'entry', 'betting'].includes(st.phase)) return 'garage';
+        if (['intermission', 'results', 'entry', 'betting'].includes(st.phase)) return this.garageSong();
         return 'menu';
       }
       return null;
+    },
+
+    // v5.5.8: the title theme and the lounge take turns on the menu (a new
+    // one each time you come back to it)
+    menuSong() {
+      const now = performance.now();
+      if (this._msIdx == null) this._msIdx = 0;
+      else if (now - (this._msLast || 0) > 2000) this._msIdx = (this._msIdx + 1) % 2;
+      this._msLast = now;
+      return ['menu', 'welcome'][this._msIdx];
+    },
+
+    // v5.5.7 the garage playlist (audio.js CHILL): the old garage theme on
+    // the first visit, the next song on each visit after that (a race in
+    // between, the menu...), and the next one anyway after ~3 minutes. Or
+    // the one picked in Settings -> Music.
+    garageSong() {
+      const M = G.Audio.Music, list = M.CHILL, pick = G.Settings.s.garageSong;
+      if (pick && pick !== 'mix' && list.includes(pick)) return pick;
+      const now = performance.now();
+      if (this._gsIdx == null) this._gsIdx = 0;
+      else if (now - (this._gsLast || 0) > 2000 || (M.cur === list[this._gsIdx] && M.age() > 180)) this._gsIdx = (this._gsIdx + 1) % list.length;
+      this._gsLast = now;
+      return list[this._gsIdx];
     },
 
     // v5: a song to suit the race — synthwave at night, breakbeat on the
@@ -591,7 +618,10 @@
       if (endu) return 'endurance';
       if (!tr) return 'race';
       const th = tr.theme;
-      if (th.night || (this.world.env && this.world.env.night > 0.6)) return 'night';
+      if (th.song && th.night) return th.song; // v5.5.8: a night track with a song of its own (the Megastore, Harrow City)
+      // v5.5.8: more than one song for most tracks - each track keeps its own
+      const pick = (list) => list[(U.hashStr(tr.id) >>> 0) % list.length];
+      if (th.night || (this.world.env && this.world.env.night > 0.6)) return pick(['night', 'nightline']);
       if (th.song) return th.song; // v5.1: the theme asked for one
       if (this._songTrack !== tr) {
         // (asked every frame: work out the loose share once per track)
@@ -600,7 +630,7 @@
         this._songTrack = tr;
         this._songLoose = loose / (tr.N / 8) > 0.25 || th.props === 'forest' || th.trees === 'cactus';
       }
-      return this._songLoose ? 'rally' : 'race';
+      return this._songLoose ? 'rally' : pick(['race', 'sunsetdrive', 'nightline']);
     },
 
     // ---------------------------------------------------------------- loop

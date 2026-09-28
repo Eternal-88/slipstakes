@@ -49,6 +49,17 @@
     frost: { ground: 0xe9eff6, ground2: 0xdfe7f1, hill: 0xf3f7fb, patch: 0xd3e0ec, runoff: 'grass', sky: 0xb9d6f2, fog: 0xe0ecf7, trees: 'pine', props: 'forest', wall: [0x2f6bff, 0xf4f4f4], mtn: 0x9cb1c6, snow: 1, hills: 1.5, sunCol: 0xfff2e2, sunI: 1.8, hemiI: 2.1, hemiSky: 0xeaf3ff, fogNear: 170, fogFar: 560, todTo: 0.7 },
     rail: { song: 'street', ground: 0x807b6c, ground2: 0x747062, hill: 0x8b8676, patch: 0x6e6556, runoff: 'concrete', sky: 0xf0a474, fog: 0xf2c3a0, trees: 'none', props: 'scrap', wall: [0xffc400, 0x1b1d22], mtn: 0x6b6072, sunCol: 0xffb474, sunI: 1.85, hemiI: 1.45, hemiSky: 0xffd8bc, fogNear: 160, fogFar: 560, lamps: 1, todTo: 0.85, tufts: 'dry' },
     ash: { ground: 0x4c4549, ground2: 0x443e42, hill: 0x5b5053, patch: 0x6e3c2c, runoff: 'gravel', sky: 0xd4805e, fog: 0xca8b6e, trees: 'none', props: 'rocks', wall: [0xff5a1f, 0x2a2426], mtn: 0x3b3036, hills: 2.1, surfCol: { gravel: [0x5c5357, 0x544b4f] }, sunCol: 0xffb484, sunI: 1.95, hemiI: 1.3, hemiSky: 0xffc8a4, fogNear: 140, fogFar: 520, tufts: 'dry' },
+    // v5.5.8 themes. indoor: no sun, moon or stars (a roof somewhere up in
+    // the fog). nightLight: the ambient light at night instead of moonlight
+    // (a store's ceiling panels, a burning city's glow). stand: 0 = no
+    // grandstand and crowd at the start (nobody came to watch). rocks: 0 =
+    // no boulders scattered about.
+    store: { song: 'megastore', ground: 0xa6aaaf, ground2: 0xa1a5aa, hill: 0xa6aaaf, patch: 0x9da1a6, runoff: 'concrete', sky: 0x44536a, fog: 0x51617a, trees: 'none', rocks: 0, props: 'store', wall: [0xffc400, 0x1f4fbd], night: 1, indoor: 1, stand: 0, hills: 0, fogNear: 50, fogFar: 300,
+      nightLight: { hemiSky: 0xb4c4e2, hemiI: 1.3, sunCol: 0xe2eaff, sunI: 0.5 }, surfCol: { tarmac: [0xcbcdd0, 0xc6c8cb], concrete: [0xbcbfc3, 0xb6b9bd] } },
+    deadcity: { song: 'evacuation', ground: 0x2b2f34, ground2: 0x272b30, hill: 0x2f3338, patch: 0x33302c, runoff: 'concrete', sky: 0x1a2227, fog: 0x1f282d, trees: 'none', rocks: 0, props: 'deadcity', puddle: 0x3d4c5c, wall: [0xff7a1a, 0xe6e2d8], night: 1, rain: 1, neon: 1, lamps: 1, stand: 0, hills: 0, fogNear: 60, fogFar: 380,
+      nightLight: { hemiSky: 0x6a8292, hemiI: 1.15, sunCol: 0xa9c2d2, sunI: 0.45 }, surfCol: { tarmac: [0x34383e, 0x31353b], wet: [0x2a3036, 0x272c32], concrete: [0x4a4f55, 0x454a50] } },
+    southvalley: { song: 'southvalley', ground: 0xc9ad6e, ground2: 0xc0a466, hill: 0xcdb27a, patch: 0x94a85c, runoff: 'grass', sky: 0x8ccbf2, fog: 0xd9e7ef, trees: 'none', rocks: 0, props: 'suburb', wall: [0xf2efe6, 0xa3a8ae], mtn: 0xae9058, sunCol: 0xfff0d2, sunI: 2.4, hemiI: 1.7, hills: 0.5, fogNear: 280, fogFar: 950, tufts: 'dry',
+      surfCol: { concrete: [0xc9c6bd, 0xc2bfb6] } },
     endu: { ground: 0x78b862, ground2: 0x68a655, hill: 0x8cc472, patch: 0xb9cc72, runoff: 'grass', sky: 0x9cd4ff, fog: 0xd2ecff, trees: 'round', props: 'stands', wall: [0x14b8a6, 0xf4f1e8], mtn: 0x809fa8, tufts: 'grass', todTo: 1, lamps: 1, fogNear: 190, fogFar: 600 },
   };
 
@@ -448,7 +459,7 @@
       // 350 m of real ice with a kink in it, and the wind coming off the lake.
       // Tarmac everywhere else, so it is a question of how much you dare on
       // the ice and what it costs you on the way out.
-      id: 'frost', name: 'Frostbite Lake', format: 'circuit', laps: 3, theme: 'frost', runoff: 7, isNew: 1,
+      id: 'frost', name: 'Frostbite Lake', format: 'circuit', laps: 3, theme: 'frost', runoff: 7,
       blurb: 'A winter circuit round a frozen lake - and straight across it on a causeway of sheet ice, with the wind coming off the water. Tarmac everywhere else. How brave are you on the ice?',
       pts: [
         [0, 0, { w: 7.5, s: 'tarmac', kerb: 1 }],
@@ -473,7 +484,7 @@
       // crosses the main line twice - once on the start straight and once
       // across the top. The trains run to a timetable: beat one across or
       // sit at the lights and watch the leaders get away.
-      id: 'freight', name: 'Freight Yard', format: 'circuit', laps: 3, theme: 'rail', runoff: 4, isNew: 1,
+      id: 'freight', name: 'Freight Yard', format: 'circuit', laps: 3, theme: 'rail', runoff: 4,
       blurb: 'A freight yard at dusk. The circuit crosses the main line twice, and the trains do not stop for anybody: beat one across the crossing, or sit at the flashing lights while the leaders get away.',
       pts: [
         [0, 0, { w: 7.5, s: 'tarmac', kerb: 1 }],
@@ -498,7 +509,7 @@
       // v5.4: down the side of a live volcano. Loose ash and gravel in two
       // long sections, lava bombs raining into the road in two zones, and a
       // crosswind on the crater rim at the top.
-      id: 'ashfall', name: 'Ashfall Ridge', format: 'sprint', theme: 'ash', runoff: 5, startAt: 40, finishBack: 150, isNew: 1,
+      id: 'ashfall', name: 'Ashfall Ridge', format: 'sprint', theme: 'ash', runoff: 5, startAt: 40, finishBack: 150,
       blurb: 'Flat out down the side of a live volcano: a crosswind on the crater rim, two long runs on loose ash, and lava bombs raining into the road. Keep your eyes on the shadows.',
       pts: [
         [0, -40, { w: 7, s: 'tarmac', kerb: 1, y: 60 }],
@@ -521,13 +532,107 @@
         { k: 'boost', x: 480, z: 1780, lat: 0 },
       ],
     },
+    {
+      // v5.5.8: the endless store after closing time (a nod to 3008). A grid
+      // of wide concrete aisles between showroom islands, pillars that go up
+      // into the fog, price signs hanging on wires, the ceiling panels on.
+      id: 'megastore', name: 'Megastore', format: 'circuit', laps: 2, theme: 'store', runoff: 4, isNew: 1,
+      blurb: 'An endless furniture store after closing time. Square corners between the showrooms, pillars that vanish into the fog where the ceiling should be - and somebody has just mopped the floor.',
+      pts: [
+        [0, 0, { w: 7.5, s: 'tarmac', kerb: 0 }],
+        [300, 0, { r: 22 }],
+        [300, 120, { r: 18 }],
+        [180, 120, { r: 18 }],
+        [180, 240, { r: 18 }],
+        [360, 240, { r: 22 }],
+        [360, 420, { r: 24 }],
+        [-120, 420, { r: 22 }],
+        [-120, 300, { r: 18 }],
+        [-60, 300, { r: 16 }],
+        [-60, 180, { r: 16 }],
+        [-180, 180, { r: 20 }],
+        [-180, 0, { r: 22 }],
+      ],
+      hazards: [
+        { k: 'water', x: 360, z: 300, len: 18, hw: 6 },
+        { k: 'oil', x: -180, z: 90, lat: 1.5, len: 10, hw: 2.4 },
+        { k: 'boost', x: 100, z: 420, lat: 2 },
+      ],
+    },
+    {
+      // v5.5.8: a city that emptied overnight. Wet tarmac all the way round,
+      // an elevated railway over the start straight, fires, wrecks and
+      // barricades in the side streets.
+      id: 'harrow', name: 'Harrow City', format: 'circuit', laps: 2, theme: 'deadcity', runoff: 3.5, isNew: 1,
+      blurb: 'A city that emptied overnight: rain, fires, abandoned police cars and barricades, and the elevated railway still running over the start. Standing water on the avenue and the back street - lift before you get there.',
+      pts: [
+        [0, 0, { w: 7, s: 'tarmac', kerb: 0 }],
+        [260, 0, { r: 20 }],
+        [260, 140, { r: 18 }],
+        [140, 140, { r: 18 }],
+        [140, 260, { r: 20, s: 'wet' }],
+        [330, 260, { r: 24 }],
+        [380, 400, { r: 24, s: 'tarmac' }],
+        [200, 460, { r: 20 }],
+        [40, 460, { r: 18 }],
+        [40, 340, { r: 18 }],
+        [-80, 340, { r: 20, s: 'wet' }],
+        [-80, 200, { r: 20 }],
+        [-160, 120, { r: 24, s: 'tarmac' }],
+        [-120, 0, { r: 22 }],
+      ],
+      hazards: [
+        { k: 'water', x: 140, z: 200, len: 20, hw: 7 },
+        { k: 'barrels', x: 300, z: 262, lat: 2.6, r: 0.95 },
+        { k: 'barrels', x: -80, z: 270, lat: -2.6, r: 0.95 },
+        { k: 'oil', x: 120, z: 460, lat: -1.4, len: 10, hw: 2.4 },
+        { k: 'boost', x: 150, z: 0, lat: -2 },
+      ],
+      // (trackmesh.js: the elevated railway, from/to in world metres)
+      elRail: [[90, -120, 90, 300], [-160, 400, 300, 400]],
+    },
+    {
+      // v5.5.8: up the South Valley, from a Gilroy neighbourhood to downtown
+      // Morgan Hill: tract homes, then Monterey Road through the San Martin
+      // farmland (vineyards, garlic, oaks on golden hills, the afternoon
+      // wind), then Morgan Hill with El Toro over the rooftops.
+      id: 'southvalley', name: 'El Toro Run', format: 'sprint', theme: 'southvalley', runoff: 3, startAt: 40, finishBack: 150, isNew: 1,
+      blurb: 'A sprint up the South Valley: through a Gilroy neighbourhood, out along Monterey Road past the vineyards and garlic fields of San Martin (mind the afternoon wind), and into downtown Morgan Hill under El Toro.',
+      pts: [
+        [0, -40, { w: 6, s: 'tarmac', kerb: 0, y: 0, ro: 3, rs: 'concrete' }],
+        [0, 120, { r: 18 }],
+        [-110, 130, { r: 16 }],
+        [-120, 260, { r: 20, y: 1 }],
+        [-40, 340, { r: 30, y: 2 }],
+        [-60, 460, { r: 26, y: 2 }],
+        [40, 540, { r: 18, y: 3 }],
+        [40, 700, { r: 60, y: 3, w: 7, ro: 8, rs: 'grass' }],
+        [70, 1100, { r: 160, y: 5 }],
+        [30, 1500, { r: 120, y: 6 }],
+        [30, 1700, { r: 20, y: 6, w: 6, ro: 3, rs: 'concrete' }],
+        [160, 1720, { r: 18, y: 6 }],
+        [170, 1850, { r: 16, y: 7 }],
+        [80, 1900, { r: 18, y: 7 }],
+        [90, 2050, { r: 40, y: 8 }],
+        [90, 2250, { y: 8 }],
+        [90, 2400, { y: 8 }],
+      ],
+      hazards: [
+        { k: 'water', x: -115, z: 200, lat: -2.5, len: 10, hw: 3 },
+        { k: 'water', x: 40, z: 600, lat: 2, len: 8, hw: 3 },
+        { k: 'wind', x: 50, z: 1000, len: 220, str: 5, period: 4.5 },
+        { k: 'boost', x: 60, z: 900, lat: 0 },
+        { k: 'mud', x: 55, z: 1250, lat: 2, len: 10, hw: 2.5 },
+        { k: 'oil', x: 40, z: 1400, lat: -1.2, len: 10, hw: 2.4 },
+      ],
+    },
   ];
 
   // (endurance: this track is ALWAYS raced as an endurance race. enduChance:
   //  the odds it is run as one this time. Either way that means enduLaps laps
   //  with fuel, tyre wear and a pit box at pit {at, side, len}.)
   // Format rotation: never the same format twice in a row, cycles all tracks.
-  const ROTATION = ['harbour', 'canyon', 'quarter', 'dustbowl', 'serpent', 'rainline', 'saltflat', 'pine', 'city', 'summit', 'coast', 'scrap', 'mile', 'neon', 'tour', 'endu', 'frost', 'freight', 'ashfall'];
+  const ROTATION = ['harbour', 'canyon', 'quarter', 'dustbowl', 'serpent', 'rainline', 'saltflat', 'harrow', 'pine', 'city', 'summit', 'coast', 'scrap', 'mile', 'neon', 'tour', 'endu', 'frost', 'freight', 'ashfall', 'megastore', 'southvalley'];
   // v5.1: tracks that can turn into an endurance race, and the one that always is
   const ENDURANCE = ROTATION.filter((id) => {
     const d = TRACKS.find((t) => t.id === id);

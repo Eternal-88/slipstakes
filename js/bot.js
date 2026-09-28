@@ -10,12 +10,26 @@
   const SIDE_ROOM = 2.05;
   const U = G.U;
   // v4.4: 40 names (was 8). BotKit (below) shuffles them per session.
+  // v5.5.7: 140 (a full room of bots rarely repeats a name all week).
   const NAMES = [
     'Dash Rivera', 'Ada Lockwood', 'Sprocket', 'Nina Volt', 'Grit McCall', 'Tex Tarmac', 'Juno Apex', 'Rook Hart',
     'Mika Sato', 'Big Lou', 'Pixel Pete', 'Rosa Blaze', 'Diesel Dee', 'Zara Quick', 'Otto Burn', 'Kai Drift',
     'Luna Nitro', 'Ivy Torque', 'Gus Gearbox', 'Penny Piston', 'Rex Redline', 'Skye Slide', 'Bruno Boost', 'Cleo Clutch',
     'Axel Grind', 'Maya Mach', 'Hank Hairpin', 'Tilly Turbo', 'Vic Vroom', 'Jade Gravel', 'Frankie Flag', 'Olga Oval',
     'Nico Nuts', 'Sunny Spoiler', 'Wes Wheelie', 'Bea Burnout', 'Ty Rewind', 'Echo Exhaust', 'Moe Mudflap', 'Quinn Kerb',
+    'Cody Camber', 'Tessa Tread', 'Manny Manifold', 'Rocco Rally', 'Sasha Shift', 'Dex Downforce', 'Polly Pitlane', 'Ike Intercooler',
+    'Wren Wishbone', 'Barney Brakes', 'Fern Flywheel', 'Gino Grip', 'Holly Hatchback', 'Iggy Ignition', 'Lola Lapchart', 'Marco Mudguard',
+    'Nell Nosecone', 'Oscar Oversteer', 'Uma Understeer', 'Pablo Paddock', 'Rae Radiator', 'Stan Stopwatch', 'Tara Throttle', 'Vince Valvetrain',
+    'Willa Wheelspin', 'Xander Axle', 'Yuki Yaw', 'Zeke Zero', 'Ava Airbox', 'Benny Bumper', 'Cora Chicane', 'Duke Diff',
+    'Ellie Esses', 'Finn Flatout', 'Gemma Gearshift', 'Hugo Hotlap', 'Isla Inside', 'Jax Jumpstart', 'Kiki Kickdown', 'Leo Launch',
+    'Milo Mirror', 'Nadia Nightrun', 'Ollie Octane', 'Priya Podium', 'Quill Quickshift', 'Remy Revs', 'Suki Sidedraft', 'Theo Tailwind',
+    'Una Uphill', 'Val Vapour', 'Wade Wastegate', 'Yara Yellowflag', 'Zoe Zigzag', 'Arlo Armco', 'Birdie Backfire', 'Cass Coilover',
+    'Dino Dyno', 'Effie Enduro', 'Greta Gravel', 'Harvey Handbrake', 'Ines Idle', 'Jojo Jackstand', 'Kofi Clutchkick', 'Lenny Lug-nut',
+    'Mabel Mileage', 'Nate Neutral', 'Opal Overtake', 'Percy Pushrod', 'Rosie Rollcage', 'Sid Slicks', 'Tomas Toe-in', 'Ursula Upshift',
+    'Vera Vortex', 'Wally Wing', 'Xena Xenon', 'Yusuf Yump', 'Zelda Zoom', 'Amir Airjack', 'Bella Blip', 'Carlos Crankcase',
+    'Daisy Drafting', 'Emil Endplate', 'Freya Fastline', 'Gio Gridslot', 'Hana Heat', 'Ivan Inlap', 'June Jetwash', 'Kira Kerbhop',
+    'Lars Leadfoot', 'Mina Monocoque', 'Noor Nightlap', 'Otis Outlap', 'Pia Powerband', 'Rafa Redzone', 'Sami Scrutineer', 'Tilda Tyrewall',
+    'Umar Undercut', 'Vito Velocity', 'Winnie Warmup', 'Yves Yardstick',
   ];
 
   // v5: difficulty levels — the single-player picker, and the host's room
@@ -47,10 +61,17 @@
     // opts.aggressive: no traction control, only catches big slides. Used by the
     // garage preview so a wild build is SHOWN being wild instead of masked.
     // opts.level: a LEVELS key (default normal)
+    // opts.traits: this driver's own habits (BotKit.traits) - a touch later or
+    //   earlier on the brakes, tidier or looser lines, more or fewer mistakes,
+    //   and rival: 'auto' (the level's odds) | 'on' | 'off'
     constructor(skill, seed, opts) {
       this.skill = skill; // 0.74 .. 1.02
       this.aggressive = !!(opts && opts.aggressive);
-      this.L = levelOf(opts && opts.level);
+      const T = (this.T = Object.assign({ brake: 0, line: 0, mistake: 1, rival: 'auto' }, (opts && opts.traits) || {}));
+      this.L = Object.assign({}, levelOf(opts && opts.level)); // (a copy: the traits shift it for this driver only)
+      this.L.brake = U.clamp(this.L.brake + (+T.brake || 0), 0.5, 0.78);
+      this.L.line = U.clamp(this.L.line + (+T.line || 0), 0, 1);
+      this.L.mistake = U.clamp(this.L.mistake * (T.mistake > 0 ? +T.mistake : 1), 0, 0.5);
       this.rng = U.rng(seed || 1);
       this.wander = (this.rng() - 0.5) * 3;
       // each bot's own take on the racing line (a whole field on one line
@@ -533,9 +554,22 @@
     storm: [['gbturbo', 'small'], ['gbturbo', 'big']],
   };
   const STYLE_KEYS = Object.keys(STYLES);
+  const STYLE_NAMES = { grip: 'Grip', power: 'Power', rally: 'Rally', light: 'Lightweight', drag: 'Drag', allround: 'All-rounder' };
+  // v5.5.7: what each style likes its car to SOUND like (Parts.LOOK tone /
+  // over / bov / idle / lim). These are tastes: a sound needs its hardware
+  // (audio.js checks), so a power bot's bangs arrive with its straight pipe.
+  const SOUND_TASTE = {
+    grip: { tone: ['stock', 'rasp', 'deep'], over: ['stock', 'crackle', 'quiet'], bov: ['stock', 'atmo'], idle: ['stock'], lim: ['soft', 'hard'] },
+    power: { tone: ['deep', 'loud', 'stock'], over: ['bangs', 'burble', 'crackle'], bov: ['atmo', 'flutter'], idle: ['lope', 'stock'], lim: ['hard', 'soft'] },
+    rally: { tone: ['rasp', 'loud'], over: ['bangs', 'crackle'], bov: ['flutter', 'atmo'], idle: ['stock', 'lope'], lim: ['hard'] },
+    light: { tone: ['rasp', 'stock'], over: ['crackle', 'stock'], bov: ['atmo', 'stock'], idle: ['stock'], lim: ['hard', 'soft'] },
+    drag: { tone: ['loud', 'deep'], over: ['bangs', 'burble'], bov: ['flutter', 'atmo'], idle: ['lope'], lim: ['hard'] },
+    allround: { tone: ['stock', 'deep', 'rasp', 'loud'], over: ['stock', 'crackle', 'burble', 'bangs', 'quiet'], bov: ['stock', 'atmo', 'flutter'], idle: ['stock', 'stock', 'lope'], lim: ['soft', 'hard'] },
+  };
   const pick = (list, rnd) => list[Math.floor(rnd() * list.length)];
   const BotKit = {
     STYLES,
+    STYLE_NAMES,
     NAMES,
     LEVELS,
     LEVEL_ORDER,
@@ -584,6 +618,34 @@
         glowFx: pick(L.glowFx, rnd)[0],
       });
     },
+    // v5.5.7 the sound this driver likes (see SOUND_TASTE)
+    sound(style, rnd) {
+      rnd = rnd || Math.random;
+      const T = SOUND_TASTE[style] || SOUND_TASTE.allround, o = {};
+      for (const k in T) o[k] = pick(T[k], rnd);
+      return o;
+    },
+    // v5.5.7 habits: small, and even either side of the level's own numbers,
+    // so a level's field is as quick as before - it just isn't eight copies
+    traits(rnd) {
+      rnd = rnd || Math.random;
+      const r = () => rnd() * 2 - 1;
+      return { brake: +(r() * 0.015).toFixed(3), line: +(r() * 0.12).toFixed(2), mistake: +(0.75 + rnd() * 0.5).toFixed(2), rival: 'auto' };
+    },
+    // "brakes late, tidy" - for the lobby and the console
+    traitText(t) {
+      if (!t) return '';
+      const out = [];
+      if (t.brake > 0.007) out.push('brakes late');
+      else if (t.brake < -0.007) out.push('brakes early');
+      if (t.line > 0.06) out.push('neat lines');
+      else if (t.line < -0.06) out.push('wanders');
+      if (t.mistake < 0.85) out.push('tidy');
+      else if (t.mistake > 1.15) out.push('scrappy');
+      if (t.rival === 'on') out.push('always a rival');
+      else if (t.rival === 'off') out.push('never a rival');
+      return out.join(', ');
+    },
     // Parts off the style's shopping list that fit `budget` (some bots stop early).
     parts(style, budget, rnd, carId) {
       rnd = rnd || Math.random;
@@ -623,7 +685,7 @@
         const prem = S.premium ? (S.premium.filter(suits).length ? S.premium.filter(suits) : S.premium) : [];
         const carId = prem.length && rnd() < Lv.premium ? pick(prem, rnd) : this.car(style, rnd);
         const budget = Lv.budget * (0.6 + 0.4 * rnd());
-        return { name, style, carId, look: this.look(rnd), parts: this.parts(style, budget, rnd, carId).parts };
+        return { name, style, carId, look: Object.assign(this.look(rnd), this.sound(style, rnd)), parts: this.parts(style, budget, rnd, carId).parts, traits: this.traits(rnd) };
       });
     },
   };

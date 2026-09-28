@@ -808,16 +808,23 @@
       // fall from 0.45 to 0.25 inside one frame, which it never does (it
       // decays over a tenth of a second): the valve you picked was never
       // heard at all, in the race or in the garage.
+      //
+      // v5.5.7: ...and a lift is now "the pedal was down within the last 0.4 s
+      // and is up now". The physics eases the pedal, so a real lift takes
+      // several frames; the old test wanted all of it inside ONE frame, which
+      // only the garage's Listen ever did (it drops the pedal instantly). In a
+      // race the valve, the lift crackle, burble and bangs almost never fired.
+      const lift = this._liftCheck(thr);
       this._bPk = Math.max(b, (this._bPk || 0) * Math.exp(-dt / 0.35));
-      if (kind === 'turbo' && this._lastThr > 0.45 && thr < 0.15 && this._bPk > 0.28 && performance.now() - (this._bovT || 0) > 350) {
+      if (kind === 'turbo' && lift && this._bPk > 0.28 && performance.now() - (this._bovT || 0) > 350) {
         this._bovT = performance.now();
         this.bov(ms.bov, big, master * (0.55 + 0.45 * Math.min(1, this._bPk)), null, prof);
       }
-      if (kind === 'sc' && this._lastThr > 0.6 && thr < 0.15 && rpm > 0.4) this.noiseHit(0.3, 1800, 0.08 * master, 'bandpass', 'sfx', 0, 600, 0.8);
+      if (kind === 'sc' && lift && rpm > 0.4) this.noiseHit(0.3, 1800, 0.08 * master, 'bandpass', 'sfx', 0, 600, 0.8);
       this._lastBoost = b;
       // overrun crackle (free-flowing exhausts), backfire pops on shifts
       const pops = ms.pops;
-      const lifting = this._lastThr > 0.6 && thr < 0.15 && rpm > 0.5;
+      const lifting = lift && rpm > 0.45;
       if (lifting) this._ovT = performance.now(); // an overrun starts HERE and is over in a couple of seconds
       if (thr > 0.25) this._ovT = 0; // back on the throttle: it is over now
       if (lifting && pops > 0 && !ms.crackle && !ms.burble) (ms.bang ? this.bangBurst(master, null, prof) : this.crackle(pops, master, false, null, prof));
@@ -980,6 +987,8 @@
     othersUpdate(cars, lx, lz, lyaw, lvx, lvz, skipId) {
       if (!this.ok()) return;
       const t = this.ctx.currentTime;
+      const nowO = performance.now(), dt = Math.min(0.1, (nowO - (this._oT || nowO)) / 1000);
+      this._oT = nowO;
       this._lx = lx;
       this._lz = lz;
       // The (up to) 5 nearest within 150 m, by insertion into reused arrays.
@@ -1090,7 +1099,8 @@
         // straight pipes / race maps crackle as they lift past you
         // (at most every 0.7 s per car: a bot's throttle flickers, and each
         // lift used to fire another burst of pops)
-        if (!prof.ev && oms.pops > 0.4 && v.lt > 0.5 && !rs.thr && fall > 0.2 && performance.now() - (v.crT || 0) > 700) {
+        const liftNow = this._liftCheck(rs.thr || 0, v); // (v5.5.7: as for your own car - their pedal eases up too)
+        if (!prof.ev && oms.pops > 0.4 && liftNow && fall > 0.2 && performance.now() - (v.crT || 0) > 700) {
           v.crT = performance.now();
           if (oms.bang) this.bangBurst(fall * 0.8, 'others', prof);
           else if (oms.burble) this.burbleBurst(fall * 0.8, prof, 'others');
@@ -1106,8 +1116,6 @@
             else this.pop(amp * 1.1, 'others', prof);
           }
         }
-        const liftNow = v.lt > 0.5 && !rs.thr; // (read before it's updated: the valve below needs it)
-        v.lt = rs.thr ? 1 : 0;
         let slip = 0;
         if (rs.slip) for (let i = 0; i < 4; i++) {
           const sf = G.SURF[(rs.surf && rs.surf[i]) || 0];
@@ -1146,7 +1154,7 @@
           v.w.frequency.setTargetAtTime(((ind === 't2' ? 1100 : 1750) + bst * (ind === 't2' ? 2300 : 3100)) * (0.85 + 0.15 * rpm) * dop, t, 0.08);
           v.wg.gain.setTargetAtTime(bst * 0.024 * fall, t, 0.06);
           // (v5.5.6: on their lift with boost up - see update())
-          v.bPk = Math.max(bst, (v.bPk || 0) * 0.9);
+          v.bPk = Math.max(bst, (v.bPk || 0) * Math.exp(-dt / 0.35)); // (per second, not per frame)
           if (liftNow && v.bPk > 0.28 && fall > 0.15 && performance.now() - (v.bovT || 0) > 500) {
             v.bovT = performance.now();
             this.bov(oms.bov, ind === 't2', fall, 'others');
@@ -1469,6 +1477,16 @@
         w += 0.07 + Math.random() * 0.12;
       }
     },
+    // v5.5.7 lift detector (see update): true once when the pedal comes up
+    // within 0.4 s of last being properly down. `o` keeps the state (a car).
+    _liftCheck(thr, o) {
+      o = o || this;
+      const now = performance.now();
+      if (thr > 0.5) o._downAt = now;
+      const lift = thr < 0.15 && o._downAt > 0 && now - o._downAt < 400;
+      if (lift) o._downAt = 0;
+      return lift;
+    },
     // v4 garage "Listen": rev the engine with a given build for ~2.4 s —
     // idle blip, a pull to the limiter, then lift (so pops, blow-off and the
     // exhaust's character are all heard). Uses the real engine voice.
@@ -1524,10 +1542,10 @@
     //                 and then a loud bright hiss that falls away
     //   flutter     : no valve, the compressor surges - a fast "stu-tu-tu-tu",
     //                 each chirp lower and further apart as the turbo slows
-    blowoff(m, bus) {
-      const k = m || 1;
-      this.noiseHit(0.32, 1900, 0.2 * k, 'bandpass', bus || 'sfx', 0, 520, 0.8);
-      this.noiseHit(0.22, 3400, 0.05 * k, 'highpass', bus || 'sfx', 0.02, 1800);
+    blowoff(m, bus, big) {
+      const k = m || 1, f = big ? 0.72 : 1; // a big turbo moves more air: a deeper, longer whoosh
+      this.noiseHit(0.32 / f, 1900 * f, 0.2 * k, 'bandpass', bus || 'sfx', 0, 520 * f, 0.8);
+      this.noiseHit(0.22 / f, 3400 * f, 0.05 * k, 'highpass', bus || 'sfx', 0.02, 1800 * f);
     },
     blowoffAtmo(m, bus) {
       const k = m || 1;
@@ -1536,10 +1554,12 @@
       this.noiseHit(0.34, 7200, 0.16 * k, 'highpass', bus || 'sfx', 0.012, 4000);
     },
     // The valve a player picked, with the turbo's own character as the default.
+    // (v5.5.7: 'stock' is the recirculated whoosh on every turbo. A big
+    //  turbo used to flutter on stock too, so picking Flutter changed nothing.)
     bov(kind, big, m, bus) {
       if (kind === 'atmo') return this.blowoffAtmo(m, bus);
       if (kind === 'flutter') return this.flutter(m, bus, big);
-      return big ? this.flutter(m, bus, true) : this.blowoff(m, bus);
+      return this.blowoff(m, bus, big);
     },
     // v5.3 anti-lag / bang tune: a hard crack with real bottom end, not the
     // little pop used for an overrun crackle. Three layers - the body of it,
@@ -1564,16 +1584,61 @@
         else this.pop(k * (0.5 + Math.random() * 0.5), bus, prof, w);
       }
     },
-    // compressor surge: a fast falling "stu-tu-tu-tu" (a big turbo lower)
+    // v5.5.7 compressor surge - "stu-tu-tu-tu". With no valve, the boost
+    // that is left pushes back through the compressor, which stalls and
+    // catches again and again: a burst of air each time, ~20 a second at
+    // first, slowing and fading as the pressure goes (a big turbo lower,
+    // slower and longer). Each burst is a "t" of bright air and a hollow "u"
+    // under it, and the turbo's whistle chops down with it. The old one
+    // fired 38 tiny pitched ticks a second - a short buzz, not a flutter.
     flutter(m, bus, big) {
-      const k = m || 1;
-      let w = 0, f = big ? 1500 : 2100;
-      for (let i = 0; i < 10; i++) {
-        this.noiseHit(0.024, f, 0.36 * k * (1 - i * 0.075), 'bandpass', bus || 'sfx', w, f * 0.8, 6);
-        this.tone(f * 0.5, 0.02, 'sine', 0.05 * k * (1 - i * 0.08), f * 0.42, bus || 'sfx', w);
-        w += 0.026 + i * 0.0035;
-        f *= 0.94;
+      if (!this.ok()) return;
+      const c = this.ctx, k = Math.min(1.4, m || 1), out = this.bus[bus || 'sfx'];
+      const t0 = c.currentTime + 0.005;
+      const src = c.createBufferSource();
+      src.buffer = this.noise;
+      src.loop = true;
+      const body = c.createBiquadFilter(), air = c.createBiquadFilter(), gB = c.createGain(), gA = c.createGain();
+      body.type = 'bandpass';
+      body.Q.value = 2.2;
+      air.type = 'bandpass';
+      air.Q.value = 0.8;
+      air.frequency.value = big ? 2600 : 3300;
+      src.connect(body).connect(gB).connect(out);
+      src.connect(air).connect(gA).connect(out);
+      const wh = c.createOscillator(), gW = c.createGain(); // the whistle, chopped by the surge
+      wh.type = 'sine';
+      wh.connect(gW).connect(out);
+      for (const g of [gB, gA, gW]) g.gain.setValueAtTime(0.0001, t0);
+      // the "s": the throttle snapping shut on a charged pipe
+      gA.gain.linearRampToValueAtTime(0.16 * k, t0 + 0.012);
+      gA.gain.exponentialRampToValueAtTime(0.004, t0 + 0.07);
+      const n = Math.round((big ? 7 : 6) + 4 * Math.min(1, k)); // more boost, more bursts
+      let t = t0 + 0.06, rate = big ? 17 : 22, f = big ? 620 : 900, wf = big ? 2300 : 3400;
+      for (let i = 0; i < n; i++) {
+        const a = k * Math.pow(1 - i / (n + 1), 1.3) * (0.85 + 0.3 * Math.random());
+        const len = 0.55 / rate; // sound for about half the gap, silence for the rest
+        body.frequency.setValueAtTime(f, t);
+        body.frequency.exponentialRampToValueAtTime(f * 0.8, t + len);
+        gB.gain.setValueAtTime(0.0001, t);
+        gB.gain.linearRampToValueAtTime(0.9 * a, t + 0.004);
+        gB.gain.exponentialRampToValueAtTime(0.0008, t + len);
+        gA.gain.setValueAtTime(0.0001, t);
+        gA.gain.linearRampToValueAtTime(0.2 * a, t + 0.002);
+        gA.gain.exponentialRampToValueAtTime(0.0008, t + 0.018);
+        wh.frequency.setValueAtTime(wf, t);
+        gW.gain.setValueAtTime(0.0001, t);
+        gW.gain.linearRampToValueAtTime(0.022 * a, t + 0.005);
+        gW.gain.exponentialRampToValueAtTime(0.0003, t + len * 0.8);
+        t += (1 / rate) * (0.94 + 0.12 * Math.random());
+        rate *= big ? 0.93 : 0.94;
+        f *= 0.965;
+        wf *= 0.95;
       }
+      src.start(t0, Math.random() * 1.2);
+      src.stop(t + 0.1);
+      wh.start(t0);
+      wh.stop(t + 0.1);
     },
     lap() {
       this.tone(1318, 0.14, 'triangle', 0.1);
@@ -1761,6 +1826,649 @@
     street: { bpm: 134, prog: [[50, 53, 57], [57, 60, 64], [48, 52, 55], [55, 58, 62]], drums: 'wave', arp: 1, lead: 1, sections: 1, pump: 1, bright: 1, scale: [0, 3, 5, 6, 10], bassPat: [1, 1, 0, 1, 1, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 0], octBass: 1 },
     // A minor at 116, steady and long-breathed for endurance races
     endurance: { bpm: 116, prog: [[57, 60, 64], [53, 57, 60], [48, 52, 55], [55, 59, 62], [57, 60, 64], [50, 53, 57], [53, 57, 60], [52, 56, 59]], drums: 'drive', arp: 1, lead: 1, sections: 1, pump: 1, scale: [0, 2, 3, 7, 8], bassPat: [1, 0, 1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1, 0] },
+    // v5.5.7 the garage playlist. The user's favourite was the garage theme
+    // above ("that vibe - like the music in 3008"), so four more in the same
+    // world: warm jazz chords played on a Rhodes-style electric piano, soft
+    // kits, a little room reverb, and a tune that is WRITTEN from a motif
+    // (see _melody) rather than dice rolls. Each chord is [bass, voicing...]:
+    // rootless voicings in the middle of the keyboard, the way a jazz
+    // pianist leaves the root to the bass player.
+    //
+    // F major bossa nova at 132: I-VI-ii-V, then the minor iv on the way
+    // home - vibes on the tune, rim clicks and a shaker
+    showroom: { chill: 'bossa', bpm: 132, key: 5, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'vibes', lo: 65, hi: 86 },
+      prog: [[41, 57, 60, 64, 67], [50, 54, 57, 60, 63], [43, 58, 62, 65, 69], [48, 58, 64, 69, 74], [45, 55, 60, 64, 71], [50, 54, 57, 60, 63], [43, 58, 62, 65, 69], [48, 58, 64, 69, 74],
+        [46, 57, 60, 62, 65], [46, 55, 58, 61, 65], [45, 55, 60, 64, 71], [50, 54, 57, 60, 63], [43, 58, 62, 65, 69], [48, 58, 64, 69, 74], [41, 60, 64, 67, 69], [48, 58, 62, 65, 69]] },
+    // C major lo-fi at 78, swung: IV-iii-ii-I, then the E7#9 and a borrowed
+    // bVII - a celesta on the tune, rolled chords, dusty kit, vinyl crackle
+    nightshift: { chill: 'lofi', bpm: 78, swing: 0.3, key: 0, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'bell', lo: 69, hi: 88, sparse: 1 }, crackle: 1,
+      prog: [[41, 57, 60, 64, 67], [40, 55, 59, 62, 66], [38, 53, 57, 60, 64], [48, 52, 55, 59, 62], [41, 57, 60, 64, 67], [40, 56, 59, 62, 67], [45, 55, 59, 60, 64], [46, 57, 60, 62, 64]] },
+    // Eb major smooth funk at 100: IV-iii-ii-V-I-vi-ii-V (no chromatic ninths: every chord sits in the key) with a flute on
+    // the tune, tight kit with ghost notes, a bass that walks about
+    spareparts: { chill: 'funk', bpm: 100, swing: 0.1, key: 3, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'flute', lo: 67, hi: 87 },
+      prog: [[44, 55, 58, 60, 63], [43, 53, 58, 60, 62], [41, 51, 55, 56, 60], [46, 56, 60, 62, 67], [39, 55, 58, 62, 65], [48, 55, 58, 62, 63], [41, 51, 55, 56, 60], [46, 56, 60, 63, 65]] },
+    // Db major at 70, slow and dreamy: I-vi-IV-V, iii-vi-ii and an Ab7b9 that
+    // leaves the door open - pads, the piano rolling in eighths, vibes, brushes
+    closingtime: { chill: 'ballad', bpm: 70, key: 1, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'vibes', lo: 65, hi: 85, sparse: 1 }, pad: 1,
+      prog: [[37, 53, 56, 60, 63], [46, 56, 60, 61, 65], [42, 53, 56, 58, 61], [44, 54, 58, 61, 65], [41, 51, 56, 58, 60], [46, 56, 60, 61, 65], [39, 54, 58, 61, 65], [44, 54, 57, 60, 63]] },
+    // v5.5.8 more of the same band beyond the garage. `race` songs skip the
+    // breakdown (the kit never drops out mid-race) and follow the race's
+    // intensity: hats double up, the filter opens and the tune jumps an
+    // octave on the final lap.
+    //
+    // Bb major store jazz-funk at 112 for the Megastore: vibes on the tune
+    megastore: { chill: 'funk', race: 1, bpm: 112, swing: 0.08, key: 10, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'vibes', lo: 65, hi: 86 },
+      prog: [[46, 57, 60, 62, 65], [43, 53, 57, 58, 62], [48, 55, 58, 62, 63], [41, 51, 57, 62, 67], [50, 53, 55, 57, 60], [43, 53, 57, 58, 62], [51, 55, 58, 62, 65], [41, 51, 55, 58, 60]] },
+    // D minor at 100 for Harrow City: a ticking kit, an ostinato bass, a
+    // celesta and the A7b9 that never quite resolves
+    evacuation: { chill: 'dark', race: 1, bpm: 100, key: 2, scale: [0, 2, 3, 5, 7, 8, 10], lead: { inst: 'bell', lo: 69, hi: 86, sparse: 1 }, pad: 1,
+      prog: [[38, 53, 57, 60, 64], [46, 53, 57, 60, 62], [43, 53, 57, 58, 62], [45, 55, 58, 61, 64], [38, 53, 57, 60, 64], [41, 53, 57, 60, 64], [46, 53, 57, 60, 62], [45, 55, 58, 61, 64]] },
+    // G major at 104 for the South Valley: guitar on the offbeat, a flute
+    southvalley: { chill: 'sunny', race: 1, bpm: 104, swing: 0.12, key: 7, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'flute', lo: 67, hi: 88 },
+      prog: [[43, 54, 57, 59, 62], [40, 54, 55, 59, 62], [48, 55, 59, 62, 64], [50, 55, 57, 60, 64], [47, 54, 57, 59, 62], [40, 54, 55, 59, 62], [45, 55, 59, 60, 64], [50, 54, 57, 60, 64]] },
+    // A major city pop at 118 for any race: four on the floor, claps, octave
+    // bass, electric piano stabs, brass and a synth on the tune
+    sunsetdrive: { chill: 'citypop', race: 1, bpm: 118, key: 9, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'synth', lo: 69, hi: 88 }, brass: 1,
+      prog: [[50, 57, 61, 64, 66], [49, 56, 59, 61, 64], [47, 57, 61, 62, 66], [52, 56, 61, 62, 66], [50, 57, 61, 64, 66], [49, 56, 59, 61, 64], [42, 57, 61, 64, 68], [52, 57, 59, 62, 66]] },
+    // C minor liquid drum and bass at 172 for any race (and the night)
+    nightline: { chill: 'dnb', race: 1, bpm: 172, key: 0, scale: [0, 2, 3, 5, 7, 8, 10], lead: { inst: 'bell', lo: 72, hi: 91, sparse: 1 }, pad: 1,
+      prog: [[48, 58, 62, 63, 67], [44, 55, 58, 60, 63], [41, 55, 56, 60, 63], [43, 53, 56, 59, 63], [48, 58, 62, 63, 67], [51, 55, 58, 62, 65], [44, 55, 58, 60, 63], [43, 53, 55, 60, 62]] },
+    // E major lounge at 86 for the menu (it takes turns with the title theme)
+    welcome: { chill: 'lofi', bpm: 86, swing: 0.2, key: 4, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'vibes', lo: 64, hi: 85, sparse: 1 },
+      prog: [[45, 56, 59, 61, 64], [44, 54, 56, 59, 63], [42, 52, 56, 57, 61], [47, 57, 61, 63, 68], [45, 56, 59, 61, 64], [49, 52, 56, 59, 63], [42, 52, 56, 57, 61], [47, 52, 54, 57, 61]] },
+  };
+  // ======================================================================
+  // v5.5.7 the chill songs (SONGS with `chill`): a second band for the
+  // garage playlist. Same look-ahead scheduler; its own instruments:
+  //   ep     : a Rhodes-style electric piano - FM, a sine bent by another
+  //            sine at the same pitch whose depth dies away (the "bark" of
+  //            the hammer), plus a quiet high tine that rings for a moment
+  //   vibes  : vibraphone - a sine with its fourth-harmonic bar mode, through
+  //            a shared tremolo (the motor-driven fans of a real one)
+  //   bell   : celesta - a soft FM bell
+  //   flute  : breathy triangle with a slow vibrato
+  //   bass   : a round, plucked sine-and-triangle, like an upright or a P-bass
+  //            with the tone rolled off
+  //   pad    : two detuned saws, filtered dark, slow to swell
+  //   kits   : soft kick, rim click, shaker, brushes, a dusty lo-fi snare, hats
+  // Everything goes through a small room reverb (a convolver on noise that
+  // dies away in under two seconds) and a gentle top cut, so it sits back like
+  // a record playing in the next room.
+  // Form, per pass through the chords: intro (piano and bass come in, the
+  // kit joins halfway) -> the tune -> the tune's answer -> a breakdown (kit
+  // down, the piano rolls arpeggios, no tune) -> back to the tune, forever.
+  // ======================================================================
+  const CHILL = ['garage', 'showroom', 'nightshift', 'spareparts', 'closingtime'];
+  // What the music player shows: title, style, where it plays
+  const SONG_INFO = {
+    menu: ['Slipstakes', 'Title theme', 'Main menu'],
+    garage: ['Shop Floor', 'Jazz house', 'Garage and between races'],
+    showroom: ['Showroom', 'Bossa nova', 'Garage and between races'],
+    nightshift: ['Night Shift', 'Lo-fi', 'Garage and between races'],
+    spareparts: ['Spare Parts', 'Smooth funk', 'Garage and between races'],
+    closingtime: ['Closing Time', 'Slow and dreamy', 'Garage and between races'],
+    welcome: ['Welcome In', 'Lounge', 'Main menu'],
+    megastore: ['Aisle Infinity', 'Store jazz-funk', 'Megastore'],
+    evacuation: ['Evacuation', 'Dark and tense', 'Harrow City'],
+    southvalley: ['Garlic Summer', 'Sunny groove', 'El Toro Run'],
+    sunsetdrive: ['Sunset Drive', 'City pop', 'Races'],
+    nightline: ['Night Line', 'Liquid drum and bass', 'Races, day or night'],
+    final: ['Champion', 'Anthem', 'The final standings'],
+    race: ['Green Light', 'Race', 'Races'],
+    night: ['Night Drive', 'Synthwave', 'Night races'],
+    rally: ['Loose Surface', 'Breakbeat', 'Dirt, gravel and snow'],
+    street: ['Wall to Wall', 'Street', 'Street circuits'],
+    endurance: ['Long Haul', 'Steady groove', 'Endurance races'],
+  };
+  // Drum patterns: [step, velocity]. rim: two bars of the bossa clave.
+  const KITS = {
+    bossa: { kick: [[0, 0.8], [6, 0.45], [8, 0.7], [14, 0.45]], rim: [[0, 6, 12], [4, 10]], shaker: 1 },
+    lofi: { kick: [[0, 1], [10, 0.8]], kick2: [[7, 0.45]], snare: [[4, 1], [12, 1]], hat: 16, hatO: 14 },
+    funk: { kick: [[0, 1], [3, 0.5], [8, 0.9], [11, 0.55]], snare: [[4, 1], [12, 1], [7, 0.2], [15, 0.24]], hat: 8, hat16: [13, 15] },
+    ballad: { brush: [4, 12], kick: [[0, 0.5]] },
+    citypop: { kick: [[0, 1], [4, 0.9], [8, 1], [12, 0.9]], clap: [[4, 1], [12, 1]], hat: 16, hatO: [2, 6, 10, 14] },
+    dnb: { kick: [[0, 1], [10, 0.9]], snare: [[4, 1], [12, 1], [7, 0.2], [15, 0.25]], hat: 16 },
+    dark: { kick: [[0, 1], [7, 0.45], [10, 0.8]], snare: [[12, 0.75]], hat: 8, rim: [[3, 11], [3, 11, 14]] },
+    sunny: { kick: [[0, 1], [7, 0.5], [8, 0.9]], snare: [[4, 1], [12, 1]], hat: 8, shaker: 1 },
+  };
+  // Bass lines: [step, semitones above the root, length in steps]
+  const BASS = {
+    bossa: [[0, 0, 5], [6, 7, 2], [8, 0, 5], [14, 7, 2]],
+    lofi: [[0, 0, 6], [7, 0, 2], [10, 7, 5]],
+    funk: [[0, 0, 2], [3, 12, 1], [6, 7, 2], [8, 0, 2], [10, 10, 1], [11, 12, 2], [14, 7, 2]],
+    ballad: [[0, 0, 10], [10, 7, 6]],
+    citypop: [[0, 0, 1], [2, 12, 1], [3, 0, 1], [6, 12, 1], [8, 0, 1], [10, 12, 1], [11, 7, 1], [14, 12, 1]],
+    dnb: [[0, 0, 6], [6, 0, 2], [10, 7, 6]],
+    dark: [[0, 0, 2], [2, 0, 2], [4, 0, 2], [6, 0, 2], [8, 0, 2], [10, 0, 2], [12, 1, 2], [14, 0, 2]],
+    sunny: [[0, 0, 3], [4, 7, 2], [6, 0, 2], [8, 0, 3], [12, 7, 2], [14, 5, 2]],
+  };
+  // How the piano comps: [step, length]. Two bars of each, alternating.
+  const COMP = {
+    bossa: [[[0, 2], [3, 2], [6, 3], [10, 2], [12, 3]], [[2, 2], [6, 2], [8, 3], [11, 2], [14, 2]]],
+    lofi: [[[0, 14]], [[0, 9], [10, 5]]],
+    funk: [[[0, 2], [3, 1], [6, 2], [8, 2], [11, 1], [14, 2]], [[0, 2], [4, 2], [6, 1], [10, 2], [12, 3]]],
+    citypop: [[[2, 1], [6, 1], [10, 1], [14, 1]], [[2, 1], [6, 1], [8, 2], [14, 1]]],
+    dnb: [[[0, 12]], [[0, 6], [8, 7]]],
+    sunny: [[[0, 7], [8, 7]], [[0, 7], [8, 7]]],
+  };
+  // (v5.5.8) the guitar's offbeat chops (sunny) and the brass stabs (citypop)
+  const PLUCK = [[[2, 1], [6, 1], [10, 1], [14, 1]], [[2, 1], [5, 1], [10, 1], [13, 1]]];
+  const BRASS = [[[0, 2], [11, 3]], [[0, 1], [3, 1], [6, 2]]];
+  // Tune rhythms, one bar each: [step, length]. OPEN states a motif,
+  // ANSWER replies to it, CLOSE lands at the end of a phrase.
+  const RH = {
+    open: [[[0, 3], [3, 3], [6, 2], [8, 6]], [[2, 2], [4, 2], [6, 4], [12, 4]], [[0, 6], [6, 2], [8, 2], [10, 6]], [[3, 3], [6, 3], [9, 3], [12, 4]], [[0, 2], [2, 2], [4, 4], [10, 2], [12, 4]]],
+    answer: [[[0, 8], [10, 2], [12, 4]], [[4, 2], [6, 2], [8, 8]], [[0, 4], [6, 4], [12, 4]], [[2, 3], [5, 3], [8, 8]]],
+    close: [[[0, 4], [4, 12]], [[0, 2], [2, 2], [4, 12]], [[0, 16]]],
+  };
+
+  const Chill = {
+    // A tune over the whole chord sequence, written from a motif: the first
+    // bar of each four states it, the third repeats its SHAPE from a note
+    // of the new chord, the second answers and the fourth lands. Long notes
+    // and the first of each bar are chord tones; the notes between walk
+    // through the scale, never a semitone off a note the band is holding.
+    melody(S_, seed) {
+      const rng = U.rng(seed), L = S_.prog.length, out = [];
+      const pick = (a) => a[Math.floor(rng() * a.length)];
+      const scale = S_.scale.map((x) => (x + S_.key) % 12);
+      const { lo, hi } = S_.lead;
+      const rOpen = pick(RH.open), rAns = pick(RH.answer), rAns2 = pick(RH.answer), rClose = pick(RH.close), rEnd = RH.close[2];
+      let prev = Math.round((lo + hi) / 2), motif = null;
+      for (let b = 0; b < L; b++) {
+        const ph = b % 4;
+        const rh = ph === 0 || ph === 2 ? rOpen : ph === 1 ? rAns : b === L - 1 ? rEnd : ph === 3 && b % 8 === 7 ? rClose : rAns2;
+        if (S_.lead.sparse && (ph === 1 || ph === 3) && b !== L - 1 && rng() < 0.45) continue; // room to breathe
+        const ch = S_.prog[b];
+        const pcs = ch.map((m) => m % 12);
+        const tense = (pc) => pcs.some((q) => Math.abs(((pc - q + 18) % 12) - 6) === 5); // a semitone off a chord note
+        const ok = (m, strong) => {
+          const pc = m % 12;
+          return m >= lo && m <= hi && (pcs.includes(pc) || (!strong && scale.includes(pc) && !tense(pc)));
+        };
+        const near = (target, strong) => {
+          let best = null, bd = 1e9;
+          for (let m = lo; m <= hi; m++) {
+            if (!ok(m, strong)) continue;
+            const d = Math.abs(m - target) + (m === prev ? 1.5 : 0) + rng() * 1.2;
+            if (d < bd) (bd = d), (best = m);
+          }
+          return best == null ? prev : best;
+        };
+        const ints = [];
+        for (let i = 0; i < rh.length; i++) {
+          const [s, d] = rh[i];
+          const strong = i === 0 || d >= 4 || s % 8 === 0;
+          let m;
+          if (ph === 2 && motif && motif.length === rh.length && i > 0) m = near(prev + motif[i - 1], strong); // the motif's shape again
+          else if (i === 0) m = near(prev + (rng() < 0.5 ? -2 : 3), true);
+          else m = near(prev + pick([-4, -2, -1, 1, 2, 3, 5]), strong);
+          if (i > 0) ints.push(m - prev);
+          out.push({ at: b * 16 + s, dur: d, m });
+          prev = m;
+        }
+        if (ph === 0) motif = ints;
+      }
+      return out;
+    },
+
+    // --- instruments (t: start, dur: seconds held, v: level)
+    ep(M, m, t, dur, v, dest) {
+      const c = Audio.ctx, f = mtof(m);
+      const car = c.createOscillator(), mod = c.createOscillator(), mg = c.createGain(), tine = c.createOscillator(), tg = c.createGain(), g = c.createGain();
+      car.frequency.value = f;
+      mod.frequency.value = f;
+      // (the bark: louder notes bend harder, and it dies in a moment)
+      mg.gain.setValueAtTime(f * (0.9 + v * 14), t);
+      mg.gain.setTargetAtTime(f * 0.12, t, 0.09);
+      mod.connect(mg).connect(car.frequency);
+      tine.frequency.value = f * 7.02;
+      tg.gain.setValueAtTime(v * 0.05, t);
+      tg.gain.setTargetAtTime(0, t, 0.05);
+      tine.connect(tg).connect(g);
+      const end = t + dur;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.004);
+      g.gain.setTargetAtTime(v * 0.25, t + 0.004, 0.2 + 60 / f); // low notes ring longer
+      g.gain.setTargetAtTime(0.0001, end, 0.09);
+      car.connect(g);
+      g.connect(dest || M.dry);
+      g.connect(M.rev);
+      for (const o of [car, mod, tine]) {
+        o.start(t);
+        o.stop(end + 0.5);
+      }
+    },
+    vibes(M, m, t, dur, v) {
+      const c = Audio.ctx, f = mtof(m);
+      const o = c.createOscillator(), o4 = c.createOscillator(), g = c.createGain(), g4 = c.createGain();
+      o.frequency.value = f;
+      o4.frequency.value = f * 3.99; // the bar's second mode, a hair flat
+      g4.gain.setValueAtTime(v * 0.28, t);
+      g4.gain.setTargetAtTime(0, t, 0.12);
+      o4.connect(g4).connect(g);
+      o.connect(g);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.003);
+      g.gain.setTargetAtTime(v * 0.3, t + 0.003, 0.9);
+      g.gain.setTargetAtTime(0.0001, t + Math.max(dur, 0.6), 0.25); // a mallet note rings past its written length
+      g.connect(M.trem);
+      g.connect(M.rev);
+      if (M.send) g.connect(M.send);
+      const stop = t + Math.max(dur, 0.6) + 1.2;
+      o.start(t);
+      o4.start(t);
+      o.stop(stop);
+      o4.stop(stop);
+    },
+    bell(M, m, t, dur, v) {
+      const c = Audio.ctx, f = mtof(m);
+      const car = c.createOscillator(), mod = c.createOscillator(), mg = c.createGain(), g = c.createGain();
+      car.frequency.value = f;
+      mod.frequency.value = f * 3.5;
+      mg.gain.setValueAtTime(f * 2.4, t);
+      mg.gain.setTargetAtTime(f * 0.3, t, 0.25);
+      mod.connect(mg).connect(car.frequency);
+      car.connect(g);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.002);
+      g.gain.setTargetAtTime(0.0001, t + 0.002, 0.55);
+      g.connect(M.dry);
+      g.connect(M.rev);
+      if (M.send) g.connect(M.send);
+      car.start(t);
+      mod.start(t);
+      car.stop(t + 3);
+      mod.stop(t + 3);
+    },
+    flute(M, m, t, dur, v) {
+      const c = Audio.ctx, f = mtof(m);
+      const o = c.createOscillator(), o2 = c.createOscillator(), g2 = c.createGain(), vib = c.createOscillator(), vg = c.createGain(), g = c.createGain();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      o2.frequency.value = f * 2;
+      g2.gain.value = 0.18;
+      o2.connect(g2).connect(g);
+      vib.frequency.value = 5.1;
+      vg.gain.setValueAtTime(0, t);
+      vg.gain.linearRampToValueAtTime(f * 0.006, t + Math.min(0.5, dur)); // the vibrato comes in as the note settles
+      vib.connect(vg);
+      vg.connect(o.frequency);
+      vg.connect(o2.frequency);
+      o.connect(g);
+      const end = t + dur;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.06);
+      g.gain.setValueAtTime(v, Math.max(t + 0.06, end - 0.08));
+      g.gain.linearRampToValueAtTime(0.0001, end + 0.06);
+      g.connect(M.dry);
+      g.connect(M.rev);
+      if (M.send) g.connect(M.send);
+      // breath: a little filtered air at the start of each note
+      const n = c.createBufferSource(), nf = c.createBiquadFilter(), ng = c.createGain();
+      n.buffer = Audio.noise;
+      nf.type = 'bandpass';
+      nf.frequency.value = f * 2;
+      nf.Q.value = 1.2;
+      ng.gain.setValueAtTime(v * 0.35, t);
+      ng.gain.setTargetAtTime(v * 0.06, t + 0.03, 0.08);
+      ng.gain.setTargetAtTime(0.0001, end, 0.05);
+      n.connect(nf).connect(ng).connect(M.dry);
+      for (const x of [o, o2, vib]) {
+        x.start(t);
+        x.stop(end + 0.2);
+      }
+      n.start(t, Math.random());
+      n.stop(end + 0.2);
+    },
+    brass(M, m, t, dur, v) {
+      const c = Audio.ctx, f = mtof(m), lp = c.createBiquadFilter(), g = c.createGain();
+      lp.type = 'lowpass';
+      lp.Q.value = 1.2;
+      lp.frequency.setValueAtTime(600, t);
+      lp.frequency.linearRampToValueAtTime(2600, t + 0.03); // the blat of the attack
+      lp.frequency.setTargetAtTime(1100, t + 0.04, 0.12);
+      lp.connect(g);
+      const end = t + dur;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.02);
+      g.gain.setTargetAtTime(v * 0.7, t + 0.02, 0.1);
+      g.gain.setTargetAtTime(0.0001, end, 0.05);
+      g.connect(M.dry);
+      g.connect(M.rev);
+      for (const d of [-9, 9]) {
+        const o = c.createOscillator();
+        o.type = 'sawtooth';
+        o.frequency.value = f;
+        o.detune.value = d;
+        o.connect(lp);
+        o.start(t);
+        o.stop(end + 0.3);
+      }
+    },
+    pluck(M, m, t, dur, v) {
+      const c = Audio.ctx, f = mtof(m), o = c.createOscillator(), o2 = c.createOscillator(), hp = c.createBiquadFilter(), g = c.createGain();
+      o.type = 'triangle';
+      o.frequency.value = f;
+      o2.type = 'square';
+      o2.frequency.value = f * 2;
+      const g2 = c.createGain();
+      g2.gain.value = 0.12;
+      hp.type = 'highpass';
+      hp.frequency.value = 220;
+      o.connect(hp);
+      o2.connect(g2).connect(hp);
+      hp.connect(g);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.003);
+      g.gain.setTargetAtTime(0.0001, t + 0.004, 0.07); // a muted chop
+      g.connect(M.dry);
+      g.connect(M.rev);
+      o.start(t);
+      o2.start(t);
+      o.stop(t + 0.5);
+      o2.stop(t + 0.5);
+    },
+    synth(M, m, t, dur, v) {
+      const c = Audio.ctx, f = mtof(m), lp = c.createBiquadFilter(), g = c.createGain(), vib = c.createOscillator(), vg = c.createGain();
+      lp.type = 'lowpass';
+      lp.frequency.value = 2400 + (M.intensity || 0) * 1800;
+      lp.connect(g);
+      vib.frequency.value = 5.6;
+      vg.gain.setValueAtTime(0, t);
+      vg.gain.linearRampToValueAtTime(f * 0.008, t + Math.min(0.4, dur));
+      vib.connect(vg);
+      const end = t + dur;
+      for (const [type, d, lv] of [['sawtooth', -6, 0.6], ['square', 6, 0.4]]) {
+        const o = c.createOscillator(), og = c.createGain();
+        o.type = type;
+        o.frequency.value = f;
+        o.detune.value = d;
+        og.gain.value = lv;
+        vg.connect(o.frequency);
+        o.connect(og).connect(lp);
+        o.start(t);
+        o.stop(end + 0.3);
+      }
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.012);
+      g.gain.setTargetAtTime(v * 0.75, t + 0.012, 0.2);
+      g.gain.setTargetAtTime(0.0001, end, 0.06);
+      g.connect(M.dry);
+      g.connect(M.rev);
+      if (M.send) g.connect(M.send);
+      vib.start(t);
+      vib.stop(end + 0.3);
+    },
+    bass(M, m, t, dur, v, pluck) {
+      const c = Audio.ctx, f = mtof(m);
+      const o = c.createOscillator(), o2 = c.createOscillator(), g2 = c.createGain(), lp = c.createBiquadFilter(), g = c.createGain();
+      o.frequency.value = f;
+      o2.type = 'triangle';
+      o2.frequency.value = f;
+      g2.gain.value = 0.55;
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(900, t);
+      lp.frequency.setTargetAtTime(380, t, 0.08); // the pluck's brightness goes first
+      o.connect(lp);
+      o2.connect(g2).connect(lp);
+      lp.connect(g);
+      const end = t + dur;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + 0.006);
+      g.gain.setTargetAtTime(v * (pluck ? 0.25 : 0.6), t + 0.006, pluck ? 0.28 : 0.9);
+      g.gain.setTargetAtTime(0.0001, end, 0.05);
+      g.connect(M.dry);
+      o.start(t);
+      o2.start(t);
+      o.stop(end + 0.4);
+      o2.stop(end + 0.4);
+    },
+    pad(M, ch, t, dur, v) {
+      const c = Audio.ctx, lp = c.createBiquadFilter(), g = c.createGain();
+      lp.type = 'lowpass';
+      lp.frequency.value = 950;
+      lp.Q.value = 0.4;
+      lp.connect(g);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.linearRampToValueAtTime(v, t + Math.min(1.2, dur * 0.4));
+      g.gain.setValueAtTime(v, t + dur * 0.85);
+      g.gain.linearRampToValueAtTime(0.0001, t + dur + 0.8);
+      g.connect(M.dry);
+      g.connect(M.rev);
+      for (const m of ch) {
+        for (const d of [-7, 7]) {
+          const o = c.createOscillator();
+          o.type = 'sawtooth';
+          o.frequency.value = mtof(m);
+          o.detune.value = d;
+          o.connect(lp);
+          o.start(t);
+          o.stop(t + dur + 1);
+        }
+      }
+    },
+    // soft kit
+    drum(M, kind, t, v) {
+      const c = Audio.ctx;
+      if (kind === 'kick') {
+        const o = c.createOscillator(), g = c.createGain();
+        o.frequency.setValueAtTime(110, t);
+        o.frequency.exponentialRampToValueAtTime(46, t + 0.12);
+        g.gain.setValueAtTime(0.34 * v, t);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
+        o.connect(g).connect(M.dry);
+        o.start(t);
+        o.stop(t + 0.3);
+        return;
+      }
+      const s = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain();
+      s.buffer = Audio.noise;
+      let len = 0.04;
+      if (kind === 'snare') {
+        // (lo-fi: dark and papery, rolled off above 4 kHz)
+        f.type = 'bandpass';
+        f.frequency.value = 1500;
+        f.Q.value = 0.7;
+        len = 0.17;
+        g.gain.setValueAtTime(0.13 * v, t);
+        const lp = c.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 4200;
+        s.connect(f).connect(lp).connect(g);
+        const o = c.createOscillator(), og = c.createGain();
+        o.frequency.setValueAtTime(190, t);
+        o.frequency.exponentialRampToValueAtTime(150, t + 0.05);
+        og.gain.setValueAtTime(0.07 * v, t);
+        og.gain.exponentialRampToValueAtTime(0.0001, t + 0.07);
+        o.connect(og).connect(M.dry);
+        o.start(t);
+        o.stop(t + 0.09);
+        g.connect(M.rev);
+      } else if (kind === 'rim') {
+        const o = c.createOscillator(), og = c.createGain();
+        o.type = 'triangle';
+        o.frequency.value = 1700;
+        og.gain.setValueAtTime(0.06 * v, t);
+        og.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+        o.connect(og).connect(M.dry);
+        og.connect(M.rev);
+        o.start(t);
+        o.stop(t + 0.03);
+        f.type = 'bandpass';
+        f.frequency.value = 3200;
+        f.Q.value = 2;
+        len = 0.015;
+        g.gain.setValueAtTime(0.05 * v, t);
+        s.connect(f).connect(g);
+      } else if (kind === 'shaker') {
+        f.type = 'bandpass';
+        f.frequency.value = 6000;
+        f.Q.value = 1;
+        len = 0.07;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(0.022 * v, t + 0.012);
+        s.connect(f).connect(g);
+      } else if (kind === 'brush') {
+        f.type = 'lowpass';
+        f.frequency.value = 3800;
+        len = 0.3;
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.linearRampToValueAtTime(0.035 * v, t + 0.035);
+        s.connect(f).connect(g);
+        g.connect(M.rev);
+      } else if (kind === 'clap') {
+        // a handclap: three quick bursts of filtered noise, then the room
+        f.type = 'bandpass';
+        f.frequency.value = 1150;
+        f.Q.value = 0.9;
+        len = 0.16;
+        g.gain.setValueAtTime(0.0001, t);
+        for (const [dt, lv] of [[0, 0.12], [0.011, 0.1], [0.022, 0.14]]) {
+          g.gain.setValueAtTime(lv * v, t + dt);
+          g.gain.exponentialRampToValueAtTime(0.01 * v, t + dt + 0.009);
+        }
+        g.gain.setValueAtTime(0.1 * v, t + 0.033);
+        s.connect(f).connect(g);
+        g.connect(M.rev);
+      } else if (kind === 'crackle') {
+        f.type = 'highpass';
+        f.frequency.value = 2500;
+        len = 0.004;
+        g.gain.setValueAtTime(0.03 * v, t);
+        s.connect(f).connect(g);
+      } else {
+        // hats (hatO: open)
+        f.type = 'highpass';
+        f.frequency.value = 7500;
+        len = kind === 'hatO' ? 0.2 : 0.035;
+        g.gain.setValueAtTime((kind === 'hatO' ? 0.03 : 0.024) * v, t);
+        s.connect(f).connect(g);
+      }
+      g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+      g.connect(M.dry);
+      s.start(t, Math.random() * 1.8);
+      s.stop(t + len + 0.05);
+    },
+
+    // one 16th of a chill song
+    step(M, n, t0, sp) {
+      const S_ = M.song, L = S_.prog.length, st = n % 16, barN = Math.floor(n / 16), bar = barN % L, style = S_.chill;
+      // section: 0 intro (the first half of the first pass), 1 the tune (it
+      // comes in halfway through), 2 the answer, 3 breakdown, then 1 again
+      const pass = Math.floor(barN / L), I = M.intensity || 0;
+      // (race songs: no breakdown - the kit never drops out mid-race)
+      const sec = pass === 0 ? (bar < L / 2 ? 0 : 1) : (S_.race ? [2, 1] : [2, 3, 1])[(pass - 1) % (S_.race ? 2 : 3)];
+      if (st === 0 && M.warm) M.warm.frequency.setTargetAtTime(M.warmBase + I * 3500, t0, 0.3); // the final lap opens it up
+      const ch = S_.prog[bar], root = ch[0], voic = ch.slice(1);
+      const R = M.rng, hum = () => (R() - 0.5) * 0.008;
+      const t = t0 + (st % 2 ? (S_.swing || 0) * sp : 0);
+      const K = KITS[style];
+      const kitOn = sec === 0 ? bar >= L / 4 : sec !== 3;
+      const last = bar === L - 1;
+      // kit
+      if (K) {
+        if (kitOn && K.kick) for (const [s, v] of K.kick) if (s === st && !(style === 'ballad' && sec !== 2)) this.drum(M, 'kick', t + hum(), v);
+        if (kitOn && K.kick2 && bar % 2) for (const [s, v] of K.kick2) if (s === st) this.drum(M, 'kick', t + hum(), v);
+        if (kitOn && K.snare) for (const [s, v] of K.snare) if (s === st) this.drum(M, 'snare', t + hum(), v * (0.9 + R() * 0.2));
+        if (kitOn && K.clap) for (const [s, v] of K.clap) if (s === st) this.drum(M, 'clap', t + hum(), v);
+        if (K.rim && (sec !== 0 || bar >= 2) && K.rim[barN % 2].includes(st)) this.drum(M, 'rim', t + hum(), 0.8 + R() * 0.3);
+        if (K.shaker && (sec !== 0 || bar >= 1)) this.drum(M, 'shaker', t + hum(), [1, 0.45, 0.7, 0.45][st % 4]);
+        if (K.hat && (sec !== 0 || bar >= 1)) {
+          const openHat = Array.isArray(K.hatO) ? K.hatO.includes(st) : K.hatO === st && bar % 2 && sec !== 3;
+          if (K.hat === 16 || I > 0.5 || st % 2 === 0 || (K.hat16 && K.hat16.includes(st))) this.drum(M, openHat ? 'hatO' : 'hat', t + hum(), (st % 2 ? 0.45 : st % 4 ? 0.7 : 1) * (0.85 + R() * 0.3));
+        }
+        if (K.brush && sec !== 0 && K.brush.includes(st)) this.drum(M, 'brush', t + hum(), 0.9);
+        // a lift into the next section: a soft snare pickup on the last bar
+        if (last && sec !== 3 && st >= 12 && K.snare && st % 2 === 0) this.drum(M, 'snare', t, 0.25 + (st - 12) * 0.08);
+      }
+      if (S_.crackle && R() < 0.35) this.drum(M, 'crackle', t0 + R() * sp, 0.3 + R() * 0.7);
+      // bass (from the second bar of the intro)
+      if (sec !== 0 || bar >= 1) {
+        for (const [s, iv, len] of BASS[style]) {
+          if (s !== st) continue;
+          if (sec === 3 && style !== 'ballad' && s !== 0) continue; // breakdown: just the downbeat
+          let m = root + iv;
+          while (m > 52) m -= 12;
+          this.bass(M, m, t + hum(), len * sp, 0.065, style !== 'ballad' && style !== 'lofi' && style !== 'dnb');
+        }
+      }
+      // piano: comp in the band sections, roll arpeggios in the breakdown and the ballad
+      const arp = style === 'ballad' || style === 'dark' || sec === 3;
+      if (arp) {
+        if (st % 2 === 0) {
+          const k = st / 2, notes = voic.concat(voic.map((m) => m + 12));
+          const m = notes[(k < 4 ? k : 7 - (k - 4)) % notes.length];
+          this.ep(M, m, t + hum(), sp * 5, 0.05 + R() * 0.012);
+        }
+      } else {
+        const pat = COMP[style][barN % 2];
+        for (const [s, len] of pat) {
+          if (s !== st) continue;
+          const roll = style === 'lofi' ? 0.022 : 0.006; // lo-fi chords are rolled, low to high
+          voic.forEach((m, i) => this.ep(M, m, t + hum() + i * roll, len * sp * 0.95, (s === 0 ? 0.055 : 0.042) * (0.9 + R() * 0.2)));
+        }
+      }
+      if (S_.pad && st === 0) this.pad(M, voic.slice(0, 3).map((m) => m - 12), t, sp * 16, 0.014);
+      // the guitar's offbeat chops, and brass stabs on the accents
+      if (style === 'sunny' && sec !== 0) for (const [s] of PLUCK[barN % 2]) if (s === st) voic.forEach((m, i) => this.pluck(M, m + 12, t + hum() + i * 0.008, sp, 0.03));
+      if (S_.brass && kitOn) for (const [s, len] of BRASS[barN % 2]) if (s === st) voic.slice(1).forEach((m) => this.brass(M, m + 12, t + hum(), len * sp * 0.9, 0.024));
+      // the tune (sections 1 and 2)
+      if (sec === 1 || sec === 2) {
+        const mel = sec === 1 ? M.melA : M.melB, at = bar * 16 + st;
+        for (const x of mel) {
+          if (x.at !== at) continue;
+          const v = { vibes: 0.07, bell: 0.05, flute: 0.045, synth: 0.03 }[S_.lead.inst] * (0.9 + R() * 0.2);
+          this[S_.lead.inst](M, x.m + (I > 0.7 ? 12 : 0), t + hum(), x.dur * sp, v);
+        }
+      }
+    },
+
+    // the song's own chain: dry + reverb + tremolo, a gentle top cut
+    setup(M, c) {
+      const S_ = M.song;
+      M.warm = c.createBiquadFilter();
+      M.warm.type = 'lowpass';
+      M.warmBase = S_.chill === 'lofi' ? 5200 : S_.chill === 'dark' ? 4200 : 8500;
+      M.warm.frequency.value = M.warmBase;
+      M.trim = c.createGain();
+      M.trim.gain.value = S_.race ? 0.9 : 0.62; // (level with the other songs - race songs with the old race songs: tools/harness/songmeter.py)
+      M.gain.disconnect();
+      M.gain.connect(M.warm).connect(M.trim).connect(Audio.bus.music);
+      M.dry = c.createGain();
+      M.dry.connect(M.gain);
+      if (!Chill._ir || Chill._ir.sampleRate !== c.sampleRate) {
+        // (one channel, 1.8 s: half the work of a stereo room for a weak
+        //  Chromebook's audio thread, and the songs are mono anyway)
+        const n = Math.round(c.sampleRate * 1.8), ir = c.createBuffer(1, n, c.sampleRate);
+        for (let ch = 0; ch < 1; ch++) {
+          const d = ir.getChannelData(ch);
+          let lp = 0;
+          for (let i = 0; i < n; i++) {
+            lp += (Math.random() * 2 - 1 - lp) * 0.35; // a darker tail than white noise
+            d[i] = lp * Math.exp(-i / (c.sampleRate * 0.55)) * (i < c.sampleRate * 0.012 ? 0 : 1);
+          }
+        }
+        Chill._ir = ir;
+      }
+      M.conv = c.createConvolver();
+      M.conv.buffer = Chill._ir;
+      M.rev = c.createGain();
+      M.rev.gain.value = S_.chill === 'ballad' ? 0.5 : 0.3;
+      M.rev.connect(M.conv).connect(M.gain);
+      // the vibraphone's tremolo, shared by every bar
+      M.trem = c.createGain();
+      M.trem.gain.value = 0.78;
+      M.tremL = c.createOscillator();
+      M.tremL.frequency.value = 4.6;
+      const tg = c.createGain();
+      tg.gain.value = 0.22;
+      M.tremL.connect(tg).connect(M.trem.gain);
+      M.tremL.start();
+      M.trem.connect(M.dry);
+      M.melA = Chill.melody(S_, U.hashStr(M.cur) + 1);
+      M.melB = Chill.melody(S_, U.hashStr(M.cur) + 7);
+    },
   };
   const Music = {
     cur: null,
@@ -1769,6 +2477,16 @@
     next: 0,
     gain: null,
     intensity: 0, // v5: 0..1, the final lap turns it up
+    pinned: null, // v5.5.7: a song picked in the music player (plays instead, until stopped)
+    CHILL,
+    SONG_INFO,
+    // the music player's order: the menu, the garage playlist, the rest
+    list() {
+      return ['menu', 'welcome'].concat(CHILL, Object.keys(SONGS).filter((k) => k !== 'menu' && k !== 'welcome' && !CHILL.includes(k)));
+    },
+    age() {
+      return this.cur && Audio.ctx ? Audio.ctx.currentTime - this.startedAt : 0;
+    },
     play(name) {
       const A = Audio;
       if (!name || !SONGS[name]) return this.stop();
@@ -1807,6 +2525,11 @@
       this.rng = U.rng(U.hashStr(name));
       this.hook = [];
       for (let i = 0; i < 32; i++) this.hook.push(this.rng() < 0.42 ? Math.floor(this.rng() * 5) : -1);
+      this.startedAt = c.currentTime;
+      if (this.song.chill) {
+        this.send.gain.value = 0.16; // (a lighter echo: the room reverb does most of it)
+        Chill.setup(this, c);
+      }
       this.timer = setInterval(() => this._schedule(), 30);
     },
     stop() {
@@ -1823,6 +2546,12 @@
             if (fb) fb.disconnect();
           } catch (e) {}
         }, 900);
+      }
+      if (this.tremL) {
+        try {
+          this.tremL.stop(Audio.ctx.currentTime + 0.8);
+        } catch (e) {}
+        this.tremL = null;
       }
       this.gain = null;
       this.cur = null;
@@ -1913,6 +2642,7 @@
       s.stop(t + 0.2);
     },
     _step(n, t, sp) {
+      if (this.song.chill) return Chill.step(this, n, t, sp);
       const S_ = this.song;
       const st = n % 16, barN = Math.floor(n / 16), bar = barN % S_.prog.length;
       const ch = S_.prog[bar];

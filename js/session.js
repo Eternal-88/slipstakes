@@ -19,7 +19,7 @@
 
   function newPlayer(o) {
     return {
-      id: o.id, name: (o.name || 'Driver').slice(0, 16), token: o.token || null, isBot: !!o.isBot, color: o.color,
+      id: o.id, name: (o.name || 'Driver').slice(0, o.isBot ? 18 : 16) /* (a bot's 16 + ' ⚙') */, token: o.token || null, isBot: !!o.isBot, color: o.color,
       carId: o.carId || 'vandal', connected: true, money: o.money != null ? o.money : START_MONEY,
       garage: Parts.newGarage(o.carId || 'vandal'),
       stats: { wins: 0, podiums: 0, races: 0, earned: 0, spent: 0, fuel: 0, repairs: 0, casino: 0, bets: 0, sold: 0, history: [], form: [], points: 0 },
@@ -38,7 +38,7 @@
         phase: opts.sandbox ? 'sandbox' : 'lobby', phaseEnds: 0,
         // vis: 'private' = listed with a lock, the host approves each new
         // driver; 'public' = anyone on the server list walks in.
-        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 'mild', vis: 'private', maxPlayers: 8, name: '', botLevel: 'normal', weather: 'auto', champ: 'money' },
+        settings: { races: 8, bots: 3, sandbox: !!opts.sandbox, catchup: 10, vis: 'private', maxPlayers: 8, name: '', botLevel: 'normal', weather: 'auto', champ: 'money' },
         // rid: this room's id on the server list (kept through host
         // migrations); epoch: how many times the host has changed
         rid: opts.rid || U.uid(10), epoch: 0, heirs: [],
@@ -317,7 +317,9 @@
         const carId = K.car(style, rnd);
         const bp = this.addPlayer({ id, name: name + ' ⚙', isBot: true, color, carId, botSkill: K.skillFor(st.settings.botLevel, rnd) });
         bp.botStyle = style;
-        bp.garage.look = K.look(rnd);
+        // v5.5.7: how it likes its car to sound, and its own habits at the wheel
+        bp.garage.look = Object.assign(K.look(rnd), K.sound(style, rnd));
+        bp.botTraits = K.traits(rnd);
         const b = K.parts(style, Math.max(0, Math.min(1600, bp.money - 1400)), rnd);
         for (const slot in b.parts) {
           if (!bp.garage.owned[slot].includes(b.parts[slot])) bp.garage.owned[slot].push(b.parts[slot]);
@@ -342,13 +344,13 @@
       // v5: bot difficulty, any time (it applies from the next race)
       if (m.botLevel && G.BotKit.LEVELS[m.botLevel] && m.botLevel !== s.botLevel) {
         s.botLevel = m.botLevel;
-        for (const b of this.bots()) b.botSkill = G.BotKit.skillFor(m.botLevel);
+        for (const b of this.bots()) if (!b.botLock) b.botSkill = G.BotKit.skillFor(m.botLevel); // (not one set by hand in the console)
       }
       if (m.weather && G.RaceEnv.MODES.includes(m.weather)) s.weather = m.weather; // from the next race
       // the shape of the session: lobby only
       if (st.phase === 'lobby') {
         if (m.races != null && isFinite(+m.races)) s.races = U.clamp(Math.round(+m.races), 1, 100);
-        if (m.catchup != null && G.Settings.CATCHUP[m.catchup] != null) s.catchup = m.catchup;
+        if (m.catchup != null && G.Settings.cuPct(m.catchup) != null) s.catchup = G.Settings.cuPct(m.catchup); // v5.5.7: any 0-100 %
         // v5: who wins the session — the richest, or the championship points leader
         if (m.champ === 'money' || m.champ === 'points') s.champ = m.champ;
       }
@@ -502,7 +504,7 @@
       st.race = {
         no: st.raceNo + 1, trackId, startedAt: Date.now(),
         // catch-up strength travels with the race so the host's sim uses it
-        catchup: G.Settings.CATCHUP[st.settings.catchup || 'mild'] || 0,
+        catchup: G.Settings.cuFrac(st.settings.catchup),
         // v5.1: an endurance race — always on Endurance Park, sometimes on
         // one of the other circuits with a pit lane (makeEnduPlan)
         endu: G.RaceEnv.planned(st, st.raceNo) ? G.RaceEnv.endu(G.getTrack(trackId)) : null,
@@ -512,7 +514,7 @@
           // setup + looks travel with the entrant so every peer builds the
           // same spec (prediction) and the same model
           tune: Parts.effTune(p.garage.installed, p.garage.tune, p.carId), look: Object.assign({}, p.garage.look),
-          bot: p.isBot ? { skill: p.botSkill, level: st.settings.botLevel || 'normal' } : null,
+          bot: p.isBot ? { skill: p.botSkill, level: p.botLevel || st.settings.botLevel || 'normal', traits: p.botTraits || null } : null,
         })),
       };
       // v5 weather roll (host setting): every peer sees the same shower

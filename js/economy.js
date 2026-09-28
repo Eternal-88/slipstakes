@@ -391,6 +391,7 @@
       if (g.wear.tyre > 0.55 && b.money > q.tyre + 500) { b.money -= q.tyre; b.stats.repairs += q.tyre; g.wear.tyre = 0; }
       if (g.wear.engine > 0.35 && b.money > q.engine + 500) { b.money -= q.engine; b.stats.repairs += q.engine; g.wear.engine = 0; }
       if (g.wear.body > 0.3 && b.money > q.body + 500) { b.money -= q.body; b.stats.repairs += q.body; g.wear.body = 0; }
+      if (b.botLock) continue; // v5.5.7: a bot built by hand in the console keeps its build
       const roll = (U.hashStr(b.id + ':' + st.raceNo) >>> 0) % 100;
       // v4.4: each bot shops by its own style (bot.js BotKit), and a bot that's
       // doing well may buy its style's premium chassis
