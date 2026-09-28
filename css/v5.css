@@ -358,3 +358,36 @@ body:has(#ui.scr-raceui) .hud-lights { top: calc(52px / var(--hud)); }
 .welcome .wl-lead { margin: 0 0 12px; font-size: 14px; line-height: 1.45; }
 .welcome .wl-note { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
 .welcome kbd { display: inline-block; min-width: 14px; padding: 0 5px; border-radius: 4px; background: rgba(255,255,255,.12); border-bottom: 2px solid rgba(0,0,0,.4); font: 900 11px var(--body); color: var(--ink); text-align: center; line-height: 17px; vertical-align: 1px; }
+/* v5.5.7: catch-up as a number (ui.js cuField) */
+.cu-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.cu-row select { flex: 1; min-width: 0; }
+.cu-row .cu-num { width: 58px; flex: none; font-size: 15px; padding: 5px 4px; }
+.cu-row em { font-style: normal; font-weight: 800; color: var(--muted); }
+.m-qopts .cu-fld, .lb-grid .cu-fld { grid-column: 1 / -1; }
+.m-qopts .cu-fld .cu-row { flex: 1; max-width: 70%; }
+.m-qopts .cu-fld .cu-row select { max-width: none; }
+.lb-grid .cu-fld .cu-row { font-size: inherit; }
+.lb-grid .cu-fld .cu-row em { font-size: 14px; }
+.lb-grid .cu-fld .cu-num { width: 64px; flex: none; }
+/* themed scrollbars (the white system ones looked broken on the dark panels) */
+* { scrollbar-width: thin; scrollbar-color: rgba(154,166,194,.38) transparent; }
+/* v5.5.7 the music player (Settings -> Music) */
+.mp-head { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 12px 4px 8px; border-top: 1px solid var(--line); }
+.mp-head > b { font-weight: 900; font-size: 14px; }
+.mp-head span { font-size: 12px; color: var(--muted); }
+.mp-head span b { color: var(--ink); }
+.mp-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.mp-row { display: flex; align-items: center; gap: 10px; min-width: 0; padding: 6px 10px 6px 6px; border-radius: 10px; background: rgba(255,255,255,.04); border: 1px solid transparent; }
+.mp-row.now { border-color: rgba(255,204,0,.35); background: rgba(255,204,0,.06); }
+.mp-row > div { display: flex; flex-direction: column; min-width: 0; }
+.mp-row > div b { font-size: 14px; font-weight: 800; }
+.mp-row > div span { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mp-row em { margin-left: auto; flex: none; font-style: normal; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; color: var(--yellow); }
+.mp-row .btn.small { flex: none; width: 34px; height: 30px; padding: 0; }
+@media (max-width: 700px) { .mp-list { grid-template-columns: 1fr; } }
+/* v5.5.7 icons (js/ui/icons.js): line drawings in the text colour */
+.svi { display: inline-block; width: 1.15em; height: 1.15em; vertical-align: -0.2em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.btn .svi { margin-right: .15em; }
+#corner button .svi { width: 18px; height: 18px; vertical-align: middle; }
+.news-i > span .svi, .tip > span .svi, .slot-h .ic .svi { width: 20px; height: 20px; }
+.aw > span .svi { width: 1.05em; height: 1.05em; }
