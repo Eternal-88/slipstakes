@@ -2,6 +2,102 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.6.1 — Open Late, Harvest Time
+
+Harvest Run (`trackmesh.js` sceneSuburb) rebuilt: every house generated on
+its own (`houseW`: size, storeys, hip / gable / flat tile roof, palette,
+garage side, porch, chimney, solar), special lots (park, church, strip mall,
+gas station), side streets and a back street with a third row where the
+road runs straight, downtown fronts (`shopW`) with buildings or car parks
+behind (`backW`), farm blocks two fields deep in 25 m pieces that bend with
+the road, windbreaks, farmhouses and barns. Ground cover (`gpatch`) lies on
+the terrain mesh itself (`gH.mesh`, theme `smoothGround`: no jitter), so no
+field or lawn sinks into it; theme `hillRel` colours the hills gold by their
+height above the nearest road, not above sea level, so the valley floor
+stays green as the road climbs. Scenery is instanced in 400 m chunks so the
+chase camera's frustum skips most of it: per frame it costs about what
+Megastore and Harrow City do. Real place names are gone (Clovehaven and
+Oak Valley).
+
+Moving hazards on the new tracks, all on the v5 `dynPos` machinery (physics,
+bots, HUD, minimap and the network need nothing new): `train` hazards take
+`look: 'forklift' | 'tractor'` (their own vehicles, turned to the way they
+drive, stockrooms or barns at the lane ends so nothing pops in, amber
+flashers, `Audio.forkBeep` / `tractorHorn`, a HUD warning), and `rockfall`
+takes `look: 'debris'` (concrete slabs with rebar, grey dust,
+`Audio.debrisCrack` as it starts to fall, a HUD warning once a lap). Scenery
+keeps out of the lanes with `track.nearRail`. Harrow's concrete lands in the
+outer lanes: spread over the whole road, the bots swerved into the walls
+(26 wall hits in two `botrace.py` races, 10 now).
+
+Hazards that bite (PROTO 14 - two more numbers in each car's state): oil
+and mud stay on the tyres (`oilT` / `mudT` hold timers in physics.js: grip,
+brake and drag that fade out; a yaw kick when oil catches one side), and a
+front tyre on standing water above 19 m/s aquaplanes (`TUNE.aqua`). The bots
+steer round any patch and lift when they can't. `tools/harness/hazardfeel.py`
+measures each one with fixed inputs: straight through oil, hands off, used
+to change the heading by 0 degrees; now 17 to 51.
+
+## v5.6 — Open Late
+
+Tracks (`tracks.js`, `trackmesh.js` SCENES): **Megastore** (theme `store`:
+indoor, nightLight, no grandstand; showrooms, racking, pillars, signs and
+ceiling panels kept out of the chase camera's sightline over the road),
+**Harrow City** (`deadcity`: rain, neon lettering from a 5x7 pixel font,
+wrecks, flashing police lights, fires, barricades, a skyline, an elevated
+railway `def.elRail` that fades while it is between the camera and your
+car) and **Harvest Run** (`suburb` sprint up a farm valley between two
+made-up towns). Set pieces build in slices
+(generators), every existing track builds byte-identical
+(`tools/harness/buildhash.py` 60/60), `hazards.py` 0 off the road,
+`botrace.py` bot races finish on all three. New theme options: indoor,
+nightLight, stand, rocks, puddle, hills 0.
+
+More music: six more songs on the same band (store jazz-funk, dark, sunny,
+city pop, liquid drum and bass, a menu lounge) with brass, guitar pluck,
+synth lead and claps; race songs follow the final-lap intensity; tracks
+keep one of two or three race songs each (`main.js` raceSong).
+
+Network (PROTO 13 - the room's catch-up setting is a number now, which a
+5.5.6 lobby can't show): `settings.catchup` is any whole percentage 0-100
+(`Settings.cuPct` / `cuFrac` / `cuLabel` read the old off / mild / wild too);
+`ui.js` `cuField` is the list-plus-box on the menu and in the lobby.
+
+Sound (`audio.js`):
+- **Lift detection**: a lift is "the pedal was down (> 0.5) within the last
+  0.4 s and is up (< 0.15) now" (`_liftCheck`, for your car and every other
+  car). The old test wanted the whole lift inside one frame; the physics
+  eases the pedal over several, so in a race the valve, lift crackle, burble
+  and bangs almost never fired - only the garage's Listen (which drops the
+  pedal instantly) played them. `tools/harness/bovcheck.py` drives your car
+  round a race with a bot: 0 valve sounds in 40 s -> 9.
+- **Flutter** is one noise source chopped into bursts (a hollow body band, a
+  bright "t", the whistle chopped with it) at ~22 Hz slowing to ~10
+  (`tools/harness/pulses.py`), not 38 pitched ticks a second. 'stock' is the
+  recirculated whoosh on every turbo.
+
+Music (`audio.js` `Chill`): a second band for the garage playlist -
+Rhodes-style FM electric piano, vibraphone with a shared tremolo, celesta,
+flute, plucked bass, soft kits, a convolver room. Tunes are written from a
+motif over each song's chords (chord tones on strong beats, scale steps
+between, never a semitone off a held chord note). Songs: showroom (bossa),
+nightshift (lo-fi), spareparts (funk), closingtime (ballad), plus the old
+garage theme. `main.js` `garageSong` rotates them per visit (or ~3 min);
+Settings -> Music is a player for all 12 (`Music.pinned`, never over a
+race's own music). Levels matched with `tools/harness/songmeter.py`.
+
+Bots (`bot.js` BotKit): 140 names; `sound(style)` picks tone / overrun /
+valve / idle / limiter tastes per driving style (the hardware gate still
+applies); `traits()` gives each bot habits (braking +-0.015, line +-0.12,
+mistakes x0.75-1.25, even either side of its level), carried by race
+entrants with an optional per-bot level; rival can be forced on or off.
+
+UI: `js/ui/icons.js` - drawn icons (Lucide, ISC, copied in; chequered flag,
+tyre, steering wheel, slot machine and turbo drawn for the game) in one SVG
+sprite, built by `tools/harness/mkicons.py` from the names the code uses.
+One Play online button on the menu; the online corner button appears by
+itself and counts other people. Themed scrollbars.
+
 ## v5.5.6 — Lights Out
 
 Network (PROTO 12 - the Sting's power and a hazard moved, so an older game
@@ -394,7 +490,7 @@ The version is shown on the main menu, and a "What's new" panel opens once after
 There's nothing to install: it's plain HTML/JS. Three.js and PeerJS load from the jsDelivr CDN, so an internet connection is needed.
 
 - **GitHub Pages (recommended for school Chromebooks):** upload `index.html`, `js/` and `css/` to a public repo, then go to Settings → Pages and pick `main` / root. Everyone opens the same `https://NAME.github.io/REPO/` link. When you update, replace the files; a hard reload (Ctrl+Shift+R) skips the browser cache.
-- **Local:** double-click `index.html`. It uses classic `<script>` tags, so it works from `file://`, unless an admin policy blocks local files.
+- **Local:** double-click `index.html`. It uses classic `<script>` tags, so it works from `file://`, unless a browser policy blocks local files.
 - **Dev server:** `python tools/serve.py 8765` serves with caching disabled.
 
 **To host:** enter your name and click **Host**, then read out the 5-letter room code, or click **🔗 Copy invite link**. A friend who opens the link gets the Join box with the code already filled in. **To join:** click **Join**; the last room code you used is remembered. Your single-player car choice and paint come with you.
@@ -495,7 +591,7 @@ After the last race comes a final standings screen with awards.
 
 ## Test tools (not loaded by the game)
 
-Load one in a running page from the dev console:
+Load one in a running page from the browser's developer tools:
 
 ```js
 var s = document.createElement('script'); s.src = 'tools/telemetry.js'; document.body.appendChild(s)
