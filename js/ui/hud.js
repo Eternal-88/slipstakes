@@ -551,7 +551,26 @@
             const t = v.raceTime || 0, c = t + o.off, ph = c - Math.floor(c / o.every) * o.every;
             const pass = (2 * o.span + o.cars * o.gap) / o.speed;
             if (ph < pass || ph > o.every - 2.5) {
-              this.banner('LEVEL CROSSING', 'Train coming — ' + Math.round(ahead) + ' m', 0.3, 'warn');
+              const m = Math.round(ahead) + ' m';
+              if (o.look === 'forklift') this.banner('FORKLIFT CROSSING', 'Forklift coming out — ' + m, 0.3, 'warn');
+              else if (o.look === 'tractor') this.banner('TRACTOR CROSSING', 'Tractor and trailers — ' + m, 0.3, 'warn');
+              else this.banner('LEVEL CROSSING', 'Train coming — ' + m, 0.3, 'warn');
+              break;
+            }
+          }
+        }
+        // v5.6.1 falling concrete: once per lap as you come up on it
+        if (trk && trk.dyn && trk.dyn.length && v.phase === 'race' && this.bannerT <= 0.05) {
+          const q = this._xq || (this._xq = {});
+          trk.query(rs.x, rs.z, this._xh == null ? -1 : this._xh, q);
+          for (const o of trk.dyn) {
+            if (o.look !== 'debris' || o.stream) continue;
+            let ahead = o.at - o.len / 2 - q.along;
+            if (trk.closed && ahead < -o.len) ahead += trk.length;
+            const lap = me ? me.lap || 0 : 0;
+            if (ahead > 0 && ahead < 140 && this._debTold !== o.at + ':' + lap) {
+              this._debTold = o.at + ':' + lap;
+              this.banner('FALLING CONCRETE', 'Watch the road for shadows', 2.2, 'warn');
               break;
             }
           }
