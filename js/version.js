@@ -3,8 +3,15 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.8';
+  G.VERSION = '5.8.1';
   G.CHANGELOG = [
+    {
+      v: '5.8.1', name: 'Shift Lights', items: [
+        ['🕹', 'Manual means manual', 'The Sting and the Stormer never change gear by themselves any more. Sit on the rev limiter and you stay on it until you shift up; a downshift goes in the moment you ask for it, and over-revving one costs the engine. The shift lights and a SHIFT ▲ call on the dial tell you when. A perfect shift on the blue light kicks harder than before, and the shop\'s acceleration numbers for both cars are measured shifting on the light. Everyone reloads the page (Ctrl+Shift+R) for this version, host first.'],
+        ['⚠', 'Warnings off the road', 'Oil, mud, aquaplaning, crossings, falling concrete, the launch, the tide, crosswinds, rain, a rival and WRONG WAY used to be big red letters across the road ahead - and the crossings flickered. They are a small strip at the top now, under the pit strip and above the slipstream badge, where they do not cover anything. The pit call is a small strip too, with no banner: the sound, the flashing fuel gauge and the beacon over the box still tell you when to come in.'],
+        ['⚖', 'Hard cars can win', '5.8 trimmed the Rotor for being the fastest car in expert hands. A car that hard to drive is allowed to be the best, so it is back: the quickest thing in the paddock if you can keep it on the boil, and the hardest for a beginner. The Stormer is the second quickest for experts; the easy cars, the Brick and the Dune, are still the ones to learn on.'],
+      ],
+    },
     {
       v: '5.8', name: 'Shift Lights', items: [
         ['🧱', 'Walls cost you now', 'Bouncing off the walls was quicker than driving: a glancing hit kept nearly all your speed and turned the car for free, which is also why people could beat even Legend bots. Now a barrier has real friction, scraping along one drags you down, and a proper hit knocks the drive out for a moment. Riding the walls round a lap is now about 8% slower than driving it clean. Everyone reloads the page (Ctrl+Shift+R) for this version, host first.'],

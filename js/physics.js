@@ -370,27 +370,26 @@
     }
     const upAt = s.upRs ? s.upRs[Math.max(0, car.gear - 1)] : s.upR;
     if (s.manual && car.gear > 0 && !frozen) {
-      // The driver's box: quicker than any automatic. Up on the light (just
-      // short of the limiter) is a perfect shift and kicks. A downshift that
-      // would over-rev waits until the revs allow it instead of going in.
-      // Its only help for a driver who isn't shifting: half a second bouncing
-      // off the limiter and it goes up a gear itself, slowly; bogged right
-      // down, it drops one. Both cost far more than shifting yourself.
-      car.limT = r >= 0.995 && driveThr > 0.5 ? car.limT + dt : 0;
+      // The driver's box - and ONLY the driver's (v5.8.1): it never shifts by
+      // itself. Sit on the limiter and you stay on it until you shift. Quicker
+      // than any automatic, and up on the light (just short of the limiter)
+      // is a perfect shift that kicks. A downshift goes in when you ask for
+      // it, even one that over-revs: the engine takes the hit and you sit on
+      // the limiter until the speed comes down to the gear.
+      car.limT = r >= 0.995 && driveThr > 0.5 ? car.limT + dt : 0; // (the HUD's "shift up" call)
       if (car.shiftT <= 0) {
-        let help = 0;
-        if (car.limT > 0.5 && car.gear < nG && car.sel <= car.gear) { car.sel = car.gear + 1; help = 1; }
-        else if (car.gear > 1 && car.sel >= car.gear && r < 0.42 && (wheelW * s.gears[car.gear - 2] * s.finalDrive) / s.redlineW < 0.85 && Math.abs(beta) < 0.25) { car.sel = car.gear - 1; help = 1; }
         if (car.sel > car.gear) {
-          if (!help && r >= upAt - 0.045 && r < 1.0) car.pk = 0.45;
+          if (r >= upAt - 0.045 && r < 1.0) car.pk = 0.6;
           car.gear++;
-          car.shiftT = s.shiftTime * (help ? 1.4 : 0.5);
+          car.shiftT = s.shiftTime * 0.5;
           car.kickT = car.shiftT + 0.07;
           car.limT = 0;
           if (car.boost > 0.4) car.backfire = 0.15;
-        } else if (car.sel < car.gear && (wheelW * s.gears[car.gear - 2] * s.finalDrive) / s.redlineW < 1.03) {
+        } else if (car.sel < car.gear) {
+          const rLow = (wheelW * s.gears[car.gear - 2] * s.finalDrive) / s.redlineW;
+          if (rLow > 1.05) car.engineWear += Math.min(0.03, (rLow - 1.05) * 0.04); // (a money shift)
           car.gear--;
-          car.shiftT = s.shiftTime * (help ? 0.8 : 0.45);
+          car.shiftT = s.shiftTime * 0.45;
         }
       }
     } else if (car.gear > 0 && car.shiftT <= 0 && !frozen) {
@@ -467,7 +466,7 @@
       // (v5.8: an automatic or a dual-clutch keeps some drive through a shift)
       if (car.shiftT > 0) Fdrive *= s.shiftKeep || 0;
       // a perfect manual shift: a shove as the next gear bites
-      if (car.pk > 0 && car.shiftT <= 0) Fdrive *= 1 + 0.14 * Math.min(1, car.pk / 0.2);
+      if (car.pk > 0 && car.shiftT <= 0) Fdrive *= 1 + 0.22 * Math.min(1, car.pk / 0.25);
     }
     if (car.gear === -1) Fdrive = -Math.min(Fdrive, vLong < -8 ? 0 : Fdrive);
     // Sequential box "shift shock": a brief torque spike right after an upshift.

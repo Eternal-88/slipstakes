@@ -163,8 +163,8 @@
       id: 'rotor', name: 'Rotor 7', tag: 'rotary RWD coupé', drive: 'RWD', price: 2900,
       blurb: 'A light rotary coupé that revs to 9,000 and makes almost nothing below half of that. Keep it spinning and it flies through flowing corners; drop it off the boil in a hairpin and it bogs. Thirsty in endurance.',
       mass: 1180, powerKW: 150, redline: 9000, rearBias: 1.0, wheelbase: 2.45, weightFront: 0.5,
-      cgH: 0.46, track: 1.6, vTop: 56, inertiaK: 0.9, body: 'rotor', len: 4.3, wid: 1.76, fuelK: 1.3, wearK: 1.1, tq: { lo: 0.7, hi: 1.12, pk: 0.8 },
-      box: { n: 5, g1: 3.0, shift: 0.14, kind: 'std' }, // (v5.8: close ratios, to keep an engine that lives above 6,000 rpm on the boil)
+      cgH: 0.46, track: 1.6, vTop: 56, inertiaK: 0.9, body: 'rotor', len: 4.3, wid: 1.76, fuelK: 1.3, wearK: 1.1, tq: { lo: 0.7, hi: 1.12 },
+      box: { n: 5, g1: 3.25, shift: 0.14, kind: 'std' }, // (v5.8: close ratios, to keep an engine that lives above 6,000 rpm on the boil)
     },
   };
   const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule', 'pip', 'dune', 'apex', 'rotor', 'volt', 'storm', 'regent'];
@@ -681,8 +681,8 @@
   //   auto  a torque-converter automatic: slow shifts, but it keeps pulling through them
   //   dct   dual clutch: shifts in a blink and barely lets go of the drive
   //   man   YOU shift (physics.js): quicker than any automatic, and a shift
-  //         on the light gives a kick. Left alone it only shifts once it has
-  //         sat on the limiter (or bogged right down): slow. The Sting and the Stormer.
+  //         on the light gives a kick. It never shifts by itself (v5.8.1).
+  //         The Sting and the Stormer.
   const BOX_KEEP = { std: 0, auto: 0.35, dct: 0.7, man: 0 };
   const BOX_NAME = { std: '', auto: 'automatic', dct: 'dual-clutch', man: 'manual' };
   function boxRatios(n, g1, p) {
@@ -965,8 +965,12 @@
     const st = P.createCar(0, 0, 0);
     st.hint = -1;
     const inp = { s: 0, t: 1, b: 0, hb: 0 };
+    // (v5.8.1: a manual box only shifts when told, so the stat shifts it on
+    // the light - it is "what the car can do")
+    if (s.manual) inp.gu = inp.gd = 0;
     let t = 0, t30 = null, t100 = null, t130 = null, tq = null;
     for (let i = 0; i < 120 * 25 && (tq == null || t130 == null); i++) {
+      if (s.manual && st.gu >= 0 && st.gear >= 1 && st.gear < s.gears.length && st.shiftT <= 0 && st.sel === st.gear && st.rpm >= s.upRs[st.gear - 1] - 0.01) inp.gu = (st.gu + 1) & 15;
       P.step(st, s, inp, tr, P.DT, {});
       t += P.DT;
       const v = Math.hypot(st.vx, st.vz);
@@ -1216,7 +1220,7 @@
 
   // v5.8: a MANUAL badge for car cards (the Sting and the Stormer)
   const isManual = (id) => !!(CARS[id] && CARS[id].box && CARS[id].box.kind === 'man');
-  const manualTag = (id) => (isManual(id) ? '<em class="mt" title="Manual gearbox: you shift (E / Q, B and the d-pad, or the ▲ ▼ buttons). Shift on the blue light for a kick; left alone it only shifts off the rev limiter.">MANUAL</em>' : '');
+  const manualTag = (id) => (isManual(id) ? '<em class="mt" title="Manual gearbox: you shift (E / Q, B and the d-pad, or the ▲ ▼ buttons). It never shifts by itself: shift on the blue light for a kick.">MANUAL</em>' : '');
 
   G.Parts = {
     baseDragArea, stockWheelPower, rearExcess, boxRatios, shiftPoints, isManual, manualTag, CARS, CAR_ORDER, BASE_CARS, partAllowed, optAllowed, SLOTS, SLOT_MAP, STOCK, opt, optText, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,

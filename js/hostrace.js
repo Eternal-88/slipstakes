@@ -126,7 +126,7 @@
     _standIn(c) {
       if (!c.standIn) c.standIn = new G.Bot(0.7, U.hashStr(c.id) + 1);
       const o = c.standIn.drive(c.st, c.spec, this.track, P.DT, this.others);
-      return { s: o.s, t: o.t * 0.7, b: o.b, hb: o.hb, n: 0 };
+      return { s: o.s, t: o.t * 0.7, b: o.b, hb: o.hb, n: 0, gu: o.gu, gd: o.gd }; // (v5.8.1: a manual box only shifts when told)
     }
 
     // Start hold: connected human racers who haven't sent any input yet are
