@@ -7,6 +7,11 @@
 (function (G) {
   const U = G.U;
   const ST = () => G.Settings.s;
+  // v5.8 cluster geometry, in the 300×196 canvas: the rev dial tucked into
+  // the corner (a0..a1, a 270° sweep open at the bottom), the nitrous arc
+  // outside its left edge, and to its left the boost dial and a column for
+  // the perfect-shift / shift-up call (tx)
+  const CLU = { cx: 206, cy: 104, R: 78, a0: Math.PI * 0.75, a1: Math.PI * 2.25, sw: Math.PI * 1.5, n0: Math.PI * 0.8, n1: Math.PI * 1.1, tx: 52, b: { x: 52, y: 146, R: 24, a0: Math.PI * 0.72, a1: Math.PI * 2.28 } };
 
   class HUD {
     constructor(root) {
@@ -28,7 +33,7 @@
         <div class="hud-draft"><span class="dr-c">›››</span><div><b class="dr-t">SLIPSTREAM</b><em class="dr-v"></em><i class="dr-m"><u></u></i></div><span class="dr-c">‹‹‹</span></div>
         <div class="hud-br">
           <div class="hud-assist"><span class="as-net"></span><span class="as-wind"></span><span class="as-cu"></span></div>
-          <canvas class="speedo" width="256" height="116"></canvas>
+          <canvas class="speedo" width="300" height="196"></canvas>
           <div class="gauges">
             <div class="gauge nos"><span>N2O</span><div><i></i></div></div>
             <div class="gauge heat"><span>HEAT</span><div><i></i></div></div>
@@ -79,7 +84,7 @@
       this.el.map.style.display = s.minimap ? '' : 'none';
       this.el.tags.style.display = s.tags ? '' : 'none';
       const K = s.keys, n = G.Settings.keyName;
-      this.el.help.textContent = `${n(K.up)}/↑ throttle · ${n(K.down)}/↓ brake/reverse · ${n(K.left)} ${n(K.right)} steer · ${n(K.hb)} handbrake · ${n(K.nitro)} nitrous · ${n(K.reset)} reset · ${n(K.cam)} camera · Esc menu · tuck in behind a car to slipstream`;
+      this.el.help.textContent = `${n(K.up)}/↑ throttle · ${n(K.down)}/↓ brake/reverse · ${n(K.left)} ${n(K.right)} steer · ${n(K.hb)} handbrake · ${n(K.nitro)} nitrous · ${K.shiftUp ? n(K.shiftUp) : '-'}/${K.shiftDown ? n(K.shiftDown) : '-'} shift (manual cars) · ${n(K.reset)} reset · ${n(K.cam)} camera · Esc menu · tuck in behind a car to slipstream`;
       this.cache = {};
     }
 
@@ -90,9 +95,10 @@
       if (Math.abs(k - (this.k || 0)) < 0.01) return;
       this.k = k;
       this.el.map.width = this.el.map.height = Math.round(200 * k);
-      this.el.speedo.width = Math.round(256 * k);
-      this.el.speedo.height = Math.round(116 * k);
+      this.el.speedo.width = Math.round(300 * k);
+      this.el.speedo.height = Math.round(196 * k);
       this._spk = null;
+      this._face = null;
       if (this.track) {
         const keep = [this.bestSeen, this.lastPos, this._wearTold, this.enduT];
         this.setTrack(this.track); // redraw the map background at the new size
@@ -103,7 +109,10 @@
     set(key, el, val, prop) {
       if (this.cache[key] === val) return;
       this.cache[key] = val;
-      if (prop) el.style[prop] = val;
+      // (v5.8: 'className' is the element's, not a style - the pit panel went
+      // through here and wrote el.style.className, so it never once showed)
+      if (prop === 'className') el.className = val;
+      else if (prop) el.style[prop] = val;
       else el.textContent = val;
     }
 
@@ -258,132 +267,258 @@
       for (const car of cars) if (car.id === meId) draw(car, true);
     }
 
-    // v5.1 instrument cluster, 256×116. The shift lights ring the dial rather
-    // than sitting in a row above it, and the gear and boost dial sit beside
-    // the rev counter rather than stacked over each other — a taller panel
-    // costs screen you are trying to see the road through. Boost gets a dial
-    // of its own because a 7-pixel bar could never tell you the one thing that
-    // matters about a turbo: how fast the needle comes round, and where it
-    // falls away again. An electric car has no boost, so that dial shows its
-    // motor temperature instead, with the derate zone marked in red.
-    drawCluster(kmh, rpm, gear, unit, g) {
-      const key = Math.round(kmh) + '|' + Math.round(rpm * 140) + '|' + gear + '|' + unit + '|' + g.dial
-        + '|' + Math.round(g.v * 70) + '|' + Math.round(g.avail * 30) + '|' + (g.over ? 1 : 0) + '|' + Math.round(g.redline);
-      if (this._spk === key) return;
-      this._spk = key;
-      const c = this.sctx;
-      c.setTransform(this.k || 1, 0, 0, this.k || 1, 0, 0);
-      c.clearRect(0, 0, 256, 116);
-      const v = U.clamp(rpm, 0, 1);
-      const flash = Math.floor(performance.now() / 70) % 2;
-      const round = (x, y, w, h, r) => {
-        c.beginPath();
-        if (c.roundRect) c.roundRect(x, y, w, h, r);
-        else c.rect(x, y, w, h);
-      };
-      c.textAlign = 'center';
-      const cx = 70, cy = 104, R = 46;
-      const a0 = Math.PI * 1.02, a1 = Math.PI * 1.98, sw = a1 - a0;
-
-      // ---- rev counter: 28 segments, red zone from 86% of the redline
-      c.lineCap = 'butt';
-      c.lineWidth = 11;
-      for (let i = 0; i < 28; i++) {
-        const f = i / 28, lit = v >= (i + 0.5) / 28, red = f >= 0.86;
-        c.strokeStyle = lit
-          ? red ? '#ff4a3d' : f > 0.66 ? '#ffcc00' : '#39d6ff'
-          : red ? 'rgba(255,74,61,0.20)' : 'rgba(255,255,255,0.09)';
-        c.beginPath();
-        c.arc(cx, cy, R, a0 + sw * f, a0 + sw * (f + 0.72 / 28));
-        c.stroke();
-      }
-      // ---- shift lights: a thin ring around the dial, green then amber then
-      // a red tip that flashes on the limiter
-      c.lineWidth = 4;
-      c.strokeStyle = 'rgba(255,255,255,0.07)';
+    // v5.8 instrument cluster, 300×196. A proper rev counter at last: a
+    // 270° dial numbered in each car's own thousands of rpm (a 9,000 rpm
+    // rotary and a 6,300 rpm V8 no longer look the same), red from its
+    // redline, a needle, and the gear big in the middle with the speed under
+    // it - the layout racing games settled on because the eye lands on the
+    // gear first. Shift lights run across the top (blue = shift now, which
+    // on a manual car is a perfect shift); nitrous is an arc round the dial;
+    // boost (or an electric motor's temperature) keeps a dial of its own.
+    // The dial face is drawn once per car and size into its own canvas, so a
+    // frame is a copy and a handful of strokes.
+    _clusterFace(g, k) {
+      const key = g.redline + '|' + k + '|' + (g.dial || '') + '|' + (g.nos ? 1 : 0) + '|' + (g.manual ? 1 : 0);
+      if (this._face && this._face.key === key) return this._face;
+      const cv = document.createElement('canvas');
+      cv.width = Math.round(300 * k);
+      cv.height = Math.round(196 * k);
+      const c = cv.getContext('2d');
+      c.setTransform(k, 0, 0, k, 0, 0);
+      const D = CLU, maxK = Math.ceil(g.redline / 1000 + 0.3), redF = (g.redline * 0.97) / (maxK * 1000);
+      // disc
+      const bg = c.createRadialGradient(D.cx, D.cy - 20, 10, D.cx, D.cy, D.R + 8);
+      bg.addColorStop(0, 'rgba(22,30,52,0.92)');
+      bg.addColorStop(1, 'rgba(6,9,20,0.86)');
+      c.fillStyle = bg;
       c.beginPath();
-      c.arc(cx, cy, R + 12, a0, a1);
-      c.stroke();
-      if (v > 0.02) {
-        c.strokeStyle = v > 0.9 ? (flash ? '#ffffff' : '#ff4a3d') : v > 0.72 ? '#ffcc00' : '#2fe07a';
-        c.beginPath();
-        c.arc(cx, cy, R + 12, a0, a0 + sw * v);
-        c.stroke();
-      }
-      // just the ends of the scale, in thousands
-      c.font = "bold 8px 'Nunito', system-ui, sans-serif";
-      c.fillStyle = 'rgba(255,255,255,0.4)';
-      const rl = Math.round((g.redline || 7000) / 1000);
-      c.fillText('0', cx + Math.cos(a0) * (R + 5), cy + Math.sin(a0) * (R + 5) + 13);
-      c.fillText(String(rl), cx + Math.cos(a1) * (R + 5), cy + Math.sin(a1) * (R + 5) + 13);
-
-      // ---- speed
-      c.fillStyle = '#f5f7fc';
-      c.font = "32px 'Russo One', Impact, sans-serif";
-      c.fillText(String(Math.round(kmh)), cx, cy - 8);
-      c.font = "bold 9px 'Nunito', system-ui, sans-serif";
-      c.fillStyle = '#96a2c4';
-      c.fillText(unit, cx, cy + 5);
-
-      // ---- gear, beside the dial rather than under the boost gauge
-      c.fillStyle = gear === -1 ? '#ff8a5c' : '#ffcc00';
-      round(144, 62, 42, 42, 11);
+      c.arc(D.cx, D.cy, D.R + 8, 0, Math.PI * 2);
       c.fill();
-      c.fillStyle = '#1a1300';
-      c.font = "28px 'Russo One', Impact, sans-serif";
-      c.fillText(g.ev ? 'D' : gear === -1 ? 'R' : String(gear), 165, 93);
-
-      // ---- boost (or motor temperature) dial
-      if (g.dial) {
-        const bx = 219, by = 46, BR = 24;
-        const b0 = Math.PI * 0.72, b1 = Math.PI * 2.28, bs = b1 - b0;
-        const ev = g.dial === 'ev';
-        const val = U.clamp(g.v, 0, 1);
-        const hot = ev ? 0.55 : 0.8; // where it starts costing you
+      c.lineWidth = 1.5;
+      c.strokeStyle = 'rgba(160,190,255,0.22)';
+      c.stroke();
+      // red zone band
+      c.lineWidth = 7;
+      c.strokeStyle = 'rgba(255,74,61,0.55)';
+      c.beginPath();
+      c.arc(D.cx, D.cy, D.R - 3.5, D.a0 + D.sw * redF, D.a1);
+      c.stroke();
+      // ticks: every 1,000 (numbered) and 500
+      c.textAlign = 'center';
+      c.textBaseline = 'middle';
+      c.font = "12px 'Russo One', Impact, sans-serif";
+      for (let i = 0; i <= maxK * 2; i++) {
+        const f = i / (maxK * 2), a = D.a0 + D.sw * f, major = i % 2 === 0, red = f >= redF - 0.001;
+        const r0 = D.R - (major ? 13 : 8), r1 = D.R - 1;
+        c.lineWidth = major ? 2.2 : 1.2;
+        c.strokeStyle = red ? '#ff6a5c' : major ? 'rgba(235,242,255,0.9)' : 'rgba(235,242,255,0.45)';
         c.beginPath();
-        c.arc(bx, by, BR + 6, 0, Math.PI * 2);
-        c.fillStyle = 'rgba(6,10,22,0.45)';
+        c.moveTo(D.cx + Math.cos(a) * r0, D.cy + Math.sin(a) * r0);
+        c.lineTo(D.cx + Math.cos(a) * r1, D.cy + Math.sin(a) * r1);
+        c.stroke();
+        if (major) {
+          c.fillStyle = red ? '#ff6a5c' : 'rgba(235,242,255,0.85)';
+          c.fillText(String(i / 2), D.cx + Math.cos(a) * (D.R - 23), D.cy + Math.sin(a) * (D.R - 23) + 1);
+        }
+      }
+      c.font = "bold 7px 'Nunito', system-ui, sans-serif";
+      c.fillStyle = 'rgba(150,162,196,0.8)';
+      c.fillText('×1000 r/min', D.cx, D.cy - 40);
+      // nitrous track, round the lower left of the dial
+      if (g.nos) {
+        c.lineWidth = 4;
+        c.lineCap = 'round';
+        c.strokeStyle = 'rgba(127,224,255,0.14)';
+        c.beginPath();
+        c.arc(D.cx, D.cy, D.R + 13, D.n0, D.n1);
+        c.stroke();
+        c.lineCap = 'butt';
+        c.font = "900 7px 'Nunito', system-ui, sans-serif";
+        c.fillStyle = 'rgba(127,224,255,0.7)';
+        c.fillText('N2O', D.cx + Math.cos(D.n1 + 0.13) * (D.R + 13), D.cy + Math.sin(D.n1 + 0.13) * (D.R + 13));
+      }
+      // the boost / motor dial's face
+      if (g.dial) {
+        const B = D.b;
+        c.fillStyle = 'rgba(6,10,22,0.78)';
+        c.beginPath();
+        c.arc(B.x, B.y, B.R + 8, 0, Math.PI * 2);
         c.fill();
+        c.lineWidth = 1.2;
+        c.strokeStyle = 'rgba(160,190,255,0.2)';
+        c.stroke();
         c.lineWidth = 5;
         c.strokeStyle = 'rgba(255,255,255,0.09)';
         c.beginPath();
-        c.arc(bx, by, BR, b0, b1);
+        c.arc(B.x, B.y, B.R, B.a0, B.a1);
         c.stroke();
         c.strokeStyle = 'rgba(255,74,61,0.3)';
         c.beginPath();
-        c.arc(bx, by, BR, b0 + bs * hot, b1);
+        c.arc(B.x, B.y, B.R, B.a0 + (B.a1 - B.a0) * (g.dial === 'ev' ? 0.55 : 0.8), B.a1);
         c.stroke();
+        c.font = "900 7px 'Nunito', system-ui, sans-serif";
+        c.fillStyle = '#96a2c4';
+        c.fillText(g.dial === 'ev' ? 'MOTOR' : 'BOOST', B.x, B.y - 9);
+      }
+      this._face = { key, cv, maxK };
+      return this._face;
+    }
+
+    drawCluster(kmh, rpm, gear, unit, g) {
+      const now = performance.now();
+      if (now - (this._clAt || 0) < 15) return; // (60 redraws a second is plenty, on a 144 Hz screen too)
+      this._clAt = now;
+      const flash = Math.floor(now / 70) % 2;
+      const up = g.up || 0.975, r = U.clamp(rpm, 0, 1.03);
+      const win = r >= up - 0.045; // shift now (the perfect-shift window on a manual car)
+      const perfect = this._pkT > 0 ? 1 : 0;
+      const key = Math.round(kmh) + '|' + Math.round(r * 200) + '|' + gear + '|' + (g.sel || 0) + '|' + unit + '|' + g.dial
+        + '|' + Math.round(g.v * 70) + '|' + Math.round(g.avail * 30) + '|' + (g.over ? 1 : 0) + '|' + Math.round(g.redline) + '|' + Math.round((g.nosV || 0) * 60) + '|' + (g.nosOn ? 1 : 0)
+        + '|' + ((win || g.over || g.nosOn || g.hint) ? flash : 0) + '|' + Math.round((this._pkT || 0) * 20) + '|' + (g.hint || '');
+      if (this._spk === key) return;
+      this._spk = key;
+      const k = this.k || 1;
+      const face = this._clusterFace(g, k);
+      const c = this.sctx;
+      const D = CLU;
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.clearRect(0, 0, this.el.speedo.width, this.el.speedo.height);
+      c.drawImage(face.cv, 0, 0);
+      c.setTransform(k, 0, 0, k, 0, 0);
+      c.textAlign = 'center';
+      c.textBaseline = 'alphabetic';
+      const f = U.clamp((r * g.redline) / (face.maxK * 1000), 0, 1);
+      const na = D.a0 + D.sw * f;
+      // ---- rev arc, lit up to the needle
+      const col = r >= 0.995 ? '#ff4a3d' : win ? (g.manual ? '#4db8ff' : '#ff8a5c') : r > up - 0.2 ? '#ffcc00' : '#39d6ff';
+      c.lineWidth = 4;
+      c.strokeStyle = col;
+      c.globalAlpha = 0.85;
+      c.beginPath();
+      c.arc(D.cx, D.cy, D.R - 17.5, D.a0, na);
+      c.stroke();
+      c.globalAlpha = 1;
+      // ---- needle (from the hub ring out to the ticks) with a soft glow
+      const ca = Math.cos(na), sa = Math.sin(na);
+      c.lineCap = 'round';
+      c.globalAlpha = 0.28; // (a soft halo: a wide faint stroke - canvas shadowBlur is slow)
+      c.lineWidth = 8;
+      c.strokeStyle = col;
+      c.beginPath();
+      c.moveTo(D.cx + ca * 34, D.cy + sa * 34);
+      c.lineTo(D.cx + ca * (D.R - 4), D.cy + sa * (D.R - 4));
+      c.stroke();
+      c.globalAlpha = 1;
+      c.lineWidth = 3;
+      c.strokeStyle = '#ff5a3c';
+      c.stroke();
+      c.lineCap = 'butt';
+      // hub ring
+      c.lineWidth = 2;
+      c.strokeStyle = perfect ? '#4db8ff' : 'rgba(160,190,255,0.25)';
+      c.beginPath();
+      c.arc(D.cx, D.cy, 30, 0, Math.PI * 2);
+      c.stroke();
+      // ---- gear, big, in the middle (a queued shift shows as a small arrow)
+      c.fillStyle = gear === -1 ? '#ff8a5c' : perfect ? '#4db8ff' : '#ffcc00';
+      c.font = "46px 'Russo One', Impact, sans-serif";
+      c.fillText(g.ev ? 'D' : gear === -1 ? 'R' : String(gear), D.cx, D.cy + 16);
+      if (g.manual && g.sel && gear > 0 && g.sel !== gear) {
+        c.font = "bold 12px 'Nunito', system-ui, sans-serif";
+        c.fillStyle = '#4db8ff';
+        c.fillText(g.sel > gear ? '▲' : '▼', D.cx + 24, D.cy - 6);
+      }
+      // ---- speed, in the dial's open bottom
+      c.fillStyle = '#f5f7fc';
+      c.font = "30px 'Russo One', Impact, sans-serif";
+      c.fillText(String(Math.round(kmh)), D.cx, D.cy + 58);
+      c.font = "bold 9px 'Nunito', system-ui, sans-serif";
+      c.fillStyle = '#96a2c4';
+      c.fillText(unit, D.cx, D.cy + 70);
+      // ---- shift lights across the top: green, amber, red, then all blue
+      // (flashing) when it's time to shift; red/white on the limiter
+      const n = 10, lit = U.clamp((r - (up - 0.3)) / (0.3 - 0.045), 0, 1) * n;
+      for (let i = 0; i < n; i++) {
+        const x = D.cx - ((n - 1) / 2) * 12.5 + i * 12.5, y = 9;
+        let fill = 'rgba(255,255,255,0.08)';
+        if (r >= 0.995) fill = flash ? '#ffffff' : '#ff4a3d';
+        else if (win) fill = g.manual ? (flash ? '#4db8ff' : '#1e6fd9') : '#ff4a3d';
+        else if (i < lit) fill = i < 4 ? '#2fe07a' : i < 7 ? '#ffcc00' : '#ff4a3d';
+        c.fillStyle = fill;
+        c.beginPath();
+        c.arc(x, y, 4, 0, Math.PI * 2);
+        c.fill();
+      }
+      // ---- nitrous left in the bottle
+      if (g.nos) {
+        const nv = U.clamp(g.nosV == null ? 1 : g.nosV, 0, 1);
+        if (nv > 0.01) {
+          c.lineWidth = 4;
+          c.lineCap = 'round';
+          c.strokeStyle = g.nosOn ? (flash ? '#ffffff' : '#7fe0ff') : '#3b9dff';
+          c.beginPath();
+          c.arc(D.cx, D.cy, D.R + 13, D.n1 - (D.n1 - D.n0) * nv, D.n1);
+          c.stroke();
+          c.lineCap = 'butt';
+        }
+      }
+      // ---- right-hand column: a perfect shift, or the shift key when you
+      // are sitting on the limiter in a manual car
+      if (perfect) {
+        c.globalAlpha = U.clamp(this._pkT / 0.25, 0, 1);
+        c.font = "15px 'Russo One', Impact, sans-serif";
+        c.fillStyle = '#4db8ff';
+        c.fillText('PERFECT', D.tx, 52);
+        c.font = "900 8px 'Nunito', system-ui, sans-serif";
+        c.fillText('SHIFT', D.tx, 64);
+        c.globalAlpha = 1;
+      } else if (g.hint) {
+        c.font = "13px 'Russo One', Impact, sans-serif";
+        c.fillStyle = flash ? '#ffffff' : '#4db8ff';
+        c.fillText('SHIFT ▲', D.tx, 52);
+        c.font = "900 8px 'Nunito', system-ui, sans-serif";
+        c.fillStyle = '#96a2c4';
+        c.fillText(g.hint, D.tx, 64);
+      }
+      if (g.box) {
+        c.font = "900 7px 'Nunito', system-ui, sans-serif";
+        c.fillStyle = g.manual ? '#4db8ff' : 'rgba(150,162,196,0.75)'; // (a manual car says so, in blue, all race)
+        c.fillText(g.box.toUpperCase(), D.cx, D.cy + 81);
+      }
+      // ---- boost (or motor temperature) needle
+      if (g.dial) {
+        const B = D.b, ev = g.dial === 'ev';
+        const val = U.clamp(g.v, 0, 1), hot = ev ? 0.55 : 0.8, bs = B.a1 - B.a0;
         // a tick where the turbo COULD be at these revs: the gap between it
         // and the lit arc is the lag you are waiting out
+        c.lineWidth = 5;
         if (!ev && g.avail > 0.02) {
-          const aa = b0 + bs * U.clamp(g.avail, 0, 1);
+          const aa = B.a0 + bs * U.clamp(g.avail, 0, 1);
           c.strokeStyle = 'rgba(255,255,255,0.33)';
           c.beginPath();
-          c.arc(bx, by, BR, aa - 0.05, aa + 0.05);
+          c.arc(B.x, B.y, B.R, aa - 0.05, aa + 0.05);
           c.stroke();
         }
-        const col = g.over ? '#ff4a3d' : val > hot ? '#ff8a5c' : ev ? '#7fe0ff' : '#39d6ff';
-        c.strokeStyle = col;
+        const bc = g.over ? '#ff4a3d' : val > hot ? '#ff8a5c' : ev ? '#7fe0ff' : '#39d6ff';
+        c.strokeStyle = bc;
         c.lineCap = 'round';
         c.beginPath();
-        c.arc(bx, by, BR, b0, b0 + bs * Math.max(0.004, val));
+        c.arc(B.x, B.y, B.R, B.a0, B.a0 + bs * Math.max(0.004, val));
         c.stroke();
-        const na = b0 + bs * val;
+        c.lineCap = 'butt';
+        const ba = B.a0 + bs * val;
         c.beginPath();
-        c.arc(bx + Math.cos(na) * BR, by + Math.sin(na) * BR, 3.6, 0, Math.PI * 2);
-        c.fillStyle = g.over && flash ? '#ffffff' : col;
+        c.arc(B.x + Math.cos(ba) * B.R, B.y + Math.sin(ba) * B.R, 3.4, 0, Math.PI * 2);
+        c.fillStyle = g.over && flash ? '#ffffff' : bc;
         c.fill();
-        c.font = "bold 7px 'Nunito', system-ui, sans-serif";
-        c.fillStyle = g.over ? '#ff6a5c' : '#96a2c4';
-        c.fillText(ev ? (g.over ? 'LIMP' : 'MOTOR') : 'BOOST', bx, by - 8);
         c.font = "13px 'Russo One', Impact, sans-serif";
         c.fillStyle = val > hot ? '#ff8a5c' : '#e8eefc';
         // (boost gain is a share of engine power; +100% reads as about 1.4 bar
         //  of manifold pressure, which is the number a real gauge shows)
-        c.fillText(ev ? Math.round(val * 100) + '%' : (val * (g.gain || 0) * 1.4).toFixed(2), bx, by + 7);
-        c.font = "bold 7px 'Nunito', system-ui, sans-serif";
-        c.fillStyle = '#96a2c4';
-        c.fillText(ev ? 'TEMP' : 'bar', bx, by + 16);
+        c.fillText(ev ? Math.round(val * 100) + '%' : (val * (g.gain || 0) * 1.4).toFixed(2), B.x, B.y + 6);
+        c.font = "900 7px 'Nunito', system-ui, sans-serif";
+        c.fillStyle = g.over ? '#ff6a5c' : '#96a2c4';
+        c.fillText(ev ? (g.over ? 'LIMP' : 'TEMP') : 'bar', B.x, B.y + 16);
       }
     }
 
@@ -486,13 +621,25 @@
         if (me.bestLap != null) this.bestSeen = me.bestLap;
         const rs = me.rs;
         const sp = Math.hypot(rs.vx, rs.vz);
-        this.drawCluster(G.Settings.speed(sp), U.clamp((rs.rpm - 0.14) / 0.86, 0, 1), rs.gear, G.Settings.unit(), {
+        // v5.8: a perfect manual shift lights the cluster up for a moment
+        if ((rs.pk || 0) > (this._lastPk || 0) + 0.2) this._pkT = 0.8;
+        this._lastPk = rs.pk || 0;
+        this._pkT = Math.max(0, (this._pkT || 0) - dt);
+        const man = !!me.manual;
+        if (G.Touch) G.Touch.setManual(man);
+        this.drawCluster(G.Settings.speed(sp), rs.rpm || 0, rs.gear, G.Settings.unit(), {
           // v5.1 dial: boost on a turbo, motor temperature on an electric car
           dial: me.hasBoost ? 'boost' : me.ev ? 'ev' : '',
           v: me.hasBoost ? rs.boost || 0 : U.clamp(rs.heat || 0, 0, 1),
           avail: me.hasBoost ? me.boostAvail || 0 : 0,
           gain: me.boostGain || 0, redline: me.redline || 7000, ev: !!me.ev,
           over: !!rs.overheat,
+          // v5.8: where this gear wants shifting, the box, nitrous, and the
+          // shift key if a manual car is sitting on its limiter
+          up: me.upRs ? me.upRs[U.clamp((rs.gear || 1) - 1, 0, me.upRs.length - 1)] : 0.975,
+          manual: man, sel: rs.sel, box: me.boxLabel || '',
+          nos: !!me.hasNos, nosV: rs.nos == null ? 1 : rs.nos, nosOn: !!rs.nosOn,
+          hint: man && (rs.limT || 0) > 0.15 && rs.gear > 0 && me.upRs && rs.gear < me.upRs.length ? (ST().keys.shiftUp ? G.Settings.keyName(ST().keys.shiftUp) : 'B / D-pad ▲') : '',
         });
         this.set('heatBox', el.heatBox, me.hasBoost ? '' : 'none', 'display');
         this.set('heat', el.heat, Math.round(U.clamp(rs.heat || 0, 0, 1) * 100) + '%', 'width');
@@ -501,7 +648,7 @@
         this.set('brk', el.brk, Math.round(bt * 100) + '%', 'width');
         el.brkBox.className = 'gauge brk' + ((rs.bt || 0) > 0.7 ? ' warn' : (rs.bt || 0) < 0.12 && me.coldBrakes ? ' cold' : '');
         // v4: nitrous bottle, slipstream strength, catch-up bonus
-        this.set('nosBox', el.nosBox, me.hasNos ? '' : 'none', 'display');
+        this.set('nosBox', el.nosBox, 'none', 'display'); // (v5.8: nitrous is an arc round the rev dial now)
         this.set('nos', el.nos, Math.round(U.clamp(rs.nos == null ? 1 : rs.nos, 0, 1) * 100) + '%', 'width');
         el.nosBox.className = 'gauge nos' + (rs.nosOn ? ' on' : (rs.nos || 0) < 0.05 ? ' empty' : '');
         // v4.4.2: slipstream badge (top centre), blue edge glow and a whoosh
@@ -612,10 +759,14 @@
         this.set('fuelBox', el.fuelBox, endu ? '' : 'none', 'display');
         if (endu) {
           this.set('fuel', el.fuel, Math.round(U.clamp(rs.tank, 0, 1) * 100) + '%', 'width');
-          const fc = 'gauge fuel' + (rs.tank <= 0 ? ' over' : rs.tank < 0.15 ? ' warn' : '');
+          const fc = 'gauge fuel' + (rs.tank <= 0 ? ' over' : this.pitCall ? ' call' : rs.tank < 0.15 ? ' warn' : ''); // (v5.8 call: time to pit)
           if (this.cache.fuelCls !== fc) { this.cache.fuelCls = fc; el.fuelBox.className = fc; }
           this._pitAdvice(v, me, rs);
-        } else this.set('pitOn', el.pit, '', 'className');
+        } else {
+          this.set('pitOn', el.pit, '', 'className');
+          this.pitCall = false;
+        }
+        if (world && world.pitCall) world.pitCall(!!this.pitCall, dt);
         this._wrongT -= dt;
         if (me.wrong && this.bannerT <= 0) {
           this.banner('WRONG WAY', 'Press ' + G.Settings.keyName(s.keys.reset) + ' to reset', 0.5, 'warn');
@@ -644,7 +795,19 @@
           .map((c, i) => `<div class="row${me && c.id === me.id ? ' me' : ''}${c.finished ? ' fin' : ''}"><span class="p">${i + 1}</span><i style="background:#${c.color.toString(16).padStart(6, '0')}"></i><span class="n">${U.esc(c.name)}</span>${c.bet ? `<em>${U.esc(c.bet)}</em>` : ''}${v.endu ? (c.pit ? '<s class="pit">PIT</s>' : c.stops ? `<s>${c.stops}×</s>` : '') : ''}${c.finished ? `<b>${G.ic('checker')}</b>` : c.dnf ? '<b>DNF</b>' : ''}</div>`)
           .join('');
       }
-      this.drawMap(v.cars.map((c) => ({ x: c.rs.x, z: c.rs.z, h: c.rs.h, color: c.color, id: c.id })), me && me.id);
+      // (v5.8: the minimap at 30 fps - dots don't need more - and no fresh
+      // array of fresh objects every frame)
+      const nowM = performance.now();
+      if (!this._mapAt || nowM - this._mapAt > 32) {
+        this._mapAt = nowM;
+        const mc = this._mapCars || (this._mapCars = []);
+        mc.length = v.cars.length;
+        for (let i = 0; i < v.cars.length; i++) {
+          const c = v.cars[i], o = mc[i] || (mc[i] = {});
+          o.x = c.rs.x; o.z = c.rs.z; o.h = c.rs.h; o.color = c.color; o.id = c.id;
+        }
+        this.drawMap(mc, me && me.id);
+      }
       // progress bar (open tracks)
       if (this.track && !this.track.closed) {
         const L = this.track.raceDistance || 1;
@@ -729,25 +892,44 @@
       const perM = used > 0.02 ? used / Math.max(250, d) : 1 / (total * 0.6);
       const rem = Math.max(0, total - d), need = perM * rem;
       const lapsOfFuel = rs.tank / Math.max(1e-6, perM * L);
-      const ahead = G.RaceEnv.pitAhead(tr, ((d % L) + L) % L);
-      let t = '', sub = '', cls = 'hud-pit';
+      // (v5.8: where the car really is, for the parking guide below)
+      const pq = tr.query(rs.x, rs.z, rs.hint || 0, this._pq || (this._pq = {}));
+      const B = tr.pit, ahead = G.RaceEnv.pitAhead(tr, pq.along);
+      const side = this._pitSide(tr), arrow = side === 'left' ? '◀' : '▶';
+      const need2 = G.RaceEnv.shouldPit(rs, need, rem / L), tyres = rs.tw > 0.8 && rem > L * 1.3;
+      const near = Math.abs(ahead) < B.hl + 40 && Math.hypot(rs.vx, rs.vz) < 16;
+      const apron = Math.abs(pq.lat - B.lat) < B.hw + 5;
+      let t = '', sub = '', cls = 'hud-pit', call = false;
       if (rs.pit) {
         t = 'IN THE PIT';
         cls += ' on';
+        E.called = false;
       } else if (me.finished || v.phase !== 'race') {
         t = '';
+      } else if (near && apron && (need2 || tyres || rs.tank <= 0 || Math.hypot(rs.vx, rs.vz) < 9)) {
+        // v5.8 parking guide: in the box (a little past either end counts), or which way it is
+        const inBox = Math.abs(ahead) <= B.hl + 6 && Math.abs(pq.lat - B.lat) <= B.hw + 2;
+        t = inBox ? 'STOP HERE' : ahead > 0 ? `BOX AHEAD ▲ ${Math.round(ahead - B.hl)} m` : `BOX BEHIND ▼ ${Math.round(-ahead - B.hl)} m`;
+        sub = inBox ? 'brake to a stop - you\'re in the box' : ahead > 0 ? 'keep rolling, then stop anywhere in it' : 'hold brake to reverse back into it';
+        cls += inBox ? ' on good big' : ' on warn big';
+        call = true;
       } else if (rs.tank <= 0) {
         t = 'OUT OF FUEL';
-        sub = ahead > 0 ? `limp to the pit box · ${Math.round(ahead)} m` : 'limp round to the pit box';
+        sub = ahead > 0 ? `limp to the pit box · ${Math.round(ahead)} m · on the ${side}` : `limp round to the pit box (on the ${side})`;
         cls += ' on bad';
-      } else if (G.RaceEnv.shouldPit(rs, need, rem / L)) {
-        t = 'BOX THIS LAP';
-        sub = ahead > 0 && ahead < 600 ? `pit box in ${Math.round(ahead)} m · stop inside it` : `fuel for ${lapsOfFuel.toFixed(1)} laps`;
-        cls += ' on warn';
-      } else if (rs.tw > 0.8 && rem > L * 1.3) {
-        t = 'TYRES GONE';
-        sub = 'pit for a fresh set';
-        cls += ' on warn';
+        call = true;
+      } else if (need2 || tyres) {
+        const close = ahead > 0 && ahead < 450;
+        t = close ? `PIT ${arrow} ${Math.round(ahead)} m` : need2 ? 'BOX THIS LAP' : 'TYRES GONE';
+        sub = close ? `pit box on the ${side} · stop anywhere in it` : need2 ? `fuel for ${lapsOfFuel.toFixed(1)} laps · pit box on the ${side}` : `pit for a fresh set · box on the ${side}`;
+        cls += ' on warn' + (close ? ' big' : '');
+        call = true;
+        // the first time it's time to come in: say it big, once, with a sound
+        if (!E.called) {
+          E.called = true;
+          this.banner(need2 ? 'BOX THIS LAP' : 'TYRES GONE', need2 ? `Fuel for ${lapsOfFuel.toFixed(1)} laps - the pit box is on the ${side}, follow the beacon` : `Pit for a fresh set - the box is on the ${side}`, 3.2, 'warn');
+          if (G.Audio && G.Audio.notify) G.Audio.notify('warn');
+        }
       } else if (rem > L * 0.3) {
         t = `FUEL ${lapsOfFuel >= 9.95 ? Math.round(lapsOfFuel) : lapsOfFuel.toFixed(1)} LAPS`;
         sub = rs.tank >= need ? 'enough to the flag' : `${Math.max(0, need - rs.tank).toFixed(2) * 100 | 0}% short of the flag`;
@@ -757,6 +939,17 @@
       this.set('pitS', el.pitS, sub);
       this.set('pitOn', el.pit, cls, 'className');
       E.info = { tank: rs.tank, tw: rs.tw, need, lapsLeft: rem / L };
+      this.pitCall = call; // (the fuel gauge flashes and a beacon stands over the box while it's time)
+    }
+
+    // which side of the road the pit box is on, seen driving the right way
+    _pitSide(tr) {
+      if (this._pitSideTr === tr) return this._pitSideV;
+      const B = tr.pit, i = B.ic;
+      const p0 = tr.pointAt(B.at, 0), p1 = tr.pointAt(B.at, B.lat);
+      const dx = p1.x - p0.x, dz = p1.z - p0.z;
+      this._pitSideTr = tr;
+      return (this._pitSideV = dx * tr.TZ[i] - dz * tr.TX[i] > 0 ? 'left' : 'right');
     }
 
     clearTags() {

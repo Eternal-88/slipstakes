@@ -16,6 +16,7 @@
       this.root.innerHTML = `
         <div class="tc-top"><button data-t="rs" title="Reset car">↺</button><button data-t="cam" title="Camera">${G.ic('video')}</button></div>
         <div class="tc-left"><button data-t="l">◀</button><button data-t="r">▶</button></div>
+        <div class="tc-gear"><button data-t="gu" title="Shift up">▲</button><button data-t="gd" title="Shift down">▼</button></div>
         <div class="tc-right"><button data-t="n" class="nos">N2O</button><button data-t="hb" class="hb">HAND<br>BRAKE</button><button data-t="b" class="br">BRAKE</button><button data-t="t" class="gas">GAS</button></div>`;
       const set = (e, v) => {
         const b = e.target.closest && e.target.closest('[data-t]');
@@ -25,6 +26,8 @@
         if (k in this.state) {
           this.state[k] = v;
           b.classList.toggle('on', !!v);
+        } else if (v && (k === 'gu' || k === 'gd')) {
+          G.Input.shift(k === 'gu' ? 1 : -1); // (v5.8 manual box)
         } else if (v) {
           const K = G.Settings.s.keys;
           G.Input.press(k === 'rs' ? K.reset : K.cam);
@@ -47,6 +50,14 @@
       window.addEventListener('pointerdown', (e) => {
         if (e.pointerType === 'touch') this.seen = true;
       }, true);
+    },
+
+    // v5.8: the shift buttons only show in a manual car
+    setManual(on) {
+      if (this.root && on !== this._man) {
+        this._man = on;
+        this.root.classList.toggle('man', !!on);
+      }
     },
 
     update(driving) {

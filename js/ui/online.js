@@ -131,7 +131,12 @@
         id: this.id, name: clip(G.App && G.App.name ? G.App.name() : 'Driver', 16), st: s.st, room: s.room || '', rname: s.rname || '',
         n: s.n || 0, max: s.max || 0, v: G.VERSION, proto: G.Net ? G.Net.PROTO : 0,
         pub: this.pub || '', dm: this.pub ? 1 : 0, at: Date.now(),
+        idle: this.idle() ? 1 : 0,
       };
+    },
+    // the tab is in the background, or nobody has touched it for 3 minutes
+    idle() {
+      return document.hidden || (G.Input && G.Input.idleMs ? G.Input.idleMs() > 180000 : false);
     },
 
     // force: publish now even if nothing changed; m: only to this broker
@@ -173,6 +178,11 @@
           changed = true;
         }
       }
+      // typing notices run out; idle-ness can change without a card arriving
+      if (this.typingAt && this.typingAt.size) {
+        for (const [id, t] of this.typingAt) if (now - t > 5000) this.typingAt.delete(id);
+        changed = true;
+      }
       if (changed) this._changed();
     },
 
@@ -192,6 +202,7 @@
           n: Math.max(0, Math.min(8, +o.n || 0)), max: Math.max(0, Math.min(8, +o.max || 0)),
           v: clip(o.v, 8), proto: +o.proto || 0,
           pub: typeof o.pub === 'string' && o.pub.length < 200 ? o.pub : '', dm: o.dm ? 1 : 0, at: +o.at || 0,
+          idle: o.idle ? 1 : 0,
         };
         const old = this.cards.get(id);
         if (old && old.info.pub !== info.pub) this.akeys.delete(id); // they reloaded: new key
@@ -223,7 +234,7 @@
       const now = Date.now();
       const rl = (this._rl = this._rl || new Map());
       const w = (rl.get(o.f) || []).filter((t) => now - t < 10000);
-      if (w.length >= 8) return;
+      if (w.length >= 12) return;
       w.push(now);
       rl.set(o.f, w);
       let text, body;
@@ -248,7 +259,13 @@
       if (body && (body.b === 1 || body.b === 0)) return this._blockNotice(o.f, card ? card.info.name : 'Driver', body.b === 1);
       // a receipt: they got (d) or read (r) our messages up to that time
       if (body && (typeof body.d === 'number' || typeof body.r === 'number')) return this._receipt(o.f, body);
+      // they're typing to us (older games ignore it: no text in it)
+      if (body && body.k === 1) {
+        (this.typingAt = this.typingAt || new Map()).set(o.f, now);
+        return this._changed();
+      }
       if (!text) return;
+      if (this.typingAt) this.typingAt.delete(o.f);
       const cv = this._convo(o.f, card ? card.info.name : 'Driver');
       const sat = +o.at || now; // (their clock: what the receipts are counted in)
       cv.msgs.push({ me: false, text, at: now, sat });
@@ -284,6 +301,26 @@
           for (const m of this.ms) m.publish(NS + 'dm/' + id, msg);
         } catch (e) {}
       }, 1200);
+    },
+    // Typing to someone: a sealed {k: 1}, at most every 4 s while the box has
+    // something in it. Their side shows "typing…" for 5 s after the last one.
+    async _typing(id) {
+      const now = Date.now();
+      if (now - (this._kAt || 0) < 4000 || this._kId === id && now - (this._kAt || 0) < 4000) return;
+      const c = this.cards.get(id);
+      if (!c || !c.info.dm || !this.ms.length || this.blocked.has(id) || this.blockedBy.has(id)) return;
+      this._kAt = now;
+      this._kId = id;
+      try {
+        const k = await this._key(id);
+        if (!k) return;
+        const sealed = await G.Relay.DM.seal(k, JSON.stringify({ k: 1 }));
+        const msg = JSON.stringify({ f: this.id, id: U.uid(12), iv: sealed.iv, ct: sealed.ct, at: now });
+        for (const m of this.ms) m.publish(NS + 'dm/' + id, msg);
+      } catch (e) {}
+    },
+    isTyping(id) {
+      return !!(this.typingAt && Date.now() - (this.typingAt.get(id) || 0) < 5000);
     },
     _receipt(id, b) {
       const cv = this.convos.get(id);
@@ -516,6 +553,9 @@
         }
         e.stopPropagation(); // typing here never drives the car or opens the chat
       });
+      this.$('.on-in input').addEventListener('input', (e) => {
+        if (this.view && e.target.value.trim()) this._typing(this.view);
+      });
       this.$('.on-q').addEventListener('input', (e) => {
         this.q = e.target.value;
         this.render();
@@ -535,6 +575,7 @@
       const v = inp.value;
       if (!v.trim() || !this.view) return;
       inp.value = '';
+      this._kAt = 0; // (a new message: the next keystroke may say "typing" again straight away)
       await this.send(this.view, v);
     },
 
@@ -565,7 +606,8 @@
         chat.unread = 0;
         const card = this.cards.get(this.view);
         $('.on-ch b').textContent = chat.name;
-        $('.on-ch span').textContent = card ? STATUS[card.info.st] || '' : 'Offline';
+        $('.on-ch span').textContent = this.isTyping(this.view) ? 'typing…' : card ? (card.info.idle ? 'Away · ' : '') + (STATUS[card.info.st] || '') : 'Offline';
+        $('.on-ch span').classList.toggle('ty', this.isTyping(this.view));
         const tick = (m) => {
           const st = (chat.rAt || 0) >= m.at ? 'seen' : (chat.dAt || 0) >= m.at ? 'got' : 'sent';
           return `<i class="on-tk ${st}" title="${st === 'seen' ? 'Seen' : st === 'got' ? 'Delivered' : 'Sent'}">${st === 'sent' ? '✓' : '✓✓'}</i>`;
@@ -601,7 +643,8 @@
               const u = cv && cv.unread ? `<b class="on-u">${cv.unread}</b>` : '';
               const joinable = i.room && !inRoom && i.proto === (G.Net && G.Net.PROTO) && i.n < (i.max || 8);
               const by = this.blockedBy.has(i.id);
-              return `<div class="on-row"><div class="on-who"><div class="on-nm"><b>${U.esc(i.name)}</b>${u}</div><span>${by ? 'Blocked you' : this.statusText(i)}</span></div>${joinable ? `<button class="btn small ghost" data-on="join" data-id="${i.id}" title="Join their room">Join</button>` : ''}${i.dm ? `<button class="btn small" data-on="msg" data-id="${i.id}" title="${by ? 'They blocked you' : 'Send a message'}">💬</button>` : ''}</div>`;
+              const ty = this.isTyping(i.id);
+              return `<div class="on-row${i.idle ? ' idle' : ''}"><div class="on-who"><div class="on-nm"><i class="on-dot" title="${i.idle ? 'Away' : 'Active'}"></i><b>${U.esc(i.name)}</b>${u}</div><span class="${ty ? 'ty' : ''}">${by ? 'Blocked you' : ty ? 'typing a message to you…' : (i.idle ? 'Away · ' : '') + this.statusText(i)}</span></div>${joinable ? `<button class="btn small ghost" data-on="join" data-id="${i.id}" title="Join their room">Join</button>` : ''}${i.dm ? `<button class="btn small" data-on="msg" data-id="${i.id}" title="${by ? 'They blocked you' : 'Send a message'}">💬</button>` : ''}</div>`;
             })
             .join('')
         : `<p class="on-empty">${!this.started || !this.ms.length ? 'Looking for other players…' : this.q ? 'Nobody by that name.' : "Nobody else is on right now. When friends open the game they'll show up here."}</p>`;

@@ -212,7 +212,7 @@
         const up = Parts.SLOTS.filter((s) => me.garage.installed[s.id] !== s.options[0].id).map((s) => Parts.opt(s.id, me.garage.installed[s.id]).name);
         UI.patch(
           this.side,
-          `<div class="m-carcard"><span>YOUR CAR</span><b><i style="background:${hex(paint)}"></i>${U.esc(c.name)}</b><em>${U.esc(c.tag)}</em>
+          `<div class="m-carcard"><span>YOUR CAR</span><b><i style="background:${hex(paint)}"></i>${U.esc(c.name)}${G.Parts.manualTag(c.id)}</b><em>${U.esc(c.tag)}</em>
             <p>${up.length ? up.slice(0, 5).map(U.esc).join(' · ') + (up.length > 5 ? ` +${up.length - 5}` : '') : 'Stock — visit the garage.'}</p>
             <div class="m-cc-btns"><button class="btn small" data-act="car">${G.ic('car')} Change car</button><button class="btn small ghost" data-act="paint">${G.ic('palette')} Paint</button></div>
             <div class="m-money">Garage money <b>${U.fmtMoney(me.money)}</b></div>

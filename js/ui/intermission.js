@@ -30,7 +30,7 @@
       .map(({ p, worth }, i) => {
         const s = p.stats;
         const hist = s.history.slice(-8).map((x) => `<i class="f ${x === 'DNF' ? 'fd' : 'f' + Math.min(x, 4)}">${x === 'DNF' ? '×' : x}</i>`).join('');
-        return `<tr class="${me && p.id === me.id ? 'me' : ''}"><td class="p">${i + 1}</td><td><i class="dot" style="background:${hex(p.color)}"></i>${U.esc(p.name)}${p.isBot ? ' <em class="tag-bot">BOT</em>' : ''}${!p.isBot && !p.connected ? ' <em class="tag-off">OFF</em>' : ''}</td><td class="num pts">${s.points || 0}</td><td class="num">${U.fmtMoney(worth)}</td><td class="num">${U.fmtMoney(p.money)}</td><td>${s.wins}</td><td>${s.podiums}</td><td>${hist}</td><td class="num ${s.bets + s.casino >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(s.bets + s.casino)}</td></tr>`;
+        return `<tr class="${me && p.id === me.id ? 'me' : ''}"><td class="p">${i + 1}</td><td><i class="dot" style="background:${hex(p.color)}"></i>${U.esc(p.name)}${p.isBot ? ' <em class="tag-bot">BOT</em>' : ''}${!p.isBot && !p.connected ? ' <em class="tag-off">OFF</em>' : ''}${!p.isBot && p.connected && p.away ? ' <em class="tag-away">AWAY</em>' : ''}${p.ty ? ' <em class="tag-ty">typing…</em>' : ''}</td><td class="num pts">${s.points || 0}</td><td class="num">${U.fmtMoney(worth)}</td><td class="num">${U.fmtMoney(p.money)}</td><td>${s.wins}</td><td>${s.podiums}</td><td>${hist}</td><td class="num ${s.bets + s.casino >= 0 ? 'pos' : 'neg'}">${U.fmtSigned(s.bets + s.casino)}</td></tr>`;
       })
       .join('');
   }
@@ -72,7 +72,7 @@
       const log = st.chat
         .slice(-20)
         .map((c) => (c.sys ? `<div class="cm sys">${U.esc(c.text)}</div>` : `<div class="cm"><b style="color:${hex(c.color)}">${U.esc(c.name)}</b> ${U.esc(c.text)}</div>`))
-        .join('');
+        .join('') + (G.Chat ? G.Chat.typingHtml() : ''); // (v5.8)
       if (this.el.log._html !== log) {
         UI.patch(this.el.log, log);
         this.el.log.scrollTop = 1e6;

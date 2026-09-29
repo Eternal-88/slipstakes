@@ -12,14 +12,14 @@
     const host = p.id === st.hostId;
     // (v5.5.7: hover a bot to see how it drives)
     const K = G.BotKit, how = p.isBot ? (K.STYLE_NAMES[p.botStyle] || 'All-rounder') + ' driver' + (K.traitText(p.botTraits) ? ' · ' + K.traitText(p.botTraits) : '') : '';
-    return `<div class="pl ${p.connected || p.isBot ? '' : 'off'}"${how ? ` title="${U.esc(how)}"` : ''}><i style="background:${hex(p.color)}"></i><b>${U.esc(p.name)}</b>${host ? '<em class="tag-host">HOST</em>' : ''}${p.isBot ? '<em class="tag-bot">BOT</em>' : ''}${!p.connected && !p.isBot ? '<em class="tag-off">OFFLINE</em>' : ''}<span class="car">${car ? car.name : ''}</span>${extra || ''}</div>`;
+    return `<div class="pl ${p.connected || p.isBot ? '' : 'off'}"${how ? ` title="${U.esc(how)}"` : ''}><i style="background:${hex(p.color)}"></i><b>${U.esc(p.name)}</b>${host ? '<em class="tag-host">HOST</em>' : ''}${p.isBot ? '<em class="tag-bot">BOT</em>' : ''}${!p.connected && !p.isBot ? '<em class="tag-off">OFFLINE</em>' : ''}${p.away && p.connected && !p.isBot ? '<em class="tag-away" title="Their game is in the background, or they haven\'t touched it for a minute">AWAY</em>' : ''}${p.ty ? '<em class="tag-ty">typing…</em>' : ''}<span class="car">${car ? car.name : ''}</span>${extra || ''}</div>`;
   }
 
   function chatHtml(st) {
     return st.chat
       .slice(-30)
       .map((c) => (c.sys ? `<div class="cm sys">${U.esc(c.text)}</div>` : `<div class="cm"><b style="color:${hex(c.color)}">${U.esc(c.name)}</b> ${U.esc(c.text)}</div>`))
-      .join('');
+      .join('') + (G.Chat ? G.Chat.typingHtml() : ''); // (v5.8)
   }
 
   // ------------------------------------------------------------------ lobby
@@ -179,13 +179,13 @@
           const who = (pickers[id] || []).map((p) => `<i title="${U.esc(p.name)}" style="background:${hex(p.color)}"></i>`).join('');
           const fee = G.carFee(me, id, true);
           const price = c.price ? `<div class="cs-price">${fee.buy ? 'PREMIUM · ' + U.fmtMoney(fee.buy) : 'OWNED'}</div>` : '';
-          return `<div class="cs-car ${me.carId === id ? 'on' : ''} ${fee.buy && me.money < fee.buy ? 'locked' : ''}" data-act="car" data-id="${id}"><div class="cs-name">${c.name}</div><div class="cs-tag">${c.tag}</div>${price}<p title="${U.esc(c.blurb)}">${U.esc(c.blurb)}</p><div class="cs-bars">${bars}</div><div class="cs-who">${who}</div></div>`;
+          return `<div class="cs-car ${me.carId === id ? 'on' : ''} ${fee.buy && me.money < fee.buy ? 'locked' : ''}" data-act="car" data-id="${id}"><div class="cs-name">${c.name}${G.Parts.manualTag(id)}</div><div class="cs-tag">${c.tag}${s.box ? ' · ' + s.box : ''}</div>${price}<p title="${U.esc(c.blurb)}">${U.esc(c.blurb)}</p><div class="cs-bars">${bars}</div><div class="cs-who">${who}</div></div>`;
         }).join('')
       );
       const used = new Set(Object.values(st.players).filter((p) => p.id !== me.id).map((p) => p.color));
       const sw = G.CarModel.PALETTE.map((c, i) => `<button class="sw ${me.color === c ? 'on' : ''} ${used.has(c) ? 'taken' : ''}" style="background:${hex(c)}" title="${G.CarModel.COLOR_NAMES[i]}" data-act="color" data-c="${c}" ${used.has(c) ? 'disabled' : ''}></button>`).join('');
       const hs = Object.values(st.players).filter((p) => !p.isBot && p.connected);
-      const ready = hs.map((p) => `<span class="rd ${p.ready ? 'y' : ''}" style="border-color:${hex(p.color)}">${U.esc(p.name)} ${p.ready ? '✓' : '…'}</span>`).join('');
+      const ready = hs.map((p) => `<span class="rd ${p.ready ? 'y' : ''}${p.away ? ' away' : ''}" style="border-color:${hex(p.color)}"${p.away ? ' title="Away"' : ''}>${U.esc(p.name)} ${p.ready ? '✓' : p.away ? 'away' : '…'}</span>`).join('');
       const isHost = me.id === st.hostId;
       UI.patch(this.el.foot, `<div class="cs-sw">${sw}</div><div class="cs-ready">${ready}</div><div class="cs-btns"><button class="btn" data-act="garage">${G.ic('sliders-horizontal')} Tune & paint</button><button class="btn ${me.ready ? 'green' : 'primary'} big" data-act="ready">${me.ready ? '✓ Ready' : 'Ready'}</button>${isHost ? '<button class="btn ghost" data-act="start">Start now</button>' : ''}</div>`);
     },

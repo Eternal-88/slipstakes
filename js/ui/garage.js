@@ -119,7 +119,7 @@
       G.Preview.setShowroom(this.tab === 'paint');
       UI.patch(this.el.itabs, this.arg.tabs && UI.interTabs ? UI.interTabs() : '');
       const paint = g.look && g.look.paint != null ? g.look.paint : me.color;
-      UI.patch(this.el.car, `<b style="color:${hex(paint)}">■</b> ${U.esc(car.name)} <span>${car.tag}</span>`);
+      UI.patch(this.el.car, `<b style="color:${hex(paint)}">■</b> ${U.esc(car.name)} <span>${car.tag}</span>${G.Parts.manualTag(car.id)}`);
       UI.patch(this.el.money, `<span>CASH</span><b>${U.fmtMoney(me.money)}</b>`);
       // arg fields may be values or functions (intermission passes live getters)
       const val = (v) => (typeof v === 'function' ? v() : v);
@@ -374,7 +374,7 @@
             ? `<button class="btn ${fee.total ? 'pink' : 'primary'} small" data-act="swapcar" data-id="${id}" ${me.money < fee.total ? 'disabled' : ''}>${label}</button>`
             : '<span class="muted small">Between races only</span>';
           const tag = c.price ? `<em class="t-new">${fee.buy ? 'PREMIUM ' + U.fmtMoney(c.price) : 'OWNED'}</em>` : '';
-          return `<div class="gcar ${cur ? 'on' : ''}" data-hover="1" data-car="${id}"><div class="gc-h"><b>${c.name}</b>${tag}<span>${c.tag}</span>${btn}</div><p>${U.esc(c.blurb)}</p>${bars}</div>`;
+          return `<div class="gcar ${cur ? 'on' : ''}" data-hover="1" data-car="${id}"><div class="gc-h"><b>${c.name}</b>${tag}${Parts.manualTag(id)}<span>${c.tag}${s.box ? ' · ' + s.box : ''}</span>${btn}</div><p>${U.esc(c.blurb)}</p>${bars}</div>`;
         }).join('') + `<p class="muted small">${free ? 'Switching between the four base cars is free before the first race.' : `A chassis swap costs ${U.fmtMoney(Parts.CAR_SWAP)}: every part you own, your setup and your paint move to the new car.`} The Dune Runner and Apex MR are premium: buy one once and it's yours for the session. Stats are shown with your current parts. Hover a car to preview it.</p>`
       );
     },

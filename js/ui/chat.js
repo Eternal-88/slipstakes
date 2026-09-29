@@ -44,6 +44,14 @@
       });
       this.inp.addEventListener('blur', () => setTimeout(() => document.activeElement !== this.inp && this.open && this.close(), 0));
       window.addEventListener('keydown', (e) => this._hotkey(e));
+      // v5.8: typing in any room chat box (this one, the lobby's, the
+      // intermission's) tells the room
+      const box = (t) => t && t.matches && t.matches('#chatbox input, #ui .chat-in input');
+      document.addEventListener('input', (e) => box(e.target) && this.typing(!!e.target.value.trim()), true);
+      document.addEventListener('focusout', (e) => box(e.target) && this.typing(false), true);
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && box(e.target)) this._ty = this._tyAt = 0; // (sent: the host clears it)
+      }, true);
       setInterval(() => this.update(), 200);
       Talk.init();
     },
@@ -101,7 +109,40 @@
       this.close();
     },
 
+    // tell the room we're typing: at most every 3 s while we are, once when we stop
+    typing(on) {
+      if (!G.Game || !G.Game.role || !G.Client || !G.Client.state) return;
+      const now = performance.now();
+      if (on) {
+        if (now - (this._tyAt || 0) < 3000) return;
+        this._tyAt = now;
+        this._ty = 1;
+        G.Client.act({ t: 'typing', on: 1 });
+      } else if (this._ty) {
+        this._ty = this._tyAt = 0;
+        G.Client.act({ t: 'typing', on: 0 });
+      }
+    },
+    // "Sam is typing…" for everyone else in the room who is
+    typingHtml() {
+      const st = G.Client.state;
+      if (!st || !st.players) return '';
+      const who = Object.values(st.players).filter((p) => p.ty && !p.isBot && p.id !== G.Client.meId).map((p) => U.esc(p.name));
+      if (!who.length) return '';
+      const t = who.length === 1 ? `${who[0]} is typing` : who.length === 2 ? `${who[0]} and ${who[1]} are typing` : `${who.length} people are typing`;
+      return `<div class="cm typing">${t}<i></i><i></i><i></i></div>`;
+    },
+
     update() {
+      // v5.8 away: the tab is hidden, or nothing touched for a minute
+      if (G.Game && G.Game.role && G.Client && G.Client.state) {
+        const away = document.hidden || (G.Input.idleMs ? G.Input.idleMs() > 60000 : false);
+        const k = (G.Game.code || '') + (away ? ':1' : ':0');
+        if (k !== this._awayK) {
+          this._awayK = k;
+          G.Client.act({ t: 'away', on: away ? 1 : 0 });
+        }
+      } else this._awayK = null;
       const on = this.available() && !this.panel();
       const stt = Talk.ready();
       document.body.classList.toggle('stt', stt);
@@ -159,6 +200,7 @@
           .filter(([, age]) => age < SHOW_MS)
           .map(([c, age]) => line(c, age))
           .join('');
+      html += this.typingHtml();
       if (this.logEl._html !== html) {
         this.logEl._html = html;
         this.logEl.innerHTML = html;
