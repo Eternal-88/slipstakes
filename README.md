@@ -2,6 +2,36 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.7 — Liftoff
+
+Three tracks (`tracks.js`, `trackmesh.js` SCENES) with a mechanic each:
+**Launch Coast** (`sceneLaunch`): hazard `launch` {len, str, every, off, dur,
+pad} is a wind zone that only blows while the rocket lifts off
+(`track.blastK`, race time, so host and clients agree), pushing away from
+the pad; the scene flies the rocket, rolls smoke out of the trench, shakes
+the camera near it and runs canvas-texture countdown clocks.
+**Server Farm** (`sceneData`): racks in aisles with blinking lights, fans on
+the windward side of each wind zone turning with the gust, and `train`
+crossings with `look: 'robot'` (delivery robots from their docks).
+**Low Tide** (`sceneTide`): theme `seaLand` (land discs, sea everywhere
+else, so a causeway runs over the water with the wall skirts under it) and
+patches with `tide` {every, off, wet}: water only while a wave is over the
+road (`track.tideOn`; physics.js sets `track.t` from race time before it
+reads surfaces). PROTO 15.
+
+Cars (`carmodel.js`): body sections reshaped (the coupe a notchback, the
+hatch a lower sloping hatch, the EV a wedge with a metal sail behind the
+B-pillar via `B.sail`, the rotary coupe a waist) and per-car signatures
+(`B.sig`, stock cars only) and headlamps (`B.lamps`: round, twin round,
+quad, slim, bar). Geometry checked in Blender with the dump-and-measure
+tools: nothing new floating, buried or inside out.
+
+Knockables (`trackmesh.js` `knockables` / `strewn`): instanced props that
+`world.updateCar` hands every car's position to; anything touched is
+launched, tumbles, bounces and settles, and a new race stands them back up.
+Looks only - no physics, nothing on the network. Themed sets on every
+track (`KNOCK_THEME`).
+
 ## v5.6.1 — Open Late, Harvest Time
 
 Harvest Run (`trackmesh.js` sceneSuburb) rebuilt: every house generated on
