@@ -65,6 +65,9 @@
         } catch (e) {}
       }
       this._build();
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) this.render();
+      });
       // a moment after load, so it never competes with the first screen
       setTimeout(() => this.start(), 1500);
       setInterval(() => this._tick(), 3000);
@@ -147,6 +150,19 @@
     _tick() {
       for (const m of this.ms) m.pump(performance.now());
       this._publish(false);
+      // messages still unread: remind every 5 minutes (from the last alert)
+      const un = this.unread();
+      if (!un) this._remAt = 0;
+      else if (!this._remAt) this._remAt = Date.now();
+      else if (Date.now() - this._remAt >= 300000) {
+        let last = null, names = [];
+        for (const [id, cv] of this.convos) if (cv.unread) {
+          names.push(cv.name);
+          const t = cv.msgs.length ? cv.msgs[cv.msgs.length - 1].at : 0;
+          if (!last || t > last.t) last = { id, t };
+        }
+        this._pop(last ? last.id : '*', 'Unread messages', `${un} unread from ${names.slice(0, 3).join(', ')}${names.length > 3 ? '…' : ''}`, true);
+      }
       // cards age out
       const now = Date.now();
       let changed = false;
@@ -230,17 +246,93 @@
         return;
       }
       if (body && (body.b === 1 || body.b === 0)) return this._blockNotice(o.f, card ? card.info.name : 'Driver', body.b === 1);
+      // a receipt: they got (d) or read (r) our messages up to that time
+      if (body && (typeof body.d === 'number' || typeof body.r === 'number')) return this._receipt(o.f, body);
       if (!text) return;
       const cv = this._convo(o.f, card ? card.info.name : 'Driver');
-      cv.msgs.push({ me: false, text, at: now });
+      const sat = +o.at || now; // (their clock: what the receipts are counted in)
+      cv.msgs.push({ me: false, text, at: now, sat });
       if (cv.msgs.length > 100) cv.msgs.shift();
       const reading = this.open && this.view === o.f && !document.hidden;
       if (!reading) {
         cv.unread++;
-        G.UI.toast(`💬 ${cv.name}: ${text.length > 60 ? text.slice(0, 57) + '…' : text}`, 'info', false);
-      }
-      if (G.Audio && G.Audio.chat) G.Audio.chat();
+        this._pop(o.f, cv.name, text);
+      } else if (G.Audio && G.Audio.chat) G.Audio.chat();
+      this._ack(o.f, 'd', sat);
       this._changed();
+    },
+
+    // Tell a sender we got (d) or read (r) their messages up to `at` (their
+    // clock), sealed like a message. Several in a moment go as one.
+    _ack(id, kind, at) {
+      const q = (this._acks = this._acks || new Map());
+      const a = q.get(id) || {};
+      a[kind] = Math.max(a[kind] || 0, at);
+      q.set(id, a);
+      if (a.t) return;
+      a.t = setTimeout(async () => {
+        q.delete(id);
+        if (!this.ms.length || !this.cards.has(id) || this.blocked.has(id)) return;
+        try {
+          const k = await this._key(id);
+          if (!k) return;
+          const body = {};
+          if (a.d) body.d = a.d;
+          if (a.r) body.r = a.r;
+          const sealed = await G.Relay.DM.seal(k, JSON.stringify(body));
+          const msg = JSON.stringify({ f: this.id, id: U.uid(12), iv: sealed.iv, ct: sealed.ct, at: Date.now() });
+          for (const m of this.ms) m.publish(NS + 'dm/' + id, msg);
+        } catch (e) {}
+      }, 1200);
+    },
+    _receipt(id, b) {
+      const cv = this.convos.get(id);
+      if (!cv) return;
+      if (typeof b.d === 'number') cv.dAt = Math.max(cv.dAt || 0, b.d);
+      if (typeof b.r === 'number') {
+        cv.rAt = Math.max(cv.rAt || 0, b.r);
+        cv.dAt = Math.max(cv.dAt || 0, b.r);
+      }
+      this._changed();
+    },
+
+    // A new message, or a reminder of unread ones: a card that slides up at
+    // the bottom of the screen with a Reply button, a chime, and the tab's
+    // title flashing if the game is in the background. (A toast in the
+    // corner was easy to miss, most of all in a race.)
+    _pop(id, name, text, remind) {
+      const el = this.popEl;
+      if (!el) return;
+      el.querySelector('.dp-b b').textContent = name;
+      el.querySelector('.dp-b span').textContent = text.length > 90 ? text.slice(0, 87) + '…' : text;
+      el.querySelector('.dp-reply').textContent = remind ? 'Open' : 'Reply';
+      el.dataset.id = id;
+      el.classList.toggle('remind', !!remind);
+      el.classList.remove('show');
+      void el.offsetWidth;
+      el.classList.add('show');
+      clearTimeout(this._popT);
+      const hide = () => {
+        if (el.matches(':hover')) this._popT = setTimeout(hide, 2000);
+        else el.classList.remove('show');
+      };
+      this._popT = setTimeout(hide, 9000);
+      if (G.Audio) (G.Audio.dm || G.Audio.chat).call(G.Audio);
+      this._remAt = Date.now();
+      if (document.hidden && !this._ft) {
+        const base = document.title;
+        let on = false;
+        this._ft = setInterval(() => {
+          on = !on;
+          const u = this.unread();
+          document.title = on && u ? `(${u}) New message` : base;
+          if (!document.hidden || !u) {
+            clearInterval(this._ft);
+            this._ft = null;
+            document.title = base;
+          }
+        }, 1100);
+      }
     },
 
     _convo(id, name) {
@@ -344,7 +436,7 @@
     cornerHtml() {
       if (!this.started) return '';
       const u = this.unread();
-      return `<button data-c="online" title="${this.ms.length ? this.count() + ' other' + (this.count() === 1 ? '' : 's') + ' online · ' : ''}players and messages" class="on-cbtn">${G.ic('users')}<b class="${u ? 'unread' : ''}">${u || (this.ms.length ? this.count() : '')}</b></button>`;
+      return `<button data-c="online" title="${this.ms.length ? this.count() + ' other' + (this.count() === 1 ? '' : 's') + ' online · ' : ''}players and messages" class="on-cbtn${u ? ' ping' : ''}">${G.ic('users')}<b class="${u ? 'unread' : ''}">${u || (this.ms.length ? this.count() : '')}</b></button>`;
     },
 
     _changed() {
@@ -372,6 +464,22 @@
         <p class="on-note">Messages are end-to-end encrypted and vanish when you close the game. Never share personal details with someone you don't know.</p>`;
       document.body.appendChild(el);
       this.el = el;
+      const pop = document.createElement('div');
+      pop.id = 'dmpop';
+      pop.innerHTML = `<div class="dp-ic">${G.ic ? G.ic('message-circle') : '💬'}</div><div class="dp-b"><b></b><span></span></div><button class="btn small dp-reply">Reply</button><button class="dp-x" title="Dismiss">✕</button>`;
+      document.body.appendChild(pop);
+      this.popEl = pop;
+      pop.addEventListener('click', (e) => {
+        pop.classList.remove('show');
+        if (e.target.closest('.dp-x')) return;
+        const id = pop.dataset.id;
+        this.toggle(true);
+        if (id && id !== '*') {
+          this.view = id;
+          this.render();
+          setTimeout(() => this.$('.on-in input').focus(), 30);
+        }
+      });
       this.$ = (s) => el.querySelector(s);
       el.addEventListener('click', (e) => {
         const t = e.target;
@@ -458,7 +566,21 @@
         const card = this.cards.get(this.view);
         $('.on-ch b').textContent = chat.name;
         $('.on-ch span').textContent = card ? STATUS[card.info.st] || '' : 'Offline';
-        const log = chat.msgs.map((m) => `<div class="on-m ${m.sys ? 'sys' : m.me ? 'me' : ''}">${U.esc(m.text)}</div>`).join('') || `<p class="on-empty">Say hello to ${U.esc(chat.name)}.</p>`;
+        const tick = (m) => {
+          const st = (chat.rAt || 0) >= m.at ? 'seen' : (chat.dAt || 0) >= m.at ? 'got' : 'sent';
+          return `<i class="on-tk ${st}" title="${st === 'seen' ? 'Seen' : st === 'got' ? 'Delivered' : 'Sent'}">${st === 'sent' ? '✓' : '✓✓'}</i>`;
+        };
+        const lastM = chat.msgs[chat.msgs.length - 1];
+        const log = chat.msgs.map((m) => `<div class="on-m ${m.sys ? 'sys' : m.me ? 'me' : ''}">${U.esc(m.text)}${m.me ? tick(m) : ''}</div>`).join('') +
+          (lastM && lastM.me && (chat.rAt || 0) >= lastM.at ? '<div class="on-seen">Seen</div>' : '') || `<p class="on-empty">Say hello to ${U.esc(chat.name)}.</p>`;
+        if (!document.hidden) {
+          let mx = 0;
+          for (const m of chat.msgs) if (!m.me && !m.sys && (m.sat || 0) > mx) mx = m.sat;
+          if (mx > (chat.rSent || 0)) {
+            chat.rSent = mx;
+            this._ack(this.view, 'r', mx);
+          }
+        }
         if ($('.on-log')._h !== log) {
           $('.on-log').innerHTML = $('.on-log')._h = log;
           $('.on-log').scrollTop = 1e6;

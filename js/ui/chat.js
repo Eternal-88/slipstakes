@@ -147,7 +147,7 @@
       const chat = this.chat || [];
       const now = performance.now();
       const line = (c, age) => {
-        const fade = this.open ? '' : age > SHOW_MS - 2000 ? ' old' : '';
+        const fade = this.open ? '' : age > SHOW_MS - 2000 ? ' old' : age < 1500 ? ' fresh' : ''; // (v5.7: a new line slides in, marked)
         return c.sys ? `<div class="cm sys${fade}">${U.esc(c.text)}</div>` : `<div class="cm${fade}"><b style="color:${G.UI.colorHex(c.color)}">${U.esc(c.name)}</b> ${U.esc(c.text)}</div>`;
       };
       let html;

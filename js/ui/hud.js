@@ -554,7 +554,36 @@
               const m = Math.round(ahead) + ' m';
               if (o.look === 'forklift') this.banner('FORKLIFT CROSSING', 'Forklift coming out — ' + m, 0.3, 'warn');
               else if (o.look === 'tractor') this.banner('TRACTOR CROSSING', 'Tractor and trailers — ' + m, 0.3, 'warn');
+              else if (o.look === 'robot') this.banner('ROBOT CROSSING', 'Delivery robots coming through — ' + m, 0.3, 'warn');
               else this.banner('LEVEL CROSSING', 'Train coming — ' + m, 0.3, 'warn');
+              break;
+            }
+          }
+        }
+        // v5.7 the launch: a countdown as you come up on the blast zone
+        const L = trk && trk.launch;
+        if (L && v.phase === 'race' && this.bannerT <= 0.05) {
+          const q = this._xq || (this._xq = {});
+          trk.query(rs.x, rs.z, this._xh == null ? -1 : this._xh, q);
+          let ahead = L.at - L.hl - q.along;
+          if (trk.closed && ahead < -L.hl * 2) ahead += trk.length;
+          const t = v.raceTime || 0, ph = (((t + L.off) % L.every) + L.every) % L.every, toGo = L.every - ph;
+          if (t > 0 && ahead > -L.hl * 2 && ahead < 420) {
+            if (ph < L.dur) this.banner('LIFTOFF', 'The blast is on the road by the pad', 0.3, 'warn');
+            else if (toGo < 8) this.banner('ROCKET LAUNCH IN ' + Math.ceil(toGo), 'Blast wind by the pad - hold on', 0.3, 'warn');
+          }
+        }
+        // v5.7 the tide: once per lap as you come up on a causeway that floods
+        if (trk && trk.patches && trk.patches.length && v.phase === 'race' && this.bannerT <= 0.05) {
+          const q = this._xq || (this._xq = {});
+          trk.query(rs.x, rs.z, this._xh == null ? -1 : this._xh, q);
+          const lap = me ? me.lap || 0 : 0;
+          for (const pt of trk.patches) {
+            if (!pt.tide) continue;
+            const ahead = pt.at - pt.hl - q.along;
+            if (ahead > 0 && ahead < 160 && this._tideTold !== lap) {
+              this._tideTold = lap;
+              this.banner('HIGH TIDE', 'Waves wash over the causeway - lift through the water', 2.2, 'warn');
               break;
             }
           }
