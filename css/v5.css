@@ -409,3 +409,37 @@ body:has(#ui.scr-raceui) .hud-lights { top: calc(52px / var(--hud)); }
 #corner button .svi { width: 18px; height: 18px; vertical-align: middle; }
 .news-i > span .svi, .tip > span .svi, .slot-h .ic .svi { width: 20px; height: 20px; }
 .aw > span .svi { width: 1.05em; height: 1.05em; }
+/* v5.8 instrument cluster: the dial draws its own disc, so the corner box goes */
+.hud-br { width: 312px; padding: 0; background: none; border-radius: 0; box-shadow: none; }
+.hud-br .speedo { display: block; width: 300px; height: 196px; margin: 0 0 4px auto; }
+.hud-br .gauges { background: rgba(8,12,24,.74); border: 1px solid rgba(160,190,255,.14); border-radius: 12px; padding: 7px 11px 9px; gap: 5px 12px; }
+.hud-br .gauge span { font-size: 8.5px; letter-spacing: 1.3px; }
+.hud-br .gauge div { height: 5px; background: rgba(255,255,255,.08); border-radius: 1px; }
+.hud-br .gauge i { border-radius: 1px; -webkit-mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 6px); mask: repeating-linear-gradient(90deg, #000 0 5px, transparent 5px 6px); }
+/* v5.8 manual gearbox: shift buttons on touch screens, in a manual car only */
+.tc-gear { display: none; position: absolute; right: 246px; bottom: 22px; flex-direction: column; gap: 10px; }
+#touch.man .tc-gear { display: flex; }
+.tc-gear button { width: 64px; height: 64px; font-size: 24px; background: rgba(77,184,255,.35); }
+.mt { display: inline-block; font: 900 9px/1.5 var(--body); letter-spacing: 1px; color: #06182c; background: #4db8ff; border-radius: 4px; padding: 0 5px; margin-left: 6px; vertical-align: 2px; cursor: help; }
+/* v5.8 typing / away */
+.cm.typing { color: var(--muted); font-style: italic; font-size: .92em; }
+.cm.typing i { display: inline-block; width: 4px; height: 4px; margin-left: 3px; border-radius: 50%; background: currentColor; animation: tydot 1.2s infinite; vertical-align: middle; }
+.cm.typing i:nth-child(2) { animation-delay: .2s; }
+.cm.typing i:nth-child(3) { animation-delay: .4s; }
+@keyframes tydot { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
+.tag-away { font-style: normal; font-size: 9px; font-weight: 900; letter-spacing: .8px; color: #1b1400; background: #d9b44a; border-radius: 4px; padding: 1px 5px; margin-left: 5px; }
+.tag-ty { font-size: 10px; color: var(--muted); margin-left: 6px; }
+.rd.away { opacity: .6; }
+.on-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #2fe07a; box-shadow: 0 0 6px rgba(47,224,122,.6); margin-right: 6px; flex: none; }
+.on-row.idle .on-dot { background: #d9b44a; box-shadow: none; }
+.on-row.idle .on-nm b { opacity: .75; }
+#online span.ty, #online .on-ch span.ty { color: #7fe0ff; font-style: italic; }
+/* v5.8 pit calls: bigger when it matters, green when you're in the box */
+.hud-pit.big { top: 132px; padding: 7px 20px 8px; }
+.hud-pit.big b { font-size: 24px; }
+.hud-pit.big em { font-size: 13px; color: var(--ink); }
+.hud-pit.good { border-color: var(--green); box-shadow: 0 0 22px rgba(47,224,122,.45); }
+.hud-pit.good b { color: var(--green); }
+.gauge.fuel.call span { color: var(--yellow); animation: blink .5s steps(2) infinite; }
+.gauge.fuel.call i { background: var(--yellow); }
+@media (prefers-reduced-motion: reduce) { .gauge.fuel.call span { animation: none; } }
