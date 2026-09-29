@@ -2,6 +2,46 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.8 — Shift Lights
+
+Walls (`physics.js` `collideWalls`): tangential friction 0.35 → 0.8 of the
+normal impulse, a contact drag on the speed along the wall (1.4/s while
+touching, `soft` for tyre stacks), and `wallT`, a moment of lost drive after
+a hit over 1,500 N·s (throttle × 0.25 at worst, up to 0.45 s). Measured with
+`tools/harness/wallride.py` (a Legend bot with the brakes taken away and the
+throttle pinned): walls went from 2% quicker than clean driving to 8% slower.
+
+Gearboxes (`parts.js` `CARS[].box`, `boxOf`, `shiftPoints`): per-car gear
+count, spread (first gear over top; top is 0.94), shift time and kind -
+`std`, `auto` (keeps `BOX_KEEP` of the drive through a shift), `dct`, `man`.
+`tq.pk` moves each engine's torque peak (the rated power is where r·shape
+peaks, `shapePeak`). `s.upRs` holds each gear's upshift point; the gearing
+parts reshape the car's own box (the sequential box: one more gear, 6-7).
+
+Manual box (`s.manual`, the Sting and the Stormer): shift presses travel as
+running counts mod 16 (`inp.gu`, `inp.gd`: input.js → clientrace/hostrace
+→ race.js `setInput`) so a lost packet can't lose a press; `car.sel` is the
+gear asked for, `man` flags a driver who has shifted, `pk` a perfect shift's
+kick (+14% drive, on the light: within 0.045 of the upshift point, off the
+limiter), `limT` the limiter safety net. Bots shift through the same counts
+(`Bot._shift`, error by level). PROTO 16.
+
+HUD (`hud.js`): the v5.8 cluster, a 300×196 canvas with a cached dial face
+(`_clusterFace`), shift lights, nitrous arc and boost dial. `set(..., 'className')`
+now sets the class (it wrote a style property, so the endurance pit panel
+never showed). Pit guidance, `world.pitCall` and the beacon (`trackmesh.js`
+`pitbeacon`); `race.js` treats the pit zone as neither off-track nor wrong-way,
+and the box accepts a stop anywhere on the apron beside it.
+
+Room typing / away: `session.js` `on_typing` / `on_away` (flags on the
+player; typing expires after 6 s), `chat.js` sends them, `lobby.js` and
+`intermission.js` show them. Bots rev on the grid (`Bot.grid`, `race.js`).
+
+Performance (`world.js` `depthFix`): transparent double-sided materials are
+single-pass (three.js flipped their side twice a frame to draw them in two
+passes, re-picking the program each time), and instanced shadow casters get
+their own depth materials. Other cars' audio at 30 Hz, the minimap at 30 fps.
+
 ## v5.7 — Liftoff
 
 Three tracks (`tracks.js`, `trackmesh.js` SCENES) with a mechanic each:
