@@ -82,6 +82,7 @@
       const c = this.byId[id];
       if (!c) return;
       c.input.s = inp.s; c.input.t = inp.t; c.input.b = inp.b; c.input.hb = inp.hb; c.input.n = inp.n ? 1 : 0;
+      if (inp.gu != null) { c.input.gu = inp.gu & 15; c.input.gd = (inp.gd | 0) & 15; } // (v5.8 manual box: shift counts)
       if (inp.rs) c.respawnReq = true;
     }
 
@@ -165,6 +166,7 @@
             if (tgt) this.events.push({ type: 'rival', id: c.id, target: tgt.id });
           }
         }
+        else if (c.bot && frozen) inp = c.bot.grid(c.st, dt, this.countdown); // (v5.8: revs on the grid)
         else if (c.finished && !this.practice) {
           // Cool-down lap on autopilot after the flag.
           if (!c.autopilot) (c.autopilot = new G.Bot(0.7, 7)).env = env;
@@ -207,7 +209,7 @@
       st.fy[0] = st.fy[1] = st.fy[2] = st.fy[3] = 0;
       st.hint = p.i;
       st.ghost = 2.0;
-      st.gear = 1;
+      st.gear = st.sel = 1;
       st.offT = 0;
       c.px = st.x; c.pz = st.z; c.ph = st.h;
       this.events.push({ type: 'respawn', id: c.id });
@@ -297,12 +299,16 @@
         }
         c.lastAlong = a;
         if (this.endu && tr.pit) this._pit(c, q);
+        // (v5.8: the pit apron is off the road, so backing up to a box you
+        // overshot counted as off-track and reset you after 8 s. Around the
+        // box nothing is wrong-way or off-track.)
+        const inPit = this.endu && tr.pit && Math.abs(RaceEnv.pitAhead(tr, q.along)) < tr.pit.hl + 45;
         // wrong-way detection
         const fwd = Math.sin(st.h) * q.tx + Math.cos(st.h) * q.tz;
         const sp = Math.hypot(st.vx, st.vz);
-        c.wrongT = fwd < -0.3 && sp > 3 ? c.wrongT + P.DT : 0;
+        c.wrongT = !inPit && fwd < -0.3 && sp > 3 ? c.wrongT + P.DT : 0;
         // auto-respawn humans who are wedged off-track for ages
-        if (c.st.offT > 8) this.respawn(c);
+        if (c.st.offT > 8 && !inPit) this.respawn(c);
       }
       // End conditions
       if (this.phase === 'race' && !this.practice) {
@@ -337,8 +343,10 @@
         c.pitCool -= P.DT;
         return;
       }
-      if (Math.abs(RaceEnv.pitAhead(tr, q.along)) > B.hl || Math.abs(q.lat - B.lat) > B.hw + 0.6) return;
-      if (Math.hypot(st.vx, st.vz) > 2.2) return;
+      // (v5.8: anywhere on the apron alongside the box, a little past either
+      // end, and a little quicker - people overshot it and had to back up)
+      if (Math.abs(RaceEnv.pitAhead(tr, q.along)) > B.hl + 6 || Math.abs(q.lat - B.lat) > B.hw + 2) return;
+      if (Math.hypot(st.vx, st.vz) > 3.2) return;
       st.pit = 1;
       st.vx = st.vz = st.w = 0;
       c.pitT0 = this.t;

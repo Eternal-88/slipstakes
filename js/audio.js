@@ -986,8 +986,13 @@
     // lvx/lvz = listener velocity (your car's, when you're racing).
     othersUpdate(cars, lx, lz, lyaw, lvx, lvz, skipId) {
       if (!this.ok()) return;
+      // (v5.8: 30 times a second is plenty for the other cars - every value
+      // glides to its target between updates anyway - and doing it every
+      // frame was a tenth of the game's own time per frame)
+      const nowO = performance.now();
+      if (this._oT && nowO - this._oT < 30) return;
       const t = this.ctx.currentTime;
-      const nowO = performance.now(), dt = Math.min(0.1, (nowO - (this._oT || nowO)) / 1000);
+      const dt = Math.min(0.1, (nowO - (this._oT || nowO)) / 1000);
       this._oT = nowO;
       this._lx = lx;
       this._lz = lz;

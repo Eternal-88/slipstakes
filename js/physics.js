@@ -103,11 +103,17 @@
       // the tank 0..1, tyre wear since the last change 0..1+, held in the pit box
       tank: 1, tw: 0, pit: 0,
       oilT: 0, mudT: 0, // v5.6.1: oil on the tyres / mud in the tread, s left
+      wallT: 0, // v5.8: s of lost drive left after a proper hit on a wall
+      // v5.8 manual box: the gear the driver has asked for, the shift presses
+      // seen so far (running counts mod 16), 1 once the driver has taken the
+      // box over, and s left of a perfect shift's kick
+      // (gu/gd start at -1: the first input only syncs the counts)
+      sel: 1, gu: -1, gd: -1, man: 0, pk: 0, limT: 0,
     };
   }
 
   // Core state that must round-trip for prediction/reconciliation.
-  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit', 'revCut', 'oilT', 'mudT'];
+  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit', 'revCut', 'oilT', 'mudT', 'wallT', 'sel', 'gu', 'gd', 'man', 'pk', 'limT'];
   function copyCore(dst, src) {
     for (let i = 0; i < CORE.length; i++) dst[CORE[i]] = src[CORE[i]];
     for (let i = 0; i < 4; i++) dst.fy[i] = src.fy[i];
@@ -163,6 +169,12 @@
     const twGrip = endu ? 1 - 0.25 * Math.pow(U.clamp((car.tw - 0.3) / 0.8, 0, 1), 1.4) : 1;
     let thr = U.clamp(inp.t || 0, 0, 1);
     let brk = U.clamp(inp.b || 0, 0, 1);
+    // v5.8: a proper hit on a wall knocks the drive out for a moment - the
+    // walls turned you for free before, so bouncing round beat driving
+    if (car.wallT > 0) {
+      thr *= 1 - 0.75 * Math.min(1, car.wallT / 0.25);
+      car.wallT = Math.max(0, car.wallT - dt);
+    }
     const steerIn = U.clamp(inp.s || 0, -1, 1);
     const hb = inp.hb ? 1 : 0;
 
@@ -180,7 +192,7 @@
     // car reverse at full power (in reverse the brake pedal is the throttle).
     if (!frozen) {
       if (car.gear > 0 && brk > 0.5 && thr < 0.1 && vLong < 0.6 && !hb) car.gear = -1;
-      else if (car.gear === -1 && thr > 0.1 && vLong > -0.6) car.gear = 1;
+      else if (car.gear === -1 && thr > 0.1 && vLong > -0.6) car.gear = car.sel = 1;
     }
     let driveThr = thr, brakeAmt = brk;
     if (car.gear === -1) {
@@ -340,18 +352,61 @@
     const rEng = Math.max(r, car.gear === 1 || car.gear === -1 ? clutchR : s.idle);
     if (car.shiftT > 0) car.shiftT -= dt;
     if (car.kickT > 0) car.kickT -= dt;
-    // Automatic box. Upshift near the limiter, downshift when bogging.
-    if (car.gear > 0 && car.shiftT <= 0 && !frozen) {
-      if (r > s.upR && car.gear < nG) {
+    if (car.pk > 0) car.pk -= dt;
+    // v5.8 manual box. Shift presses arrive as running counts (inp.gu /
+    // inp.gd, mod 16), so a lost packet can't lose one; the first press hands
+    // the box to the driver for the rest of the race.
+    if (s.manual && inp.gu != null) {
+      let du = ((inp.gu | 0) - car.gu) & 15, dd = ((inp.gd | 0) - car.gd) & 15;
+      // (a first input, or a jump no hand could make in one input block - a
+      // reloaded page counting from 0 again - only resyncs the counts)
+      if (car.gu < 0 || du > 4 || dd > 4) du = dd = 0;
+      car.gu = inp.gu & 15;
+      car.gd = (inp.gd | 0) & 15;
+      if ((du || dd) && car.gear > 0 && !frozen) {
+        if (!car.man) { car.man = 1; car.sel = car.gear; }
+        car.sel = U.clamp(car.sel + du - dd, 1, nG);
+      }
+    }
+    const upAt = s.upRs ? s.upRs[Math.max(0, car.gear - 1)] : s.upR;
+    if (s.manual && car.gear > 0 && !frozen) {
+      // The driver's box: quicker than any automatic. Up on the light (just
+      // short of the limiter) is a perfect shift and kicks. A downshift that
+      // would over-rev waits until the revs allow it instead of going in.
+      // Its only help for a driver who isn't shifting: half a second bouncing
+      // off the limiter and it goes up a gear itself, slowly; bogged right
+      // down, it drops one. Both cost far more than shifting yourself.
+      car.limT = r >= 0.995 && driveThr > 0.5 ? car.limT + dt : 0;
+      if (car.shiftT <= 0) {
+        let help = 0;
+        if (car.limT > 0.5 && car.gear < nG && car.sel <= car.gear) { car.sel = car.gear + 1; help = 1; }
+        else if (car.gear > 1 && car.sel >= car.gear && r < 0.42 && (wheelW * s.gears[car.gear - 2] * s.finalDrive) / s.redlineW < 0.85 && Math.abs(beta) < 0.25) { car.sel = car.gear - 1; help = 1; }
+        if (car.sel > car.gear) {
+          if (!help && r >= upAt - 0.045 && r < 1.0) car.pk = 0.45;
+          car.gear++;
+          car.shiftT = s.shiftTime * (help ? 1.4 : 0.5);
+          car.kickT = car.shiftT + 0.07;
+          car.limT = 0;
+          if (car.boost > 0.4) car.backfire = 0.15;
+        } else if (car.sel < car.gear && (wheelW * s.gears[car.gear - 2] * s.finalDrive) / s.redlineW < 1.03) {
+          car.gear--;
+          car.shiftT = s.shiftTime * (help ? 0.8 : 0.45);
+        }
+      }
+    } else if (car.gear > 0 && car.shiftT <= 0 && !frozen) {
+      // Automatic box: up at this car's own shift point, down when bogging.
+      if (r > upAt && car.gear < nG) {
         car.gear++;
+        car.sel = car.gear;
         car.shiftT = s.shiftTime;
-        car.kickT = s.shiftTime + 0.07; // shift shock window (sequential box)
+        car.kickT = car.shiftT + 0.07; // shift shock window (sequential box)
         if (car.boost > 0.4) car.backfire = 0.15;
       } else if (car.gear > 1) {
         const lower = s.gears[car.gear - 2] * s.finalDrive;
         const rLow = (wheelW * lower) / s.redlineW;
         if (r < s.downR && rLow < 0.9 && Math.abs(beta) < 0.25) {
           car.gear--;
+          car.sel = car.gear;
           car.shiftT = s.shiftTime * 0.6;
         }
       }
@@ -407,7 +462,13 @@
     let T = s.peakTorque * G.Parts.torqueAt(s, rClamped) * (1 + s.boostGain * car.boost) * s.engineHealth * limp * (1 + (car.cu || 0) + nos) * (launching ? 1.15 : 1);
     const limiter = r >= 1.0 && car.gear > 0; // fuel cut at redline
     let Fdrive = 0;
-    if (car.shiftT <= 0 && !limiter && !frozen) Fdrive = (T * ratio * 0.9 * driveThr) / s.wheelR;
+    if (!limiter && !frozen) {
+      Fdrive = (T * ratio * 0.9 * driveThr) / s.wheelR;
+      // (v5.8: an automatic or a dual-clutch keeps some drive through a shift)
+      if (car.shiftT > 0) Fdrive *= s.shiftKeep || 0;
+      // a perfect manual shift: a shove as the next gear bites
+      if (car.pk > 0 && car.shiftT <= 0) Fdrive *= 1 + 0.14 * Math.min(1, car.pk / 0.2);
+    }
     if (car.gear === -1) Fdrive = -Math.min(Fdrive, vLong < -8 ? 0 : Fdrive);
     // Sequential box "shift shock": a brief torque spike right after an upshift.
     if (car.kickT > 0 && car.shiftT <= 0 && s.shiftKick > 1) Fdrive *= s.shiftKick;
@@ -683,7 +744,7 @@
 
     // ---- 10. Walls ---------------------------------------------------------
     car.wallHit = 0;
-    collideWalls(car, s, track, env);
+    collideWalls(car, s, track, env, dt);
   }
 
   // Walls sit at |lateral| = halfWidth + runoff. Check the four body corners;
@@ -691,7 +752,7 @@
   // (so a glancing hit spins you a bit, a head-on one stops you).
   const CQ = Object.assign({}, Q);
   const _dyn = { x: 0, z: 0, r: 0, vx: 0, vz: 0, fall: 0 };
-  function collideWalls(car, s, track, env) {
+  function collideWalls(car, s, track, env, dt) {
     const sinH = Math.sin(car.h), cosH = Math.cos(car.h);
     const hl = s.len / 2, hw = s.wid / 2;
     let worst = 0, wn = null, wu = 0, wv = 0, wnx = 0, wnz = 0;
@@ -790,6 +851,15 @@
     if (!wn) return;
     car.x += wnx * worst;
     car.z += wnz * worst;
+    // v5.8: scraping along a wall drags - every moment on it costs speed along it
+    {
+      const tx = -wnz, tz = wnx;
+      const vt = (car.vx - ovx) * tx + (car.vz - ovz) * tz;
+      const lose = vt * Math.min(1, 1.4 * dt * soft);
+      car.vx -= tx * lose;
+      car.vz -= tz * lose;
+      car.wallHit = Math.max(car.wallHit, 1);
+    }
     // contact point offset in world
     const rx = sinH * wu + cosH * wv, rz = cosH * wu - sinH * wv;
     // velocity of contact point: v + w × r (2-D, w about +Y with our left-positive convention)
@@ -805,13 +875,15 @@
     car.vx += (j * wnx) / s.mass;
     car.vz += (j * wnz) / s.mass;
     car.w += (-rxn * j) / s.Iz * 0.6;
-    // wall friction scrubs tangential speed
+    // wall friction scrubs tangential speed (v5.8: much more of it - 0.35 let a
+    // glancing hit keep nearly all your speed and turn you for nothing)
     const tx = -wnz, tz = wnx;
-    const vt = car.vx * tx + car.vz * tz;
-    const scrub = Math.min(Math.abs(vt), (j / s.mass) * 0.35) * Math.sign(vt);
+    const vt = (car.vx - ovx) * tx + (car.vz - ovz) * tz;
+    const scrub = Math.min(Math.abs(vt), (j / s.mass) * 0.8) * Math.sign(vt);
     car.vx -= tx * scrub;
     car.vz -= tz * scrub;
     car.wallHit = j;
+    if (j > 1500) car.wallT = Math.max(car.wallT, Math.min(0.45, 0.12 + (j - 1500) / 20000) * soft);
     car.body = Math.min(1, car.body + Math.max(0, j - 2500) * 0.000012 * soft * (s.wallDmg || 1));
   }
 

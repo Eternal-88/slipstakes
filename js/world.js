@@ -59,6 +59,30 @@
     return [c.r, c.g, c.b];
   };
 
+  // v5.8: three.js draws every shadow with ONE shared depth material, so a
+  // list of casters that alternates instanced and plain meshes (trees and
+  // props, then a car, then its wheels...) made it re-pick a shader program
+  // for almost every object in the shadow pass, every frame. Instanced
+  // casters get depth materials of their own, so nothing flips.
+  // And a transparent double-sided material is drawn twice by default (back
+  // faces, then front), which three.js does by flipping its side and marking
+  // it for a rebuild - both of which re-pick its program, twice a frame, for
+  // every glow and light pool. Additive glows look the same in one pass.
+  let DEPTH_I = null, DEPTH_IC = null;
+  function depthFix(root) {
+    if (!DEPTH_I) {
+      DEPTH_I = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+      DEPTH_IC = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    }
+    root.traverse((o) => {
+      if (o.material) for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m && m.transparent && m.side === THREE.DoubleSide) m.forceSinglePass = true;
+      if (!o.isInstancedMesh || o.customDepthMaterial) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (m && m.alphaTest > 0 && (m.map || m.alphaMap)) return; // (cut-outs need three's own)
+      o.customDepthMaterial = o.instanceColor ? DEPTH_IC : DEPTH_I;
+    });
+  }
+
   class World {
     constructor(canvas) {
       this.canvas = canvas;
@@ -241,6 +265,7 @@
         this.trackGroup.traverse((o) => {
           if (o.isMesh && o.userData.castShadow == null) o.userData.castShadow = o.castShadow;
         });
+        depthFix(this.trackGroup);
         this._trackShadows();
         this.scene.add(this.trackGroup);
       }
@@ -393,6 +418,7 @@
           nm.root.position.copy(m.root.position);
           nm.root.rotation.copy(m.root.rotation);
         }
+        depthFix(nm.root);
         this.scene.add(nm.root);
         this.models.set(c.id, nm);
       }
@@ -800,6 +826,27 @@
         for (let i = r[0]; i < r[1]; i++) { a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b; }
       });
       col.needsUpdate = true;
+    }
+
+    // v5.8: the pit beacon (trackmesh.js) stands over the box while the HUD
+    // says it's time to pit, its arrow bobbing
+    pitCall(on, dt) {
+      if (!this.trackGroup) return;
+      if (this._pitBg !== this.trackGroup) {
+        this._pitBg = this.trackGroup;
+        this._pitB = this.trackGroup.getObjectByName('pitbeacon') || false;
+      }
+      const b = this._pitB;
+      if (!b) return;
+      if (b.visible !== on) b.visible = on;
+      if (on) {
+        this._pitBt = (this._pitBt || 0) + (dt || 0.016);
+        const a = b.getObjectByName('arrow');
+        if (a) {
+          a.position.y = 8 + Math.sin(this._pitBt * 3) * 1.2;
+          a.rotation.y = this._pitBt * 1.5;
+        }
+      }
     }
 
     // Angled top-down chase: ~56° pitch, yaw follows the direction of travel,

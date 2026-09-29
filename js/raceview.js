@@ -25,6 +25,7 @@
           rs: cars.find((c) => c.id === meId).rs, hasBoost: mc.spec.boostKind !== 'none', hasNos: !!mc.spec.nosGain, coldBrakes: (mc.spec.bCold || 1) < 0.9, wrong: mc.wrongT > 1.2, finished: mc.finished,
           // v5.1 cluster: the rev scale, and the boost dial's own numbers
           ev: !!mc.spec.ev, boostGain: mc.spec.boostGain, redline: mc.spec.redline,
+          manual: !!mc.spec.manual, upRs: mc.spec.upRs, boxLabel: mc.spec.boxLabel, // (v5.8 gearbox)
           boostAvail: G.Parts.boostAvail(mc.spec, mc.st.rpm),
         };
       }

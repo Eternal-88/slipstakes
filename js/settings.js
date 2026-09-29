@@ -46,9 +46,9 @@
     sttBar: true, // live captions while you talk
     sttMark: true, // 🎤 in front of spoken messages
     sttBeep: true, // a blip when it starts and stops listening
-    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH', talk: 'KeyV' },
+    keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH', talk: 'KeyV', shiftUp: 'KeyE', shiftDown: 'KeyQ' },
   };
-  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn', talk: 'Speech to text' };
+  const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn', talk: 'Speech to text', shiftUp: 'Shift up (manual cars)', shiftDown: 'Shift down (manual cars)' };
   // Catch-up strength per setting: the most extra power a car far behind gets.
   const CATCHUP = { off: 0, mild: 0.1, wild: 0.25 };
   // v5.5.7: catch-up is any whole percentage from 0 to 100 - the three names
@@ -73,6 +73,8 @@
   // (v5.5: someone who already put V on another control keeps it; talk
   //  starts unbound for them and they can pick a key in Controls)
   if (!(saved.keys && saved.keys.talk) && Object.keys(s.keys).some((a) => a !== 'talk' && s.keys[a] === s.keys.talk)) s.keys.talk = '';
+  // (v5.8: the same for the new shift keys)
+  for (const a of ['shiftUp', 'shiftDown']) if (!(saved.keys && saved.keys[a]) && Object.keys(s.keys).some((b) => b !== a && s.keys[b] === s.keys[a])) s.keys[a] = '';
   // one-time migration of the pre-settings keys
   if (!saved.quality && U.store.get('ss.quality', null)) s.quality = U.store.get('ss.quality');
   if (saved.sound == null && U.store.get('ss.sound', null) != null) s.sound = !!U.store.get('ss.sound');

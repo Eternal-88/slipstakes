@@ -283,6 +283,7 @@
         if (this.blockT >= TPI) {
           this.seq++;
           this.cur = { s: input.s, t: input.t, b: input.b, hb: input.hb, n: input.n ? 1 : 0 };
+          if (input.gu != null) { this.cur.gu = input.gu & 15; this.cur.gd = (input.gd | 0) & 15; } // (v5.8 manual box)
           this.hist.push({ seq: this.seq, inp: this.cur });
           if (this.hist.length > 120) this.hist.shift(); // 4 s cap
           // Redundancy: each packet also carries the previous two blocks, so a
@@ -292,9 +293,9 @@
           const red = [];
           for (let k = this.hist.length - 2; k >= 0 && k >= this.hist.length - 3; k--) {
             const h = this.hist[k];
-            red.push([h.seq, h.inp.s, h.inp.t, h.inp.b, h.inp.hb, h.inp.n]);
+            red.push([h.seq, h.inp.s, h.inp.t, h.inp.b, h.inp.hb, h.inp.n, h.inp.gu, h.inp.gd]);
           }
-          this.net.sendFast({ t: 'i', sid: this.sid, q: this.seq, s: this.cur.s, th: this.cur.t, b: this.cur.b, hb: this.cur.hb, n: this.cur.n, rs: input.rs ? 1 : 0, p: red });
+          this.net.sendFast({ t: 'i', sid: this.sid, q: this.seq, s: this.cur.s, th: this.cur.t, b: this.cur.b, hb: this.cur.hb, n: this.cur.n, gu: this.cur.gu, gd: this.cur.gd, rs: input.rs ? 1 : 0, p: red });
           input.rs = 0;
           this.blockT = 0;
         }
@@ -557,6 +558,7 @@
           carId: this.entrants[this.meIdx].carId, parts: this.entrants[this.meIdx].parts, look: this.entrants[this.meIdx].look,
           // v5.1 cluster: the rev scale, and the boost dial's own numbers
           ev: !!this.spec.ev, boostGain: this.spec.boostGain, redline: this.spec.redline,
+          manual: !!this.spec.manual, upRs: this.spec.upRs, boxLabel: this.spec.boxLabel, // (v5.8 gearbox)
           boostAvail: G.Parts.boostAvail(this.spec, cars[this.meIdx].rs.rpm),
         };
       }

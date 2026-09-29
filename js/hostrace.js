@@ -86,17 +86,18 @@
       if (!I) I = this.inputs[pid] = { q: [], cur: null, seq: -1, ticks: 0, rs: 0, sid: m.sid };
       if (typeof m.q !== 'number') return;
       if (m.th || m.s || m.b || m.hb || m.n) this.session.lastActive = Date.now(); // someone is actually driving (idle rooms close)
-      this._insert(I, m.q, m.s, m.th, m.b, m.hb, m.n);
+      this._insert(I, m.q, m.s, m.th, m.b, m.hb, m.n, m.gu, m.gd);
       // redundant copies of the previous blocks: recover any we lost
-      if (Array.isArray(m.p)) for (const r of m.p.slice(0, 3)) if (Array.isArray(r)) this._insert(I, r[0], r[1], r[2], r[3], r[4], r[5]);
+      if (Array.isArray(m.p)) for (const r of m.p.slice(0, 3)) if (Array.isArray(r)) this._insert(I, r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[7]);
       if (m.rs) I.rs = 1;
     }
 
-    _insert(I, seq, s, th, b, hb, n) {
+    _insert(I, seq, s, th, b, hb, n, gu, gd) {
       if (typeof seq !== 'number' || seq <= I.seq) return; // already consumed / stale
       if (I.q.some((x) => x.seq === seq)) return; // duplicate
       // Clamp everything: never trust the wire.
       const blk = { seq, inp: { s: U.clamp(+s || 0, -1, 1), t: U.clamp(+th || 0, 0, 1), b: U.clamp(+b || 0, 0, 1), hb: hb ? 1 : 0, n: n ? 1 : 0 } };
+      if (typeof gu === 'number') { blk.inp.gu = gu & 15; blk.inp.gd = (+gd | 0) & 15; } // (v5.8 manual box: shift counts)
       // insert in seq order (the fast channel is unordered)
       let i = I.q.length;
       while (i > 0 && I.q[i - 1].seq > blk.seq) i--;

@@ -296,7 +296,7 @@
       hazards: [
         { k: 'boost', at: 62, lat: -2.2 },
         { k: 'oil', x: 120, z: 122, lat: 1, len: 12, hw: 2.6 },
-        { k: 'barrels', x: 205, z: 200, lat: -2.4, r: 0.95 },
+        { k: 'barrels', x: 206, z: 212, lat: -2.4, r: 0.95 }, // (v5.8: 12 m further on - right at the hairpin's exit nobody could see them in time)
         { k: 'mud', x: 135, z: 246, len: 26, hw: 5.5 },
         { k: 'tyres', x: 92, z: 248, lat: -2.6, r: 0.8 },
         { k: 'boost', x: -50, z: 186, lat: 2 },

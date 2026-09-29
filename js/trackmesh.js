@@ -2350,6 +2350,23 @@
       const m = meshFrom(pos, col, new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       m.name = 'pitbox';
       group.add(m);
+      // v5.8: a beacon over the box - a column of light and a bobbing arrow -
+      // that the world shows only while the HUD says it's time to pit
+      {
+        const bq = track.pointAt(pt.at, l), by = track.heightAt(bq.i, l);
+        const bc = new THREE.Group();
+        bc.name = 'pitbeacon';
+        bc.visible = false;
+        const glow = new THREE.Mesh(new THREE.CylinderGeometry(hw * 0.8, hw * 0.8, 26, 24, 1, true), new THREE.MeshBasicMaterial({ color: 0xffc400, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+        glow.position.y = 13;
+        const arrow = new THREE.Mesh(new THREE.ConeGeometry(2, 3.4, 4), new THREE.MeshBasicMaterial({ color: 0xffd400 }));
+        arrow.rotation.x = Math.PI;
+        arrow.position.y = 8;
+        arrow.name = 'arrow';
+        bc.add(glow, arrow);
+        bc.position.set(bq.x, by, bq.z);
+        group.add(bc);
+      }
       // pit garages beyond the wall: a row of open bays facing the box
       const gb = new G.CarModel.GB();
       const r = Math.atan2(-track.NX[pt.ic] * side, -track.NZ[pt.ic] * side); // facing the road

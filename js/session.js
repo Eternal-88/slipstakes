@@ -158,7 +158,7 @@
     handle(pid, m) {
       const p = this.player(pid);
       if (!p || !m || typeof m.t !== 'string') return;
-      if (!p.isBot) this.lastActive = Date.now();
+      if (!p.isBot && m.t !== 'away') this.lastActive = Date.now();
       const fn = this['on_' + m.t];
       if (fn) {
         try {
@@ -382,7 +382,27 @@
       last[p.id] = Date.now();
       this.state.chat.push({ from: p.id, name: p.name, color: p.color, text, at: Date.now() });
       if (this.state.chat.length > 50) this.state.chat.shift();
+      p.ty = 0; // (it's sent: no longer typing)
       this.touch();
+    }
+
+    // v5.8: "is typing" in the room chat, and "away" (the tab is hidden, or
+    // nobody has touched it for a minute). Flags on the player that everyone
+    // sees; typing clears itself if the next notice doesn't come (update).
+    on_typing(p, m) {
+      const on = m.on ? 1 : 0;
+      (this._tyAt = this._tyAt || {})[p.id] = Date.now();
+      if ((p.ty || 0) !== on) {
+        p.ty = on;
+        this.touch();
+      }
+    }
+    on_away(p, m) {
+      const on = m.on ? 1 : 0;
+      if ((p.away || 0) !== on) {
+        p.away = on;
+        this.touch();
+      }
     }
 
     on_ready(p, m) {
@@ -587,6 +607,13 @@
     update(now) {
       const st = this.state;
       if (this.casinoTick) this.casinoTick(now);
+      for (const id in st.players) {
+        const p = st.players[id];
+        if (p.ty && now - ((this._tyAt || {})[id] || 0) > 6000) {
+          p.ty = 0;
+          this.touch();
+        }
+      }
       if (st.phaseEnds && now > st.phaseEnds) {
         st.phaseEnds = 0;
         if (st.phase === 'results') this.toIntermission();

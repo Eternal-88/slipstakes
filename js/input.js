@@ -36,6 +36,14 @@
     for (const k in keys) keys[k] = false;
   });
 
+  // v5.8: when the person last did anything (keys, mouse, touch, a pad): the
+  // room and the online list show them as away after a while
+  let lastAct = performance.now();
+  const poke = () => {
+    lastAct = performance.now();
+  };
+  for (const ev of ['keydown', 'pointerdown', 'pointermove', 'wheel', 'touchstart']) window.addEventListener(ev, poke, { passive: true, capture: true });
+
   let padPrev = {};
   let kbSteer = 0, lastRead = 0;
   const RATE = { slow: 0.7, normal: 1, fast: 1.45 };
@@ -46,6 +54,15 @@
       const K = G.Settings.s.keys;
       const alt = { up: 'ArrowUp', down: 'ArrowDown', left: 'ArrowLeft', right: 'ArrowRight' }[action];
       return !!(keys[K[action]] || (alt && keys[alt]));
+    },
+    // v5.8 manual gearbox: running counts of shift presses (up and down).
+    // They go to the host as counts mod 16, not as "pressed this frame", so a
+    // lost packet can't lose a shift (physics.js).
+    gu: 0,
+    gd: 0,
+    shift(dir) {
+      if (dir > 0) this.gu++;
+      else this.gd++;
     },
     // Drive controls. Returns {s,t,b,hb}. Call ONCE per frame.
     read() {
@@ -60,6 +77,9 @@
         if (this.down('down')) b = 1;
         if (this.down('hb')) hb = 1;
         if (this.down('nitro')) n = 1;
+        const K = G.Settings.s.keys;
+        if (K.shiftUp && this.hit(K.shiftUp)) this.gu++;
+        if (K.shiftDown && this.hit(K.shiftDown)) this.gd++;
       }
       // on-screen touch buttons (ui/touch.js) behave exactly like keys
       const T = G.Touch && G.Touch.visible ? G.Touch.state : null;
@@ -86,6 +106,7 @@
       for (const p of pads) {
         if (!p || !p.connected) continue;
         const ax = p.axes[0] || 0;
+        if (Math.abs(ax) > 0.25 || p.buttons.some((b) => b && b.pressed)) poke();
         if (Math.abs(ax) > 0.12) s = Math.sign(ax) * Math.min(1, (Math.abs(ax) - 0.12) / 0.8);
         const rt = p.buttons[7] ? p.buttons[7].value : 0;
         const lt = p.buttons[6] ? p.buttons[6].value : 0;
@@ -94,13 +115,18 @@
         if (p.buttons[0] && p.buttons[0].pressed) hb = 1;
         if ((p.buttons[2] && p.buttons[2].pressed) || (p.buttons[4] && p.buttons[4].pressed)) n = 1; // X or LB: nitrous
         const K = G.Settings.s.keys;
-        if (p.buttons[3] && p.buttons[3].pressed && !padPrev.y) pressed[K.reset] = true;
-        if (p.buttons[5] && p.buttons[5].pressed && !padPrev.rb) pressed[K.cam] = true;
-        padPrev = { y: p.buttons[3] && p.buttons[3].pressed, rb: p.buttons[5] && p.buttons[5].pressed };
+        const bt = (i) => !!(p.buttons[i] && p.buttons[i].pressed);
+        if (bt(3) && !padPrev.y) pressed[K.reset] = true;
+        if (bt(5) && !padPrev.rb) pressed[K.cam] = true;
+        // (v5.8) B or d-pad up: shift up, d-pad down: shift down
+        const up = bt(1) || bt(12), dn = bt(13);
+        if (up && !padPrev.up && !Input.blocked) this.gu++;
+        if (dn && !padPrev.dn && !Input.blocked) this.gd++;
+        padPrev = { y: bt(3), rb: bt(5), up, dn };
         break;
       }
       if (Input.blocked) return { s: 0, t: 0, b: 0, hb: 0, n: 0 };
-      return { s, t, b, hb, n };
+      return { s, t, b, hb, n, gu: this.gu & 15, gd: this.gd & 15 };
     },
     // Gamepad Start opens the menu from ANY screen, so it's polled every
     // frame on its own (read() only runs while driving, and must run once per
@@ -137,6 +163,7 @@
       capture = cb;
     },
     blocked: false, // true while the pause menu is open
+    idleMs: () => performance.now() - lastAct, // (v5.8 away)
   };
   G.Input = Input;
 })(window.G);

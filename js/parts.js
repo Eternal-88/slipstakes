@@ -13,6 +13,7 @@
       blurb: 'Balanced rear-drive coupé. Slides when you ask, grips when you don\'t.',
       mass: 1200, powerKW: 132, redline: 7000, rearBias: 1.0, wheelbase: 2.6, weightFront: 0.52,
       cgH: 0.52, track: 1.6, vTop: 54, inertiaK: 1.0, body: 'coupe', len: 4.3, wid: 1.86, price: 0,
+      box: { n: 5, shift: 0.16, kind: 'std', ratios: [3.25, 2.1, 1.52, 1.17, 0.94] },
     },
     brick: {
       id: 'brick', name: 'Brick R', tag: 'AWD rally hatch', drive: 'AWD',
@@ -26,10 +27,11 @@
       // (level with the Storm); it still owns the wet and the dirt.
       mass: 1330, powerKW: 125, redline: 7300, rearBias: 0.6, wheelbase: 2.5, weightFront: 0.6,
       cgH: 0.56, track: 1.58, vTop: 50.5, inertiaK: 0.97, body: 'hatch', len: 4.0, wid: 1.82, looseBonus: 1.07, wetBonus: 1.13, dryBonus: 0.975,
+      box: { n: 6, g1: 3.3, shift: 0.13, kind: 'std' }, tq: { pk: 0.58 }, // (v5.8: a close six-speed rally box)
     },
     sting: {
       id: 'sting', name: 'Sting S', tag: 'RWD roadster', drive: 'RWD',
-      blurb: 'Light, low, darty roadster with a high-revving four. Carries speed through corners and wants the revs kept up; loses out on straights.',
+      blurb: 'Light, low, darty roadster with a high-revving four and a six-speed MANUAL box: you shift it, and a shift on the blue light kicks. Carries speed through corners and wants the revs kept up; loses out on straights.',
       // v4.3: a low road car's weaknesses (−8% on dirt, −5% in the wet). It
       // was the fastest car on 5 of 12 tracks — dirt and wet included.
       // v5.1: it was second-best at everything and best at nothing. Yaw
@@ -42,7 +44,9 @@
       // 164 km/h, behind the Mule off the line. Its corners are untouched and
       // it still wins the tight tarmac tracks (City, Summit, Neon).
       mass: 960, powerKW: 105, redline: 7800, rearBias: 1.0, wheelbase: 2.4, weightFront: 0.49,
-      cgH: 0.45, track: 1.55, vTop: 50, inertiaK: 0.85, body: 'roadster', len: 3.9, wid: 1.76, looseBonus: 0.92, wetBonus: 0.95, dryBonus: 1.015, tq: { lo: 0.8, hi: 1 },
+      cgH: 0.45, track: 1.55, vTop: 50, inertiaK: 0.85, body: 'roadster', len: 3.9, wid: 1.76, looseBonus: 0.92, wetBonus: 0.95, dryBonus: 1.015, tq: { lo: 0.8, hi: 1, pk: 0.72 },
+      // v5.8: a six-speed you shift yourself (see BOX_KEEP / physics.js)
+      box: { n: 6, g1: 3.2, shift: 0.13, kind: 'man' },
     },
     mule: {
       id: 'mule', name: 'Mule V8', tag: 'RWD muscle', drive: 'RWD',
@@ -60,7 +64,10 @@
       // it clearly. (Past ~190 it is traction-limited when the nitrous fires,
       // and the bigger shot stops buying anything.)
       mass: 1440, powerKW: 190, redline: 6300, rearBias: 1.0, wheelbase: 2.8, weightFront: 0.5,
-      cgH: 0.54, track: 1.66, vTop: 60, inertiaK: 0.98, body: 'muscle', len: 4.75, wid: 1.96, tq: { lo: 1.2, hi: 1.02 },
+      cgH: 0.54, track: 1.66, vTop: 60, inertiaK: 0.98, body: 'muscle', len: 4.75, wid: 1.96, tq: { lo: 1.2, hi: 1.02, pk: 0.45 },
+      // v5.8: a long-legged four-speed. Its torque peaks low and it runs out of
+      // breath near the top, so it shifts early - and the big V8 pulls the gaps
+      box: { n: 4, g1: 2.75, shift: 0.2, kind: 'std' },
     },
     // v4 premium chassis: bought once per session (price), then swappable
     // like any other. Each wins somewhere and pays for it somewhere else.
@@ -75,6 +82,7 @@
       // than a quietly good one.
       mass: 1560, powerKW: 166, redline: 5900, rearBias: 0.58, wheelbase: 2.95, weightFront: 0.55,
       cgH: 0.68, track: 1.74, vTop: 49, inertiaK: 1.04, body: 'truck', len: 4.9, wid: 2.02, looseBonus: 1.13,
+      box: { n: 4, g1: 3.4, shift: 0.26, kind: 'auto' }, tq: { pk: 0.48 }, // (v5.8: a four-speed automatic that pulls through its shifts)
     },
     // v4.3: 182 -> 140 kW, $4,800 -> $3,800. With traction control it was
     // fastest on 7 of 12 tracks and 7% clear on every drag (the Mule's only
@@ -85,6 +93,7 @@
       blurb: 'Mid-engined supercar: the most grip in the paddock and a screaming 8,400 rpm engine. Fastest on sweeping tarmac, useless on dirt, twitchy on lift-off, costly to run.',
       mass: 1180, powerKW: 140, redline: 8400, rearBias: 1.0, wheelbase: 2.55, weightFront: 0.41,
       cgH: 0.44, track: 1.68, vTop: 60, inertiaK: 0.88, body: 'mid', len: 4.45, wid: 1.96, looseBonus: 0.9, wearK: 1.35,
+      box: { n: 7, g1: 3.15, shift: 0.05, kind: 'dct' }, tq: { pk: 0.7 }, // (v5.8: a seven-speed dual-clutch - shifts in a blink and barely lets go)
     },
     // ------------------------------------------------------------------ v5
     // Built to the balance brief: strong identities, real weaknesses, and a
@@ -99,6 +108,7 @@
       blurb: 'A tiny front-drive kei car. Slow on paper — but light, narrow and nimble. Carry speed, lift to rotate it into corners, and it sips fuel (fewer pit stops in endurance).',
       mass: 760, powerKW: 62, redline: 9200, rearBias: 0, wheelbase: 2.25, weightFront: 0.63,
       cgH: 0.52, track: 1.36, vTop: 45.5, inertiaK: 0.86, body: 'kei', len: 3.4, wid: 1.48, price: 0, fuelK: 0.6, wetBonus: 0.95,
+      box: { n: 5, g1: 3.5, shift: 0.15, kind: 'std' }, tq: { pk: 0.72 }, // (v5.8: a tiny engine that wants 9,000 rpm)
     },
     // Volt: electric AWD. Instant torque from zero and one gear, so launches
     // and corner exits are brutal and it's calm in the rain — but it's heavy,
@@ -126,13 +136,15 @@
     // tail wants to lead. Thirsty, and hard on tyres.
     storm: {
       id: 'storm', name: 'Stormer B', tag: 'Group B rally', drive: 'AWD', price: 5000,
-      blurb: 'Group B rally legend: light, short, turbocharged all-wheel drive. King of dirt, gravel and snow. On tarmac the boost hits hard and late and the tail steps out — tame the lag and it flies.',
+      blurb: 'Group B rally legend: light, short, turbocharged all-wheel drive with a five-speed MANUAL dog box. King of dirt, gravel and snow. On tarmac the boost hits hard and late and the tail steps out — keep it in the right gear, tame the lag and it flies.',
       mass: 1080, powerKW: 100, redline: 8200, rearBias: 0.68, wheelbase: 2.3, weightFront: 0.46,
       cgH: 0.5, track: 1.62, vTop: 53, inertiaK: 0.82, body: 'rally', len: 4.1, wid: 1.84, looseBonus: 1.1, dryBonus: 0.94, wearK: 1.15, tyreK: 1.3,
       // v5.1: the turbo IS the car, so it doesn't take shop induction parts
       // (bolting a Big Turbo on read as "the same car, but more power"). The
       // Rally Turbo slot swaps it for one with a different character instead.
       turbo: 1, noParts: ['induction'],
+      // v5.8: a straight-cut dog box you shift yourself: quick, and it kicks
+      box: { n: 5, g1: 3.1, shift: 0.08, kind: 'man', kick: 1.3 }, tq: { pk: 0.66 },
     },
     // v5.4: a long-bonnet V12 grand tourer. The fastest thing in the paddock
     // flat out and dead steady at speed - and 1.7 tonnes of it arriving at a
@@ -141,7 +153,8 @@
       id: 'regent', name: 'Regent V12', tag: 'V12 grand tourer', drive: 'RWD', price: 5600,
       blurb: 'A long-bonnet V12 grand tourer: the highest top speed in the paddock and rock-steady at 200 km/h. It is also 1.7 tonnes, soft and wide - it hates hairpins and it hates dirt. Pick the fast tracks.',
       mass: 1620, powerKW: 238, redline: 7200, rearBias: 1.0, wheelbase: 2.95, weightFront: 0.46,
-      cgH: 0.5, track: 1.7, vTop: 64, inertiaK: 1.02, body: 'gt', len: 4.95, wid: 2.0, looseBonus: 0.88, wearK: 1.2, tq: { lo: 0.94, hi: 1.05 },
+      cgH: 0.5, track: 1.7, vTop: 64, inertiaK: 1.02, body: 'gt', len: 4.95, wid: 2.0, looseBonus: 0.88, wearK: 1.2, tq: { lo: 0.94, hi: 1.05, pk: 0.55 },
+      box: { n: 8, g1: 3.4, shift: 0.15, kind: 'auto' }, // (v5.8: an eight-speed automatic, smooth and never off the boil)
     },
     // v5.4: a light rotary coupe. Revs to 9,000 and makes almost nothing
     // below half of that, so it is slow out of a hairpin and brilliant
@@ -150,7 +163,8 @@
       id: 'rotor', name: 'Rotor 7', tag: 'rotary RWD coupé', drive: 'RWD', price: 2900,
       blurb: 'A light rotary coupé that revs to 9,000 and makes almost nothing below half of that. Keep it spinning and it flies through flowing corners; drop it off the boil in a hairpin and it bogs. Thirsty in endurance.',
       mass: 1180, powerKW: 150, redline: 9000, rearBias: 1.0, wheelbase: 2.45, weightFront: 0.5,
-      cgH: 0.46, track: 1.6, vTop: 56, inertiaK: 0.9, body: 'rotor', len: 4.3, wid: 1.76, fuelK: 1.3, wearK: 1.1, tq: { lo: 0.7, hi: 1.12 },
+      cgH: 0.46, track: 1.6, vTop: 56, inertiaK: 0.9, body: 'rotor', len: 4.3, wid: 1.76, fuelK: 1.3, wearK: 1.1, tq: { lo: 0.7, hi: 1.12, pk: 0.8 },
+      box: { n: 5, g1: 3.0, shift: 0.14, kind: 'std' }, // (v5.8: close ratios, to keep an engine that lives above 6,000 rpm on the boil)
     },
   };
   const CAR_ORDER = ['vandal', 'brick', 'sting', 'mule', 'pip', 'dune', 'apex', 'rotor', 'volt', 'storm', 'regent'];
@@ -279,14 +293,16 @@
     {
       id: 'gearing', name: 'Gearing', icon: '⛭',
       options: [
-        { id: 'stock', name: 'Stock 5-Speed', price: 0, desc: 'Balanced ratios.', cons: 'Slowish 0.16 s shifts.', fd: 1.0, gears: [3.25, 2.1, 1.52, 1.17, 0.94], shift: 0.16, kick: 1.0 },
+        // (v5.8: every car has its own box now - see CARS[].box and boxOf -
+        // so these reshape that box rather than swapping one in)
+        { id: 'stock', name: 'Stock Gearbox', price: 0, desc: 'The car\'s own box: its own number of gears, ratios and shift speed.', cons: 'Built for the road.', fd: 1.0, kick: 1.0 },
         // Short ratios alone did nothing under full throttle (launches are
         // traction-limited, and the extra upshift ate the torque gain — measured
         // 0.04 s SLOWER over ¼ mile). Bundled with a quick-shift linkage they
         // genuinely launch harder, and still pay with a low limiter.
-        { id: 'short', name: 'Short Ratios + Quick-shift', price: 1100, desc: '+22% wheel torque and 0.10 s shifts — quicker off the line and out of corners.', cons: 'Hits the limiter early: much lower top speed. Useless on long straights.', fd: 1.22, gears: [3.25, 2.1, 1.52, 1.17, 0.94], shift: 0.1, kick: 1.0 },
-        { id: 'long', name: 'Long Ratios', price: 1100, desc: 'Higher top speed — lets big power keep pulling.', cons: '−16% wheel torque: sluggish out of corners.', fd: 0.84, gears: [3.25, 2.1, 1.52, 1.17, 0.94], shift: 0.16, kick: 1.0 },
-        { id: 'seq', name: 'Sequential Race Box', price: 3600, noEv: 1, desc: '6 close ratios, 0.05 s shifts. Straight-cut gear whine.', cons: 'Violent shifts kick the rear loose mid-corner. Extra engine wear.', fd: 1.0, gears: [3.1, 2.2, 1.66, 1.32, 1.09, 0.92], shift: 0.05, kick: 1.7 },
+        { id: 'short', name: 'Short Ratios + Quick-shift', price: 1100, desc: '+22% wheel torque and 0.10 s shifts — quicker off the line and out of corners.', cons: 'Hits the limiter early: much lower top speed. Useless on long straights.', fd: 1.22, shift: 0.1, kick: 1.0 },
+        { id: 'long', name: 'Long Ratios', price: 1100, desc: 'Higher top speed — lets big power keep pulling.', cons: '−16% wheel torque: sluggish out of corners.', fd: 0.84, kick: 1.0 },
+        { id: 'seq', name: 'Sequential Race Box', price: 3600, noEv: 1, desc: 'Close ratios with a gear more than stock (6 or 7), 0.05 s shifts. Straight-cut gear whine.', cons: 'Violent shifts kick the rear loose mid-corner. Extra engine wear. Cuts the drive on every shift, even on a car whose own box pulls through them.', fd: 1.0, shift: 0.05, kick: 1.7 },
       ],
     },
     {
@@ -599,8 +615,20 @@
   // Ratios were strictly better — no trade-off. Now short gears keep the
   // engine nearer peak power (quicker, but hit the limiter), long gears the
   // opposite.
-  const torqueShape = (r) => 1 - 1.0 * (r - 0.62) * (r - 0.62);
+  // v5.8: pk moves the torque peak per car (CARS[].tq.pk, 0.62 if unset):
+  // a V8 that peaks low and runs out of breath, a rotary that only comes
+  // alive near the top. The rated power is where r*shape peaks below the
+  // redline, so the numbers on the card still hold.
+  const torqueShape = (r, pk) => 1 - (r - (pk || 0.62)) * (r - (pk || 0.62));
   const POWER_SHAPE_PEAK = 0.8556; // r*torqueShape(r) at r = 1 (its maximum on [0,1])
+  const _pp = {};
+  function shapePeak(pk) {
+    if (!pk || pk === 0.62) return POWER_SHAPE_PEAK;
+    if (_pp[pk]) return _pp[pk];
+    let m = 0;
+    for (let r = 0.3; r <= 1.00001; r += 0.0025) m = Math.max(m, r * torqueShape(r, pk));
+    return (_pp[pk] = m);
+  }
   const EV_KNEE = 0.35; // v5 electric: full torque from 0 to 35% revs, constant power above
   // Torque at normalised rpm r for a specific build: the base curve reshaped
   // by the exhaust (tqLow below ~half revs, tqHigh toward the redline).
@@ -609,8 +637,8 @@
   // size its drag; `extra` scales engine output (1 = standard).
   function stockWheelPower(c, extra) {
     const redlineW = (c.redline * 2 * Math.PI) / 60;
-    const peakT = ((c.powerKW * 1000) / ((c.ev ? EV_KNEE : POWER_SHAPE_PEAK) * redlineW)) * (extra || 1);
-    const shape = { ev: c.ev ? 1 : 0, tqLow: 1, tqHigh: 1, carLo: (c.tq && c.tq.lo) || 1, carHi: (c.tq && c.tq.hi) || 1 };
+    const peakT = ((c.powerKW * 1000) / ((c.ev ? EV_KNEE : shapePeak(c.tq && c.tq.pk)) * redlineW)) * (extra || 1);
+    const shape = { ev: c.ev ? 1 : 0, tqLow: 1, tqHigh: 1, carLo: (c.tq && c.tq.lo) || 1, carHi: (c.tq && c.tq.hi) || 1, pk: (c.tq && c.tq.pk) || 0.62 };
     let P = 0;
     for (let r = 0.2; r <= 1.0001; r += 0.01) P = Math.max(P, peakT * torqueAt(shape, r) * r * redlineW * 0.9);
     return P;
@@ -641,7 +669,50 @@
     if (r <= 0.45) f = lo;
     else if (r < 0.62) f = U.lerp(lo, 1, (r - 0.45) / 0.17);
     else f = U.lerp(1, hi, Math.min(1, (r - 0.62) / 0.38));
-    return torqueShape(r) * f;
+    return torqueShape(r, s.pk) * f;
+  }
+
+  // v5.8 gearboxes. Every car used to share one five-speed, so once the final
+  // drive had scaled them a 9,000 rpm rotary and a 6,300 rpm V8 drove the
+  // same. Now each has its own box: how many gears, how far apart (first
+  // over top; top is always 0.94 and the final drive sets the speed), how
+  // quick a shift is, and what kind of box:
+  //   std   the car shifts for you and the drive cuts while it does
+  //   auto  a torque-converter automatic: slow shifts, but it keeps pulling through them
+  //   dct   dual clutch: shifts in a blink and barely lets go of the drive
+  //   man   YOU shift (physics.js): quicker than any automatic, and a shift
+  //         on the light gives a kick. Left alone it only shifts once it has
+  //         sat on the limiter (or bogged right down): slow. The Sting and the Stormer.
+  const BOX_KEEP = { std: 0, auto: 0.35, dct: 0.7, man: 0 };
+  const BOX_NAME = { std: '', auto: 'automatic', dct: 'dual-clutch', man: 'manual' };
+  function boxRatios(n, g1, p) {
+    if (n <= 1) return [1];
+    const out = [];
+    for (let i = 0; i < n; i++) out.push(+(0.94 * Math.pow(g1 / 0.94, Math.pow((n - 1 - i) / (n - 1), p || 1.35))).toFixed(3));
+    return out;
+  }
+  // The box a build actually has: the car's own, reshaped by the gearing part.
+  function boxOf(c, gr) {
+    if (c.ev) return { gears: [1], shift: 0, kick: 1, kind: 'std' };
+    const b = c.box || { n: 5, shift: 0.16, kind: 'std', ratios: [3.25, 2.1, 1.52, 1.17, 0.94] };
+    if (gr.id === 'seq') return { gears: boxRatios(U.clamp(b.n + 1, 6, 7), 3.1, 1.2), shift: 0.05, kick: gr.kick, kind: b.kind === 'man' ? 'man' : 'std' };
+    return { gears: (b.ratios || boxRatios(b.n, b.g1, b.p)).slice(), shift: gr.shift ? Math.min(gr.shift, b.shift) : b.shift, kick: b.kick || gr.kick || 1, kind: b.kind };
+  }
+  const boxLabel = (s) => (s.ev ? 'single-speed' : s.gears.length + '-speed' + (BOX_NAME[s.boxKind] ? ' ' + BOX_NAME[s.boxKind] : ''));
+  // Where to upshift out of each gear: the revs past which the next gear
+  // pulls harder at the wheels (steady boost). An engine whose power keeps
+  // climbing goes to the limiter; one that runs out of breath shifts early.
+  function shiftPoints(s) {
+    const out = [];
+    const F = (g, r) => s.peakTorque * torqueAt(s, r) * (1 + s.boostGain * boostAvail(s, r)) * s.gears[g];
+    for (let g = 0; g < s.gears.length - 1; g++) {
+      const k = s.gears[g + 1] / s.gears[g];
+      let up = 0.975;
+      for (let r = 0.7; r <= 0.975; r += 0.005) if (F(g, r) <= F(g + 1, r * k)) { up = r; break; }
+      out.push(+U.clamp(up, 0.8, 0.975).toFixed(3));
+    }
+    out.push(0.975);
+    return out;
   }
 
   // Boost availability vs normalised rpm (turbos need revs; superchargers don't).
@@ -669,7 +740,7 @@
     const cp = opt('compound', p.compound), wd = opt('width', p.width), su = opt('suspension', p.suspension);
     let gr = opt('gearing', p.gearing);
     // v5 Volt: one reduction gear, no shifts; gearing parts only change the ratio
-    if (c.ev) gr = Object.assign({}, gr, { gears: [1], shift: 0, kick: 1 });
+    const bx = boxOf(c, gr); // (v5.8: the car's own box; one gear on the Volt)
     const br = opt('brakes', p.brakes), ex = opt('exhaust', p.exhaust), ec = opt('ecu', p.ecu), co = opt('cooling', p.cooling), df = opt('diff', p.diff);
     const no = opt('nitrous', p.nitrous);
     const ai = opt('aids', p.aids), wh = opt('wheels', p.wheels), pk = opt('pitkit', p.pitkit);
@@ -714,11 +785,11 @@
     // (Measured: stock cars sit within 0-14% of their drag limit, a big turbo
     // is worth ~35%, so 12% of headroom is free speed and the rest is earned.)
     const baseFD = (redlineBase * WHEEL_R) / (c.vTop * 0.94 * (c.gearHead || GEAR_HEAD));
-    const gears = gr.gears.slice();
+    const gears = bx.gears;
     const finalDrive = baseFD * gr.fd * (1 + T.fd / 100);
     const engineHealth = 1 - 0.38 * Math.pow(U.clamp(w.engine, 0, 1), 1.3);
     // (EV: flat torque to 35% revs, then constant power — see torqueAt)
-    const peakTorque = ((c.powerKW * 1000) / ((c.ev ? EV_KNEE : POWER_SHAPE_PEAK) * redlineW)) * ec.pMul * (c.ev ? mo.pMul : 1);
+    const peakTorque = ((c.powerKW * 1000) / ((c.ev ? EV_KNEE : shapePeak(c.tq && c.tq.pk)) * redlineW)) * ec.pMul * (c.ev ? mo.pMul : 1);
 
     const tyreHealth = 1 - 0.32 * Math.pow(U.clamp(w.tyre, 0, 1), 1.6);
     const mu = 1.12 * cp.mu * tyreHealth;
@@ -774,8 +845,11 @@
       len: c.len, wid: c.wid,
       rearBias: c.rearBias, drive: c.drive,
       redline: Math.round(c.redline * revM), redlineW, idle: 0.14, peakTorque, gears, finalDrive, revRatio: 3.4,
-      tqLow: ex.tqLow, tqHigh: ex.tqHigh, carLo: (c.tq && c.tq.lo) || 1, carHi: (c.tq && c.tq.hi) || 1, pops: ex.pops, ev: c.ev ? 1 : 0,
-      shiftTime: gr.shift, shiftKick: gr.kick, upR: 0.97, downR: 0.55,
+      tqLow: ex.tqLow, tqHigh: ex.tqHigh, carLo: (c.tq && c.tq.lo) || 1, carHi: (c.tq && c.tq.hi) || 1, pk: (c.tq && c.tq.pk) || 0.62, pops: ex.pops, ev: c.ev ? 1 : 0,
+      shiftTime: bx.shift, shiftKick: bx.kick, upR: 0.97, downR: (c.tq && c.tq.pk) >= 0.75 ? 0.6 : 0.55,
+      // v5.8: what kind of box (see boxOf), how much drive survives a shift,
+      // and a manual box (the driver shifts: physics.js)
+      boxKind: bx.kind, shiftKeep: BOX_KEEP[bx.kind] || 0, manual: bx.kind === 'man' ? 1 : 0,
       boostKind: ind.kind, boostGain: ind.boostGain * boostM * (boosted ? co.boostPow || 1 : 1), boostLag: ind.boostLag, boostOn: ind.boostOn,
       heatRate: ind.heatRate * ec.heatM * boostM * boostM * (co.heatK || 1),
       // v5 electronics / wheels / pit kit
@@ -811,6 +885,9 @@
       // nitrous (physics.js §6)
       nosGain: no.gain, nosDur: no.dur, nosRefill: no.refill, nosHeat: no.heat, nosWear: no.wear, nosCost: no.cost,
     };
+    s.upRs = shiftPoints(s); // (v5.8) where each gear wants to be left
+    s.upR = s.upRs[0];
+    s.boxLabel = boxLabel(s);
     return s;
   }
 
@@ -847,7 +924,7 @@
   function accelTime(s, v0, v1) {
     let v = v0, t = 0, boost = 0, gear = 0, shiftT = 0;
     // start in the gear an automatic box would hold at v0
-    while (gear < s.gears.length - 1 && ((v0 / s.wheelR) * s.gears[gear] * s.finalDrive) / s.redlineW > s.upR * 0.9) gear++;
+    while (gear < s.gears.length - 1 && ((v0 / s.wheelR) * s.gears[gear] * s.finalDrive) / s.redlineW > s.upRs[gear] * 0.9) gear++;
     const dt = 0.01;
     const drivenShare = s.rearBias >= 0.99 ? (s.cgF / s.wheelbase) + 0.1 : 1.0;
     const traction = s.mu * s.surfMul[0] * s.mass * G_ACC * drivenShare * 1.02;
@@ -857,13 +934,13 @@
       const rr = Math.max(r, 0.45);
       const target = boostAvail(s, rr);
       boost += (target - boost) * Math.min(1, dt / s.boostLag);
-      let F = 0;
-      if (shiftT > 0) shiftT -= dt;
-      else {
-        const T = s.peakTorque * torqueAt(s, rr) * (1 + s.boostGain * boost) * s.engineHealth;
-        F = Math.min((T * ratio * 0.9) / s.wheelR, traction);
+      const T = s.peakTorque * torqueAt(s, rr) * (1 + s.boostGain * boost) * s.engineHealth;
+      let F = Math.min((T * ratio * 0.9) / s.wheelR, traction);
+      if (shiftT > 0) {
+        shiftT -= dt;
+        F *= s.shiftKeep || 0;
       }
-      if (r > s.upR && gear < s.gears.length - 1) {
+      if (r > s.upRs[gear] && gear < s.gears.length - 1) {
         gear++;
         shiftT = s.shiftTime;
       }
@@ -987,6 +1064,7 @@
     const bWorst = Math.max(bCold, bHot);
     return {
       vmax, t100, tRoll, tq, gHigh, gLow, ex, heatSecs, cost, bCold, bHot,
+      box: s.boxLabel, // (v5.8: '6-speed manual', '8-speed automatic', ...)
       bars: [
         { k: 'Top speed', v: U.clamp((vmax * 3.6 - 150) / 10, 0, 10), txt: Math.round(vmax * 3.6) + ' km/h' },
         { k: 'Acceleration', v: U.clamp((17 - tq) * 2.5, 0, 10), txt: t100.toFixed(1) + ' s 0-100 · ¼ mi ' + tq.toFixed(2) + ' s' },
@@ -1136,8 +1214,12 @@
   // Changing chassis between races: parts move over to the new car.
   const CAR_SWAP = 800;
 
+  // v5.8: a MANUAL badge for car cards (the Sting and the Stormer)
+  const isManual = (id) => !!(CARS[id] && CARS[id].box && CARS[id].box.kind === 'man');
+  const manualTag = (id) => (isManual(id) ? '<em class="mt" title="Manual gearbox: you shift (E / Q, B and the d-pad, or the ▲ ▼ buttons). Shift on the blue light for a kick; left alone it only shifts off the rev limiter.">MANUAL</em>' : '');
+
   G.Parts = {
-    baseDragArea, stockWheelPower, rearExcess, CARS, CAR_ORDER, BASE_CARS, partAllowed, optAllowed, SLOTS, SLOT_MAP, STOCK, opt, optText, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,
+    baseDragArea, stockWheelPower, rearExcess, boxRatios, shiftPoints, isManual, manualTag, CARS, CAR_ORDER, BASE_CARS, partAllowed, optAllowed, SLOTS, SLOT_MAP, STOCK, opt, optText, computeSpec, computeStats, warnings, boostAvail, torqueShape, torqueAt,
     topSpeed, zeroTo100, repairQuote, tyreSetPrice, engineRebuildPrice, BASIC_REPAIR, BODY_REPAIR, newGarage, fixGarage, partsValue,
     TUNES, TUNE_MAP, defaultTune, effTune, tuneAvailable, LOOK, SOUND_KEYS, soundAllowed, SKINS, skinFor, skinsFor, GLOW_COL, defaultLook, cleanLook, brakeDist, CAR_SWAP,
     WHEEL_R, RHO, G_ACC,

@@ -47,12 +47,13 @@
     // 149.8 / 178.7, Pro 148.9 / 182.5 (rivals: 177.4 without), Legend 149.7 /
     // 175.2. The v4.5 bots: 153.4 / 185.9. Top levels race closer and collide
     // more (17-37 hits a race on the street circuit).
-    rookie: { name: 'Rookie', skill: [0.72, 0.78], line: 0.1, brake: 0.58, mistake: 0.22, budget: 0, premium: 0, rival: 0 },
-    easy: { name: 'Easy', skill: [0.78, 0.84], line: 0.3, brake: 0.64, mistake: 0.12, budget: 700, premium: 0, rival: 0 },
-    normal: { name: 'Normal', skill: [0.86, 0.92], line: 0.6, brake: 0.71, mistake: 0.06, budget: 2200, premium: 0.05, rival: 0.12 },
-    hard: { name: 'Hard', skill: [0.92, 0.96], line: 0.85, brake: 0.74, mistake: 0.03, budget: 4500, premium: 0.3, rival: 0.2 },
-    pro: { name: 'Pro', skill: [0.955, 0.985], line: 0.95, brake: 0.76, mistake: 0.012, budget: 7000, premium: 0.5, rival: 0.25 },
-    legend: { name: 'Legend', skill: [0.985, 1.02], line: 1, brake: 0.77, mistake: 0.004, budget: 10000, premium: 0.7, rival: 0.3 },
+    // (shift: v5.8 how far off the light a bot shifts a manual box)
+    rookie: { name: 'Rookie', skill: [0.72, 0.78], line: 0.1, brake: 0.58, mistake: 0.22, budget: 0, premium: 0, rival: 0, shift: 0.08 },
+    easy: { name: 'Easy', skill: [0.78, 0.84], line: 0.3, brake: 0.64, mistake: 0.12, budget: 700, premium: 0, rival: 0, shift: 0.06 },
+    normal: { name: 'Normal', skill: [0.86, 0.92], line: 0.6, brake: 0.71, mistake: 0.06, budget: 2200, premium: 0.05, rival: 0.12, shift: 0.04 },
+    hard: { name: 'Hard', skill: [0.92, 0.96], line: 0.85, brake: 0.74, mistake: 0.03, budget: 4500, premium: 0.3, rival: 0.2, shift: 0.025 },
+    pro: { name: 'Pro', skill: [0.955, 0.985], line: 0.95, brake: 0.76, mistake: 0.012, budget: 7000, premium: 0.5, rival: 0.25, shift: 0.015 },
+    legend: { name: 'Legend', skill: [0.985, 1.02], line: 1, brake: 0.77, mistake: 0.004, budget: 10000, premium: 0.7, rival: 0.3, shift: 0.006 },
   };
   const LEVEL_ORDER = ['rookie', 'easy', 'normal', 'hard', 'pro', 'legend'];
   const levelOf = (id) => LEVELS[id] || LEVELS.normal;
@@ -73,6 +74,7 @@
       this.L.line = U.clamp(this.L.line + (+T.line || 0), 0, 1);
       this.L.mistake = U.clamp(this.L.mistake * (T.mistake > 0 ? +T.mistake : 1), 0, 0.5);
       this.rng = U.rng(seed || 1);
+      this.seed = seed || 1;
       this.wander = (this.rng() - 0.5) * 3;
       // each bot's own take on the racing line (a whole field on one line
       // drove nose to tail and banged into each other)
@@ -91,6 +93,65 @@
       this.revCool = 0;
     }
 
+
+    // v5.8: on the grid some drivers blip the throttle while they wait for
+    // the lights - short stabs every second or so - and a few hold it up
+    // against the limiter for the last moments; the rest just sit there.
+    // Each driver keeps one habit (its own random stream, host only).
+    grid(st, dt, left) {
+      const o = this.gridOut || (this.gridOut = { s: 0, t: 0, b: 0, hb: 0, n: 0 });
+      if (this._gk == null) {
+        const r = (this._gr = this._gr || U.rng((this.seed || 1) * 7 + 3))();
+        this._gk = r < 0.3 ? 0 : r < 0.78 ? 1 : 2; // quiet | blipper | holds it on the limiter at the end
+        this._gw = 0.2 + this._gr() * 1.2;
+        this._gb = 0;
+      }
+      o.t = 0;
+      if (!this._gk || left > 6 || left < 0.15) return o;
+      if (this._gk === 2 && left < 1.3) {
+        o.t = 0.95;
+        return o;
+      }
+      this._gw -= dt;
+      if (this._gb > 0) {
+        this._gb -= dt;
+        o.t = this._ga;
+      } else if (this._gw <= 0) {
+        this._gb = 0.1 + this._gr() * 0.28; // a stab of 0.1-0.4 s
+        this._ga = 0.45 + this._gr() * 0.55;
+        this._gw = 0.45 + this._gr() * 1.2 + this._gb;
+      }
+      return o;
+    }
+
+    // v5.8 a manual box, shifted like a driver: up on the light (a whisker
+    // off it for a Legend, early or late for a Rookie), and down a gear at a
+    // time while braking for a corner, so it leaves in the power band instead
+    // of waiting to bog. A press is the car's own count + 1 (physics.js), so
+    // a bot never has to remember what it has sent.
+    _shift(st, spec, out, speed, dv) {
+      out.gu = st.gu;
+      out.gd = st.gd;
+      const g = st.gear;
+      if (g < 1 || st.shiftT > 0 || st.sel !== g || !spec.upRs) return;
+      const vLong = st.vx * Math.sin(st.h) + st.vz * Math.cos(st.h);
+      const wW = Math.max(Math.abs(vLong), speed * 0.95) / spec.wheelR;
+      const rAt = (k) => (wW * spec.gears[k - 1] * spec.finalDrive) / spec.redlineW;
+      const r = rAt(g);
+      if (this._sg !== g) {
+        this._sg = g;
+        const e = this.L.shift || 0.02;
+        this._se = (this.rng() * 2 - 1) * e - e * 0.5; // (worse drivers shift early more than late)
+      }
+      if (g < spec.gears.length && out.t > 0.5 && r > Math.min(0.995, spec.upRs[g - 1] + this._se)) {
+        out.gu = (st.gu + 1) & 15;
+        return;
+      }
+      if (g > 1) {
+        const rl = rAt(g - 1);
+        if (((out.b > 0.1 || dv < -2) && rl < 0.93) || (r < spec.downR + 0.03 && rl < 0.9)) out.gd = (st.gd + 1) & 15;
+      }
+    }
 
     // v5.5: a car hit us (race.js decides who ran into whom). Only a rival
     // bothers getting even, and only with the car that started it.
@@ -297,10 +358,11 @@
         const i = track.idx(i0 + Math.round(d / track.sp));
         if (!track.closed && i >= track.N - 1) break;
         // on the racing line the path bends less than the road's centreline.
-        // Trust that halfway, and not in hairpins (tested: fully trusting it
-        // overshot corners; the half-trust version was quickest on 8 tracks)
+        // Trust it three-quarters, and not in hairpins (tested: fully trusting it
+        // overshot corners; v5.8: once walls cost what they should, 3/4 was
+        // quickest over 12 tracks with the fewest hits - half was 11 s slower)
         const kc = Math.abs(track.K[i]);
-        const k = (RLK ? U.lerp(kc, RLK[i], L.line * 0.5 * (1 - U.clamp(kc * 25 - 0.5, 0, 1))) : kc) + 1e-4;
+        const k = (RLK ? U.lerp(kc, RLK[i], L.line * 0.75 * (1 - U.clamp(kc * 25 - 0.5, 0, 1))) : kc) + 1e-4;
         const sf = G.SURF[track.S[i]];
         let sm = spec.surfMul[track.S[i]];
         if (wet > 0 && !sf.wet && !sf.loose && !sf.icy) sm = U.lerp(sm, wetMu, wet * 0.6);
@@ -397,6 +459,7 @@
         this.stuck = Math.max(0, this.stuck - dt * 0.5);
         return out;
       }
+      if (spec.manual) this._shift(st, spec, out, speed, dv);
       // Nitrous: fire it accelerating on a straight-ish bit, never when hot.
       out.n = spec.nosGain && st.nos > 0.04 && dv > 3 && speed > 8 && Math.abs(out.s) < 0.3 && st.heat < 0.7 && !this.aggressive ? 1 : 0;
       // Stuck / wrong way -> ask for a respawn.
