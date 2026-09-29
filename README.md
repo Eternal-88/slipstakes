@@ -2,6 +2,29 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.8.1 — Shift Lights
+
+The manual box (`physics.js`, `s.manual`) no longer has any safety net: no
+upshift off the limiter, no downshift when bogged. A downshift goes in when
+asked; one that over-revs past 1.05 costs engine wear (a money shift).
+`car.limT` only drives the HUD's SHIFT ▲ call. A perfect shift is +22%
+drive (0.6 s). Everything that drives a car without a person shifts it
+itself: bots (`Bot._shift`), the stand-in for a frozen player
+(`hostrace.js _standIn` passes gu/gd), the balance novice (`tools/balance.js`)
+and the shop's acceleration stat (`parts.js physAccel`, on the light). PROTO 17.
+
+Warnings (`hud.js` `banner(..., 'warn' | 'bad')`) go to `callout`: a
+small strip at the top (pit strip 58 px, warnings 95, slipstream badge 130),
+kept up without redrawing when asked again (the crossings and the launch
+ask every frame, which re-popped the big banner and made it flicker). The big
+banner is left for final lap, finished and best lap. The pit panel is a
+compact strip (no `.big`, no glow, no pulse) and its one-off banner is gone.
+
+Balance: the Rotor's v5.8 trim is undone (no `tq.pk`, first gear 3.25):
+high-skill cars may lead in expert hands. `carlab.py field`, ace / novice
+average rank of 11: Rotor 3.5 / 8.5, Stormer 4.9 / 7.4, Apex 5.1 / 5.2,
+Brick 6.5 / 2.0, Dune 7.5 / 2.5.
+
 ## v5.8 — Shift Lights
 
 Walls (`physics.js` `collideWalls`): tangential friction 0.35 → 0.8 of the
