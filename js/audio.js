@@ -1389,6 +1389,26 @@
       }
       this.noiseHit(3.2, 90, 0.35 * k, 'lowpass', 'sfx', 0.2, 60);
     },
+    // v5.7 knockables: what a thing sounds like when a car sends it flying
+    knock(kind, k) {
+      if (!this.ok() || k < 0.03) return;
+      if (kind === 'card') {
+        this.noiseHit(0.16, 420, 0.3 * k, 'lowpass', 'sfx', 0, 180);
+        this.noiseHit(0.08, 1600, 0.08 * k, 'bandpass', 'sfx', 0.01, 0, 1.5);
+      } else if (kind === 'wood') {
+        this.noiseHit(0.12, 900, 0.25 * k, 'bandpass', 'sfx', 0, 400, 3);
+        this.tone(220, 0.08, 'triangle', 0.08 * k, 160);
+      } else if (kind === 'metal') {
+        for (let i = 0; i < 4; i++) this.noiseHit(0.07, 1800 + Math.random() * 1600, 0.08 * k, 'bandpass', 'sfx', i * 0.05, 0, 8);
+        this.tone(640, 0.25, 'triangle', 0.03 * k, 600);
+      } else if (kind === 'plastic') {
+        this.tone(330, 0.07, 'triangle', 0.1 * k, 260);
+        this.noiseHit(0.05, 2400, 0.06 * k, 'bandpass', 'sfx', 0, 0, 2);
+      } else {
+        this.tone(170, 0.22, 'sine', 0.12 * k, 320); // soft: a boing
+        this.noiseHit(0.1, 300, 0.12 * k, 'lowpass');
+      }
+    },
     // v5.6.1 crossings that aren't railways: a forklift's reversing beeper,
     // a tractor's horn and diesel; and concrete cracking off a building
     forkBeep(k) {
@@ -1403,6 +1423,25 @@
         this.tone(f, 0.5, 'sawtooth', 0.045 * k, 0, 'sfx', 0.5);
       }
       for (let i = 0; i < 10; i++) this.noiseHit(0.09, 160, 0.12 * k, 'lowpass', 'sfx', 1.1 + i * 0.13, 90);
+    },
+    // v5.7: a delivery robot's chirp
+    robotChirp(k) {
+      if (!this.ok() || k < 0.03) return;
+      this.tone(1800, 0.06, 'square', 0.03 * k, 2400, 'sfx');
+      this.tone(2400, 0.08, 'square', 0.025 * k, 1600, 'sfx', 0.09);
+      this.tone(2000, 0.05, 'square', 0.02 * k, 2600, 'sfx', 0.2);
+    },
+    // v5.7: a wave breaking over the causeway wall, and a rocket's roar
+    wave(k) {
+      if (!this.ok() || k < 0.03) return;
+      this.noiseHit(1.4, 900, 0.3 * k, 'lowpass', 'sfx', 0, 300, 0.7);
+      this.noiseHit(0.9, 3000, 0.08 * k, 'highpass', 'sfx', 0.1);
+    },
+    launchRoar(k) {
+      if (!this.ok() || k < 0.03) return;
+      this.noiseHit(6, 120, 0.55 * k, 'lowpass', 'sfx', 0, 60);
+      this.noiseHit(4, 500, 0.18 * k, 'bandpass', 'sfx', 0.2, 250, 0.6);
+      this.tone(38, 5, 'sine', 0.3 * k, 30);
     },
     debrisCrack(k) {
       if (!this.ok() || k < 0.03) return;
@@ -1741,7 +1780,15 @@
       [660, 990, 1320].forEach((f, i) => this.tone(f, 0.16, 'triangle', 0.06, 0, 'ui', i * 0.07));
     },
     chat() {
-      this.tone(1200, 0.06, 'sine', 0.05, 1500, 'ui');
+      // (v5.7: two notes, a little louder - one quiet tick was easy to miss)
+      this.tone(1200, 0.07, 'sine', 0.06, 1500, 'ui');
+      this.tone(1600, 0.09, 'sine', 0.05, 1800, 'ui', 0.08);
+    },
+    // a direct message: a bright two-note chime
+    dm() {
+      this.tone(988, 0.16, 'sine', 0.09, 0, 'ui');
+      this.tone(1319, 0.3, 'sine', 0.08, 0, 'ui', 0.13);
+      this.tone(1976, 0.22, 'sine', 0.025, 0, 'ui', 0.13);
     },
     tick() {
       this.tone(1000, 0.03, 'square', 0.03, 0, 'ui');
@@ -1894,6 +1941,15 @@
     // C minor liquid drum and bass at 172 for any race (and the night)
     nightline: { chill: 'dnb', race: 1, bpm: 172, key: 0, scale: [0, 2, 3, 5, 7, 8, 10], lead: { inst: 'bell', lo: 72, hi: 91, sparse: 1 }, pad: 1,
       prog: [[48, 58, 62, 63, 67], [44, 55, 58, 60, 63], [41, 55, 56, 60, 63], [43, 53, 56, 59, 63], [48, 58, 62, 63, 67], [51, 55, 58, 62, 65], [44, 55, 58, 60, 63], [43, 53, 55, 60, 62]] },
+    // v5.7: D major city pop at 122 for Launch Coast, brass on the lift
+    liftoff: { chill: 'citypop', race: 1, bpm: 122, key: 2, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'synth', lo: 66, hi: 86 }, brass: 1,
+      prog: [[50, 57, 61, 64, 66], [47, 54, 57, 61, 62], [43, 54, 57, 59, 62], [45, 52, 54, 59, 61], [40, 54, 55, 59, 62], [42, 52, 57, 61, 64], [43, 54, 59, 62, 66], [45, 52, 57, 61, 64]] },
+    // B minor, dark and pulsing at 118 for the Server Farm
+    uptime: { chill: 'dark', race: 1, bpm: 118, key: 11, scale: [0, 2, 3, 5, 7, 8, 10], lead: { inst: 'synth', lo: 66, hi: 86, sparse: 1 }, pad: 1,
+      prog: [[47, 54, 57, 61, 62], [43, 54, 59, 62, 66], [40, 54, 55, 59, 62], [42, 52, 57, 61, 64], [47, 54, 57, 62, 64], [50, 54, 57, 61, 66], [43, 54, 57, 59, 62], [45, 52, 54, 57, 61]] },
+    // F major bossa at 104 by the sea for Low Tide
+    lowtide: { chill: 'bossa', race: 1, bpm: 104, swing: 0.1, key: 5, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'flute', lo: 65, hi: 86 },
+      prog: [[41, 52, 55, 57, 60], [38, 52, 53, 57, 60], [43, 53, 57, 58, 62], [48, 52, 55, 58, 62], [45, 52, 55, 60, 64], [38, 53, 57, 60, 62], [46, 53, 57, 60, 62], [48, 53, 55, 58, 62]] },
     // E major lounge at 86 for the menu (it takes turns with the title theme)
     welcome: { chill: 'lofi', bpm: 86, swing: 0.2, key: 4, scale: [0, 2, 4, 5, 7, 9, 11], lead: { inst: 'vibes', lo: 64, hi: 85, sparse: 1 },
       prog: [[45, 56, 59, 61, 64], [44, 54, 56, 59, 63], [42, 52, 56, 57, 61], [47, 57, 61, 63, 68], [45, 56, 59, 61, 64], [49, 52, 56, 59, 63], [42, 52, 56, 57, 61], [47, 52, 54, 57, 61]] },
@@ -1932,6 +1988,9 @@
     megastore: ['Aisle Infinity', 'Store jazz-funk', 'Megastore'],
     evacuation: ['Evacuation', 'Dark and tense', 'Harrow City'],
     southvalley: ['Garlic Summer', 'Sunny groove', 'Harvest Run'],
+    liftoff: ['Liftoff', 'City pop', 'Launch Coast'],
+    uptime: ['Uptime', 'Dark and pulsing', 'Server Farm'],
+    lowtide: ['Low Tide', 'Bossa by the sea', 'Low Tide'],
     sunsetdrive: ['Sunset Drive', 'City pop', 'Races'],
     nightline: ['Night Line', 'Liquid drum and bass', 'Races, day or night'],
     final: ['Champion', 'Anthem', 'The final standings'],

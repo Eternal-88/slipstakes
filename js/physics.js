@@ -141,6 +141,7 @@
   function step(car, s, inp, track, dt, opts) {
     const frozen = opts && opts.frozen;
     const env = opts && opts.env;
+    if (env) track.t = env.t; // (v5.7: tide patches come and go with race time)
     const wetEnv = env ? env.wet || 0 : 0;
     const endu = env && env.endu;
     // v5 pit stop: the host holds the car in the box while it's serviced
@@ -628,7 +629,8 @@
       const wi = track.WZ[Q.i];
       if (wi >= 0) {
         const W = track.winds[wi];
-        const acc = W.str * (0.55 + 0.45 * Math.sin((env.t * 2 * Math.PI) / W.period + W.ph)) * W.dir;
+        // (v5.7: a launch's blast zone only blows while the rocket lifts off)
+        const acc = (W.blast ? W.str * track.blastK(W, env.t) : W.str * (0.55 + 0.45 * Math.sin((env.t * 2 * Math.PI) / W.period + W.ph))) * W.dir;
         gwx += Q.nx * acc * s.mass;
         gwz += Q.nz * acc * s.mass;
         // (visual only: the world blows grit across the road and the HUD says

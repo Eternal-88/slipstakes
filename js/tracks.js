@@ -56,6 +56,12 @@
     // no boulders scattered about.
     store: { song: 'megastore', ground: 0xa6aaaf, ground2: 0xa1a5aa, hill: 0xa6aaaf, patch: 0x9da1a6, runoff: 'concrete', sky: 0x44536a, fog: 0x51617a, trees: 'none', rocks: 0, props: 'store', wall: [0xffc400, 0x1f4fbd], night: 1, indoor: 1, stand: 0, hills: 0, fogNear: 50, fogFar: 300,
       nightLight: { hemiSky: 0xb4c4e2, hemiI: 1.3, sunCol: 0xe2eaff, sunI: 0.5 }, surfCol: { tarmac: [0xcbcdd0, 0xc6c8cb], concrete: [0xbcbfc3, 0xb6b9bd] } },
+    // v5.7 the three new ones: a spaceport at golden hour, a data centre at
+    // night, and a causeway to a lighthouse on a grey-gold evening
+    launch: { song: 'liftoff', ground: 0x9fae6a, ground2: 0x95a562, hill: 0xcdbb8c, patch: 0xd9c9a0, runoff: 'sand', sky: 0xf2b48a, fog: 0xf4c8a2, trees: 'none', rocks: 0, props: 'launch', wall: [0xf2efe6, 0x2f6bb0], sea: [1, 0], mtn: 0x9a8f78, sunCol: 0xffc07a, sunI: 2.3, hemiI: 1.35, hills: 0.25, fogNear: 260, fogFar: 1050, tufts: 'dry' },
+    datacenter: { song: 'uptime', ground: 0x263042, ground2: 0x232d3f, hill: 0x263042, patch: 0x2a3548, runoff: 'concrete', sky: 0x0a0f18, fog: 0x0d1420, trees: 'none', rocks: 0, props: 'datacenter', wall: [0x2fe0c8, 0x1b1f28], night: 1, indoor: 1, stand: 0, hills: 0, fogNear: 45, fogFar: 260,
+      nightLight: { hemiSky: 0x7a9ac8, hemiI: 1.45, sunCol: 0x9ab8ff, sunI: 0.45 }, surfCol: { tarmac: [0x343c4d, 0x323a4b], concrete: [0x414a5c, 0x3e4759] } },
+    tide: { song: 'lowtide', ground: 0x8c9a6a, ground2: 0x80905f, hill: 0x9aa47a, patch: 0xc4bb94, runoff: 'concrete', sky: 0xa9bccf, fog: 0xc2ccd6, trees: 'pine', rocks: 1, props: 'tide', wall: [0xe8e4da, 0x5a6470], seaLand: [[0, -350, 420, 40], [20, 1000, 230, 40]], mtn: 0x6f7c82, sunCol: 0xffd2a0, sunI: 1.9, hemiI: 1.55, hills: 0.4, fogNear: 200, fogFar: 760, tufts: 'grass' },
     deadcity: { song: 'evacuation', ground: 0x2b2f34, ground2: 0x272b30, hill: 0x2f3338, patch: 0x33302c, runoff: 'concrete', sky: 0x1a2227, fog: 0x1f282d, trees: 'none', rocks: 0, props: 'deadcity', puddle: 0x3d4c5c, wall: [0xff7a1a, 0xe6e2d8], night: 1, rain: 1, neon: 1, lamps: 1, stand: 0, hills: 0, fogNear: 60, fogFar: 380,
       nightLight: { hemiSky: 0x6a8292, hemiI: 1.15, sunCol: 0xa9c2d2, sunI: 0.45 }, surfCol: { tarmac: [0x34383e, 0x31353b], wet: [0x2a3036, 0x272c32], concrete: [0x4a4f55, 0x454a50] } },
     southvalley: { song: 'southvalley', ground: 0x8fae58, ground2: 0x86a552, hill: 0xc4aa6c, patch: 0xa8a860, runoff: 'grass', sky: 0x8ccbf2, fog: 0xd9e7ef, trees: 'none', rocks: 0, props: 'suburb', wall: [0xf2efe6, 0xa3a8ae], mtn: 0x9a8a5a, sunCol: 0xfff0d2, sunI: 2.4, hemiI: 1.7, hills: 0.5, hillRel: 7, smoothGround: 1, fogNear: 280, fogFar: 950, tufts: 'grass',
@@ -536,7 +542,7 @@
       // v5.5.8: the endless store after closing time (a nod to 3008). A grid
       // of wide concrete aisles between showroom islands, pillars that go up
       // into the fog, price signs hanging on wires, the ceiling panels on.
-      id: 'megastore', name: 'Megastore', format: 'circuit', laps: 2, theme: 'store', runoff: 4, isNew: 1,
+      id: 'megastore', name: 'Megastore', format: 'circuit', laps: 2, theme: 'store', runoff: 4,
       blurb: 'An endless furniture store after closing time. Square corners between the showrooms, pillars that vanish into the fog where the ceiling should be, forklifts still moving stock across the aisles - and somebody has just mopped the floor.',
       pts: [
         [0, 0, { w: 7.5, s: 'tarmac', kerb: 0 }],
@@ -557,17 +563,22 @@
         { k: 'water', x: 360, z: 300, len: 18, hw: 6 },
         { k: 'oil', x: -180, z: 90, lat: 1.5, len: 10, hw: 2.4 },
         { k: 'boost', x: 100, z: 420, lat: 2 },
-        // v5.6.1: forklifts out of the stockrooms, across the aisle
+        // v5.6.1: forklifts out of the stockrooms, across the aisle (v5.7: five of them)
         { k: 'train', look: 'forklift', x: 218, z: 421, cars: 2, gap: 2.4, speed: 6, span: 22, every: 13, r: 1.25, off: 3 },
         { k: 'train', look: 'forklift', x: 298, z: 64, cars: 2, gap: 2.4, speed: 6, span: 22, every: 14, r: 1.25, off: 9, dir: -1 },
+        { k: 'train', look: 'forklift', x: 180, z: 180, cars: 2, gap: 2.4, speed: 6.5, span: 22, every: 12, r: 1.25, off: 5 },
+        { k: 'train', look: 'forklift', x: -60, z: 240, cars: 2, gap: 2.4, speed: 6, span: 22, every: 15, r: 1.25, off: 11, dir: -1 },
+        { k: 'train', look: 'forklift', x: -120, z: 360, cars: 2, gap: 2.4, speed: 5.5, span: 22, every: 13.5, r: 1.25, off: 1 },
+        // v5.7: a floor scrubber working back and forth over the wet patch
+        { k: 'swing', look: 'scrubber', x: 360, z: 300, amp: 4.5, period: 9, r: 1.3 },
       ],
     },
     {
       // v5.5.8: a city that emptied overnight. Wet tarmac all the way round,
       // an elevated railway over the start straight, fires, wrecks and
       // barricades in the side streets.
-      id: 'harrow', name: 'Harrow City', format: 'circuit', laps: 2, theme: 'deadcity', runoff: 3.5, isNew: 1,
-      blurb: 'A city that emptied overnight: rain, fires, abandoned police cars and barricades, and the elevated railway still running over the start. Concrete falls off the buildings on the east street - watch for shadows. Standing water on the avenue and the back street - lift before you get there.',
+      id: 'harrow', name: 'Harrow City', format: 'circuit', laps: 2, theme: 'deadcity', runoff: 3.5,
+      blurb: 'A city that emptied overnight: rain, fires, abandoned police cars and barricades, and the elevated railway still running over the start. Concrete falls off the buildings on four of its streets - watch for shadows. Standing water on the avenue and the back street - lift before you get there.',
       pts: [
         [0, 0, { w: 7, s: 'tarmac', kerb: 0 }],
         [260, 0, { r: 20 }],
@@ -595,6 +606,10 @@
         // (all over the road, the bots swerved into the walls dodging it)
         { k: 'rockfall', look: 'debris', x: 260, z: 75, lat: 4, len: 80, spread: 1.5, every: 6.5, stay: 4, r: 1.1, count: 2 },
         { k: 'rockfall', look: 'debris', x: 260, z: 75, lat: -4, len: 80, spread: 1.5, every: 6.5, stay: 4, r: 1.1, count: 2, off: 1.6 },
+        // v5.7: and on three more streets
+        { k: 'rockfall', look: 'debris', x: 200, z: 140, lat: 4, len: 60, spread: 1.5, every: 7, stay: 4, r: 1.05, count: 2, off: 0.8 },
+        { k: 'rockfall', look: 'debris', x: 40, z: 400, lat: -4, len: 60, spread: 1.5, every: 7.5, stay: 4, r: 1.05, count: 2, off: 2.9 },
+        { k: 'rockfall', look: 'debris', x: -140, z: 60, lat: 4, len: 60, spread: 1.5, every: 6.5, stay: 4, r: 1.05, count: 2, off: 4.4 },
       ],
       // (trackmesh.js: the elevated railway, from/to in world metres)
       elRail: [[90, -120, 90, 300], [-160, 400, 300, 400]],
@@ -605,7 +620,7 @@
       // vineyards, corn, orchards and greenhouses (and the afternoon wind),
       // into downtown Oak Valley under the peak. Made-up towns. (v5.6.1:
       // the scenery rebuilt - trackmesh.js sceneSuburb.)
-      id: 'southvalley', name: 'Harvest Run', format: 'sprint', theme: 'southvalley', runoff: 3, startAt: 40, finishBack: 150, isNew: 1,
+      id: 'southvalley', name: 'Harvest Run', format: 'sprint', theme: 'southvalley', runoff: 3, startAt: 40, finishBack: 150,
       blurb: 'A sprint up a green farm valley: out of little downtown Clovehaven (say hello to the giant garlic), through the neighbourhoods, along the old highway past vineyards, cornfields, orchards and greenhouses (mind the afternoon wind and the tractor hauling hay across the road), and into downtown Oak Valley under the peak.',
       pts: [
         [0, -40, { w: 6, s: 'tarmac', kerb: 0, y: 0, ro: 3, rs: 'concrete' }],
@@ -637,13 +652,101 @@
         { k: 'train', look: 'tractor', x: 44, z: 755, cars: 3, gap: 4.3, speed: 6, span: 38, every: 20, r: 1.45, off: 5 },
       ],
     },
+    {
+      // v5.7: a spaceport by the sea at golden hour. The rocket in the infield
+      // lifts off every minute (race time): its blast pushes cars across the
+      // coast road nearest the pad. Countdown clocks by the road.
+      id: 'launch', name: 'Launch Coast', format: 'circuit', laps: 2, theme: 'launch', runoff: 4, isNew: 1,
+      blurb: 'A spaceport by the sea at golden hour. The rocket on the pad lifts off every minute - its blast shoves you across the coast road beside it, and the countdown clocks tell you when.',
+      pts: [
+        [0, 0, { w: 7.5, s: 'tarmac' }],
+        [0, 360, { r: 28 }],
+        [125, 475, { r: 35 }],
+        [350, 475, { r: 30 }],
+        [450, 365, { r: 35 }],
+        [450, 55, { r: 45 }],
+        [335, -85, { r: 30 }],
+        [155, -55, { r: 30 }],
+        [85, -180, { r: 25 }],
+        [-40, -155, { r: 28 }],
+      ],
+      hazards: [
+        { k: 'launch', x: 450, z: 210, len: 220, str: 13, every: 60, off: 45, dur: 5, pad: [320, 210] },
+        { k: 'boost', x: 0, z: 200, lat: 0 },
+        { k: 'oil', x: 250, z: -70, lat: 1.2, len: 10, hw: 2.4 },
+      ],
+    },
+    {
+      // v5.7: a data centre at night. Delivery robots cross from their docks,
+      // fans in the walls blow gusts across the road, a coolant leak.
+      id: 'serverfarm', name: 'Server Farm', format: 'circuit', laps: 2, theme: 'datacenter', runoff: 4, isNew: 1,
+      blurb: 'A data centre at night: aisles of racks winking in the dark, cooling fans that blow gusts across the road, and delivery robots crossing from their docks.',
+      pts: [
+        [0, 0, { w: 7, s: 'tarmac', kerb: 0 }],
+        [280, 0, { r: 20 }],
+        [280, 150, { r: 18 }],
+        [140, 150, { r: 18 }],
+        [140, 300, { r: 18 }],
+        [300, 300, { r: 20 }],
+        [300, 440, { r: 22 }],
+        [-140, 440, { r: 22 }],
+        [-140, 220, { r: 20 }],
+        [-60, 220, { r: 18 }],
+        [-60, 80, { r: 18 }],
+        [-150, 80, { r: 20 }],
+        [-150, 0, { r: 20 }],
+      ],
+      hazards: [
+        { k: 'train', look: 'robot', x: 280, z: 75, cars: 4, gap: 2.2, speed: 4.5, span: 20, every: 15, r: 0.6, off: 4 },
+        { k: 'train', look: 'robot', x: 140, z: 225, cars: 4, gap: 2.2, speed: 4.5, span: 20, every: 16, r: 0.6, off: 10, dir: -1 },
+        { k: 'train', look: 'robot', x: -140, z: 330, cars: 3, gap: 2.2, speed: 4.5, span: 20, every: 14, r: 0.6, off: 7 },
+        { k: 'wind', x: 80, z: 440, len: 180, str: 6, period: 3.2 },
+        { k: 'wind', x: -60, z: 150, len: 100, str: 6.5, period: 2.8, dir: -1 },
+        { k: 'water', x: 220, z: 300, lat: 1.5, len: 12, hw: 3 },
+        { k: 'boost', x: 140, z: 0, lat: 0 },
+      ],
+    },
+    {
+      // v5.7: a sprint from a fishing village across a causeway to the
+      // lighthouse island. The sea washes over the causeway on a rhythm (tide
+      // patches: water only while a wave is over the road).
+      id: 'lowtide', name: 'Low Tide', format: 'sprint', theme: 'tide', runoff: 3, startAt: 40, finishBack: 120, isNew: 1,
+      blurb: 'From a fishing village across the causeway to the lighthouse as the evening tide comes in: every few seconds a wave washes over the road - time it, or aquaplane.',
+      pts: [
+        [40, -720, { w: 6.5, s: 'tarmac', y: 1.5 }],
+        [40, -560, { r: 30 }],
+        [-60, -470, { r: 28 }],
+        [-50, -330, { r: 30 }],
+        [60, -250, { r: 26 }],
+        [50, -120, { r: 30 }],
+        [-40, -40, { r: 25 }],
+        [-60, 110, { r: 45, y: 2.2 }],
+        [10, 360, { r: 140 }],
+        [-20, 580, { r: 160 }],
+        [20, 760, { r: 40, y: 3 }],
+        [140, 820, { r: 26, y: 7 }],
+        [160, 960, { r: 30, y: 12 }],
+        [60, 1060, { r: 24, y: 16 }],
+        [-60, 1000, { r: 22, y: 19 }],
+        [-80, 1120, { r: 25, y: 22 }],
+        [-10, 1200, { y: 24 }],
+      ],
+      hazards: [
+        { k: 'water', x: -28.7, z: 220, lat: -1, len: 20, hw: 5.5, tide: { every: 7, off: 0, wet: 2.8 } },
+        { k: 'water', x: 4, z: 340, lat: 1, len: 22, hw: 5.5, tide: { every: 8, off: 2.3, wet: 3 } },
+        { k: 'water', x: -4.8, z: 470, lat: 0, len: 20, hw: 5.5, tide: { every: 6.5, off: 4.1, wet: 2.6 } },
+        { k: 'water', x: -11.5, z: 620, lat: -1, len: 22, hw: 5.5, tide: { every: 7.5, off: 1.2, wet: 2.9 } },
+        { k: 'wind', x: 2.4, z: 420, len: 260, str: 4, period: 5 },
+        { k: 'oil', x: -9.3, z: -300, lat: 1, len: 8, hw: 2 },
+      ],
+    },
   ];
 
   // (endurance: this track is ALWAYS raced as an endurance race. enduChance:
   //  the odds it is run as one this time. Either way that means enduLaps laps
   //  with fuel, tyre wear and a pit box at pit {at, side, len}.)
   // Format rotation: never the same format twice in a row, cycles all tracks.
-  const ROTATION = ['harbour', 'canyon', 'quarter', 'dustbowl', 'serpent', 'rainline', 'saltflat', 'harrow', 'pine', 'city', 'summit', 'coast', 'scrap', 'mile', 'neon', 'tour', 'endu', 'frost', 'freight', 'ashfall', 'megastore', 'southvalley'];
+  const ROTATION = ['harbour', 'canyon', 'quarter', 'dustbowl', 'serpent', 'rainline', 'saltflat', 'harrow', 'pine', 'city', 'summit', 'coast', 'scrap', 'mile', 'neon', 'tour', 'endu', 'frost', 'freight', 'ashfall', 'megastore', 'southvalley', 'launch', 'serverfarm', 'lowtide'];
   // v5.1: tracks that can turn into an endurance race, and the one that always is
   const ENDURANCE = ROTATION.filter((id) => {
     const d = TRACKS.find((t) => t.id === id);

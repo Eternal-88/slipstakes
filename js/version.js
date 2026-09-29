@@ -3,8 +3,17 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.6.1';
+  G.VERSION = '5.7';
   G.CHANGELOG = [
+    {
+      v: '5.7', name: 'Liftoff', items: [
+        ['🗺', 'Three new tracks', 'Launch Coast: a spaceport by the sea at golden hour. The rocket on the pad lifts off every minute - smoke rolls across the infield, the ground shakes, and its blast shoves you across the coast road beside it. Countdown clocks by the road say when. Server Farm: a data centre at night, aisles of racks winking in the dark. Delivery robots cross from their docks, and fans in the walls blow gusts across the road. Low Tide: from a fishing village across a causeway to a lighthouse island as the evening tide comes in. Every few seconds a wave washes over the road - time it, or aquaplane. Everyone reloads the page (Ctrl+Shift+R) for this version, host first.'],
+        ['🏎', 'Every car its own shape', 'From the chase camera most cars read as the same box with dark windows. Now each has a shape and a signature you can pick out at a glance: the Pip a white roof and a roof rack, the Brick box flares and a spoiler on its tailgate, the Sting speedster humps behind the seats, the Rotor louvres over the back window, the Vandal an 80s notchback with black bumpers and a ducktail, the Volt a sharp electric wedge, the Mule a shaker scoop and chrome bumpers, the Regent a black roof and a louvred bonnet, the Apex flying buttresses over the engine. Round, quad and slim headlamps too. How they drive has not changed.'],
+        ['💥', 'Things to smash', 'Boxes, packs of loo roll, shopping carts, giant teddy bears, beach balls, lamps, cones, bins, tyres, hay bales and pumpkins, left on every track. Hit them and they go flying, tumble and stay where they land until the next race. They are only for show: they never slow you down.'],
+        ['⚠', 'More on last update\'s tracks', 'Megastore: five forklift crossings instead of two, and a ride-on floor scrubber working back and forth across the wet patch. Harrow City: concrete now falls on four streets, not one. Harvest Run: pumpkins spilled by the farm stand and bales off the hay wagon. Puddles look like puddles instead of blue gems.'],
+        ['🎵', 'Three new songs', 'Liftoff (city pop) for Launch Coast, Uptime (dark and pulsing) for the Server Farm and Low Tide (bossa by the sea). Settings → Music plays any of them.'],
+      ],
+    },
     {
       v: '5.6.1', name: 'Open Late, Harvest Time', items: [
         ['🗺', 'Harvest Run rebuilt', 'The valley sprint had the same five houses on repeat and golden dirt everywhere - it looked like a desert. Now every house is built on its own (size, storeys, roof, colours, garage, porch, chimney, solar panels) on streets full of trees, with side streets, a back street, parks, a church, a strip mall and a gas station. Downtown has shop fronts with awnings, signs and cafe tables, and buildings behind them. The valley floor is green with golden oak hills around it, and the farmland is vineyards, corn, row crops, orchards, a tree nursery and greenhouses behind eucalyptus windbreaks. The fields no longer cut into the road, and the towns have made-up names.'],

@@ -327,6 +327,11 @@
     //       'swing' {amp, period, r, off}        a wrecking ball swinging across the road
     //   v5.4: 'rockfall' takes count: that many staggered streams of rocks
     //       'train' {cars, gap, speed, span, every, off, dir}  a level crossing
+    //   v5.7: 'launch' {len, str, every, off, dur, pad: [x, z]}  a rocket that
+    //       lifts off on a schedule: while it does, the road nearest the pad is
+    //       a blast zone pushing cars away from it (a wind zone that only
+    //       blows then); and any patch takes tide {every, off, wet}: it is only
+    //       there (water on a causeway) for `wet` s of every `every`
     //   v5.6.1: 'train' look: 'forklift' | 'tractor' (a crossing that isn't a
     //       railway: same timing, physics and bots, its own vehicles), and
     //       'rockfall' look: 'debris' (concrete off a building, not rocks)
@@ -367,13 +372,22 @@
         const ic = this.idx(Math.round(at / sp));
         at = this.D[ic];
         if (h.k === 'oil' || h.k === 'mud' || h.k === 'ice' || h.k === 'water') {
-          const P = { k: h.k, ic, at, lat, hl: (h.len || 10) / 2, hw: h.hw || 2.5, surf: SI[h.k] };
+          const P = { k: h.k, ic, at, lat, hl: (h.len || 10) / 2, hw: h.hw || 2.5, surf: SI[h.k], tide: h.tide || null };
           mark(this.PT, ic, P.hl, this.patches.length);
           this.patches.push(P);
         } else if (h.k === 'boost') {
           const P = { ic, at, lat, hl: (h.len || 6) / 2, hw: h.hw || 1.8, dv: h.dv || 7, vmax: h.vmax || 68 };
           mark(this.PD, ic, P.hl, this.pads.length);
           this.pads.push(P);
+        } else if (h.k === 'launch') {
+          const pad = h.pad || [this.X[ic], this.Z[ic]];
+          const padLat = (pad[0] - this.X[ic]) * this.NX[ic] + (pad[1] - this.Z[ic]) * this.NZ[ic];
+          const blast = { every: h.every || 60, off: h.off || 0, dur: h.dur || 5 };
+          const W = { ic, at, hl: (h.len || 200) / 2, str: h.str || 14, period: 1, ph: 0, dir: padLat > 0 ? -1 : 1, blast };
+          if (!this.WZ) this.WZ = new Int16Array(N).fill(-1);
+          mark(this.WZ, ic, W.hl, this.winds.length);
+          this.winds.push(W);
+          this.launch = { ic, at, pad, every: blast.every, off: blast.off, dur: blast.dur, hl: W.hl };
         } else if (h.k === 'wind') {
           const W = { ic, at, hl: (h.len || 40) / 2, str: h.str || 5, period: h.period || 5, ph: h.ph != null ? h.ph : (at % 7) * 0.9, dir: h.dir || 1 };
           if (!this.WZ) this.WZ = new Int16Array(N).fill(-1);
@@ -607,6 +621,19 @@
       return out;
     }
 
+    // v5.7: where a launch's blast is at race time t, 0..1 (0 = not blowing)
+    blastK(W, t) {
+      if (!(t > 0) || !W.blast) return 0;
+      const B = W.blast, ph = (((t + B.off) % B.every) + B.every) % B.every;
+      return ph < B.dur ? Math.pow(Math.sin((Math.PI * ph) / B.dur), 0.6) : 0;
+    }
+    // v5.7: is a tide patch wet at race time t (a wave over the road)?
+    tideOn(P, t) {
+      if (!(t > 0)) return false;
+      const T = P.tide, ph = (((t + T.off) % T.every) + T.every) % T.every;
+      return ph < T.wet;
+    }
+
     surfaceAt(i, lat) {
       const hw = this.W[i];
       const al = Math.abs(lat);
@@ -617,7 +644,9 @@
           let da = (i - P.ic) * this.sp;
           if (this.closed && Math.abs(da) > this.length / 2) da -= Math.sign(da) * this.length;
           const u = da / P.hl, v = (lat - P.lat) / P.hw;
-          if (u * u + v * v <= 1) return P.surf;
+          // (v5.7: a tide patch only while the wave is over the road - this.t
+          // is the race time the physics last stepped at)
+          if (u * u + v * v <= 1 && (!P.tide || this.tideOn(P, this.t))) return P.surf;
         }
       }
       const kerb = lat > 0 ? this.KL[i] : this.KR[i];

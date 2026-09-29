@@ -247,6 +247,7 @@
       this.trackGroup.userData.env = this.env; // v5: moving hazards follow race time
       this.trackGroup.userData.fx = this.fx;
       this.trackGroup.userData.cam = this.cam; // v5: hazard sounds by distance
+      this.trackGroup.userData.world = this; // v5.7: the launch shakes the camera
       this.trackGroup.userData.camera = this.camera; // v5.5.8: overhead set pieces fade out of the camera's way
       const th = track.theme;
       this.scene.background = new THREE.Color(th.fog);
@@ -480,6 +481,9 @@
       const y = tr.groundY(q); // elevation (smoothly interpolated) + banking
       m.root.position.set(rs.x, y, rs.z);
       m.root.rotation.y = rs.h;
+      // v5.7: anything left lying in the road goes flying (trackmesh.js knockables)
+      const kn = this.trackGroup && this.trackGroup.userData.knock;
+      if (kn && rs.vx != null) kn.hit(rs.x, rs.z, rs.vx, rs.vz);
       // Bank tilt relative to the car's heading, plus pitch on hills.
       const dh = U.wrapAngle(rs.h - tr.H[q.i]);
       const bk = Math.abs(q.lat) <= q.hw ? tr.BK[q.i] : 0;

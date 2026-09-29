@@ -25,7 +25,7 @@
     water: [0x3f6f95, 0x46789e],
   };
   // Hazard patch colours (base, inner sheen / ruts / frost)
-  const PATCH_COL = { oil: [0x121418, 0x2a2f38], mud: [0x5a3c22, 0x6d4a2b], ice: [0xcfe6f2, 0xf2fbff], water: [0x3f6f95, 0x8fc3e6] };
+  const PATCH_COL = { oil: [0x121418, 0x2a2f38], mud: [0x5a3c22, 0x6d4a2b], ice: [0xcfe6f2, 0xf2fbff], water: [0x33485c, 0x6f8ca8] }; // (v5.7: water darker - it read as a blue gem)
 
   // Ground height everywhere (v4): the terrain mesh AND every prop use this,
   // so trees and buildings sit on the hills instead of floating or sinking.
@@ -298,6 +298,15 @@
       let ext = -1e9;
       for (let i = 0; i < N; i++) ext = Math.max(ext, track.X[i] * dx + track.Z[i] * dz);
       seaAt = (x, z) => U.smoothstep(22, 46, x * dx + z * dz - ext);
+    } else if (th.seaLand) {
+      // (v5.7) sea everywhere except the land discs [x, z, r, soft]: a
+      // causeway runs out over the water between them
+      const L = th.seaLand;
+      seaAt = (x, z) => {
+        let land = 0;
+        for (const [cx, cz, r, soft] of L) land = Math.max(land, 1 - U.smoothstep(r, r + (soft || 40), Math.hypot(x - cx, z - cz)));
+        return 1 - land;
+      };
     }
 
     // ---------------- Terrain (faceted, hills rising away from the track) ----
@@ -657,6 +666,11 @@
     yield 'boards';
     resume();
     buildScenery(track, group, detail, seaAt);
+    // v5.7: the older tracks get things to knock over too, in their own
+    // style - crates at the harbour, bales on the rally stages, beach balls on
+    // the coast road, tyres and cones everywhere else
+    const KN = KNOCK_THEME[track.def.theme];
+    if (KN && !SCENES[th.props]) knockables(track, group, strewn(track, U.rng(U.hashStr(track.id + 'knock')), Math.round(track.length / (track.def.format === 'drag' ? 90 : 70)), KN, { mid: track.def.format === 'drag' ? 0 : 0.12 }));
     yield 'scenery';
     resume();
     // v5.5.8: the big set pieces (store, city, valley), in slices of their own
@@ -1342,13 +1356,17 @@
     if (track.patches.length) {
       const pos = [], col = [];
       for (const pt of track.patches) {
+        if (pt.tide) continue; // (drawn below, one mesh each: they come and go)
         const [c0, c1] = PATCH_COL[pt.k].map(C);
         const n = Math.max(3, Math.ceil((pt.hl * 2) / sp));
+        // (v5.7: a ragged edge rather than a perfect ellipse)
+        const jr = U.rng(Math.round(pt.at * 10) + 7), jit = [];
+        for (let k = 0; k <= n; k++) jit.push(0.8 + jr() * 0.32);
         for (let k = 0; k < n; k++) {
           const u0 = -1 + (2 * k) / n, u1 = -1 + (2 * (k + 1)) / n;
           const i0 = track.idx(pt.ic + Math.round((u0 * pt.hl) / sp)), i1 = track.idx(pt.ic + Math.round((u1 * pt.hl) / sp));
           if (i0 === i1) continue;
-          const w0 = pt.hw * Math.sqrt(Math.max(0, 1 - u0 * u0)), w1 = pt.hw * Math.sqrt(Math.max(0, 1 - u1 * u1));
+          const w0 = pt.hw * Math.sqrt(Math.max(0, 1 - u0 * u0)) * jit[k], w1 = pt.hw * Math.sqrt(Math.max(0, 1 - u1 * u1)) * jit[k + 1];
           pushQuad(pos, col, P(i0, pt.lat + w0, 0.016), P(i0, pt.lat - w0, 0.016), P(i1, pt.lat - w1, 0.016), P(i1, pt.lat + w1, 0.016), c0);
           pushQuad(pos, col, P(i0, pt.lat + w0 * 0.5, 0.022), P(i0, pt.lat - w0 * 0.05, 0.022), P(i1, pt.lat - w1 * 0.05, 0.022), P(i1, pt.lat + w1 * 0.5, 0.022), c1);
         }
@@ -1356,6 +1374,50 @@
       const m = meshFrom(pos, col, new THREE.MeshLambertMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }));
       m.name = 'patches';
       group.add(m);
+      // v5.7 tide patches: the sea washing over a causeway. The water is
+      // there while tideOn says so (the physics asks the same question): a
+      // sheet of it fading in as the wave arrives, foam along its edges, and
+      // spray thrown up over the wall as it breaks
+      for (const pt of track.patches) {
+        if (!pt.tide) continue;
+        const wp = [], wc = [], fp = [], fc = [];
+        const n = Math.max(4, Math.ceil((pt.hl * 2) / sp));
+        const jr = U.rng(Math.round(pt.at * 10) + 11);
+        for (let k = 0; k < n; k++) {
+          const u0 = -1 + (2 * k) / n, u1 = -1 + (2 * (k + 1)) / n;
+          const i0 = track.idx(pt.ic + Math.round((u0 * pt.hl) / sp)), i1 = track.idx(pt.ic + Math.round((u1 * pt.hl) / sp));
+          if (i0 === i1) continue;
+          const w0 = pt.hw * Math.sqrt(Math.max(0, 1 - u0 * u0)) * (0.85 + jr() * 0.2), w1 = pt.hw * Math.sqrt(Math.max(0, 1 - u1 * u1)) * (0.85 + jr() * 0.2);
+          pushQuad(wp, wc, P(i0, pt.lat + w0, 0.03), P(i0, pt.lat - w0, 0.03), P(i1, pt.lat - w1, 0.03), P(i1, pt.lat + w1, 0.03), C(0x3f7aa0));
+          for (const s of [1, -1]) pushQuad(fp, fc, P(i0, pt.lat + s * w0, 0.04), P(i0, pt.lat + s * (w0 - 0.5), 0.04), P(i1, pt.lat + s * (w1 - 0.5), 0.04), P(i1, pt.lat + s * w1, 0.04), C(0xf2f7fa));
+        }
+        const sheet = meshFrom(wp, wc, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 }));
+        const fm = meshFrom(fp, fc, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+        sheet.visible = fm.visible = false;
+        group.add(sheet, fm);
+        const T = pt.tide, env2 = () => group.userData.env || { t: 0 };
+        let lastN = -1;
+        group.userData.animFns.push(() => {
+          const t = env2().t;
+          const ph = t > 0 ? (((t + T.off) % T.every) + T.every) % T.every : 99;
+          // in over 0.3 s, out over the last second of the wet spell
+          const k = ph < T.wet ? Math.min(1, ph / 0.3, (T.wet - ph) / 1 + 0.15) : 0;
+          sheet.visible = fm.visible = k > 0.01;
+          sheet.material.opacity = 0.78 * k;
+          fm.material.opacity = 0.9 * k * (0.6 + 0.4 * Math.sin(ph * 9));
+          const n2 = Math.floor((t + T.off) / T.every);
+          if (t > 0 && ph < 0.4 && n2 !== lastN) {
+            lastN = n2;
+            const fx = group.userData.fx, cam = group.userData.cam;
+            const c = track.pointAt(pt.at, pt.lat), side = pt.lat >= 0 ? 1 : -1;
+            if (fx) for (let j = 0; j < 26; j++) {
+              const q2 = track.pointAt(pt.at + (Math.random() - 0.5) * pt.hl * 1.8, side * (track.wallD[c.i] + 0.5));
+              fx.emit('splash', q2.x, track.Y[c.i] + 0.6, q2.z, -track.NX[c.i] * side * (3 + Math.random() * 4), 4 + Math.random() * 5, -track.NZ[c.i] * side * (3 + Math.random() * 4), 2.2);
+            }
+            if (cam && G.Audio && G.Audio.wave) G.Audio.wave(U.clamp(1.1 - Math.hypot(cam.fx - c.x, cam.fz - c.z) / 90, 0, 1));
+          }
+        });
+      }
     }
     if (track.pads.length) {
       const pos = [], col = [];
@@ -1533,6 +1595,251 @@
     return gb.geometry();
   }
 
+  // ------------------------------------------------------- v5.7 knockables
+  // Things left lying about that a car sends flying: boxes, carts, cones, a
+  // teddy bear. Looks only - they never touch the physics and nothing about
+  // them goes over the network: every screen knocks them over from the cars
+  // it draws (world.updateCar calls hit), and a new race stands them back up.
+  //   r: how close a car's centre gets before it hits (m); lift: how light it
+  //   is (light things fly higher); w: its width (lying on its side it sits
+  //   w / 2 up); snd: the sound it makes; bounce: how much a landing gives back
+  const KNOCK = {
+    kbox: { r: 0.5, lift: 1, w: 0.6, snd: 'card' },
+    ktp: { r: 0.45, lift: 1.15, w: 0.5, snd: 'card' },
+    kcrate: { r: 0.55, lift: 0.8, w: 0.7, snd: 'wood' },
+    cart: { r: 0.65, lift: 0.6, w: 0.6, snd: 'metal' },
+    wetsign: { r: 0.4, lift: 1.1, w: 0.1, snd: 'plastic' },
+    cone: { r: 0.35, lift: 1.1, w: 0.4, snd: 'plastic' },
+    kball: { r: 0.45, lift: 1.5, w: 0.9, snd: 'soft', bounce: 0.72 },
+    kbear: { r: 0.6, lift: 0.9, w: 0.8, snd: 'soft' },
+    klamp: { r: 0.35, lift: 0.8, w: 0.5, snd: 'plastic' },
+    kchair: { r: 0.45, lift: 0.8, w: 0.6, snd: 'metal' },
+    kplant: { r: 0.45, lift: 0.7, w: 0.6, snd: 'plastic' },
+    kbin: { r: 0.4, lift: 0.8, w: 0.55, snd: 'metal' },
+    kbale: { r: 0.6, lift: 0.55, w: 0.9, snd: 'soft', bounce: 0.2 },
+    kpumpkin: { r: 0.35, lift: 0.9, w: 0.5, snd: 'soft', bounce: 0.35 },
+    kspool: { r: 0.5, lift: 0.7, w: 0.8, snd: 'wood' },
+    kserver: { r: 0.45, lift: 0.7, w: 0.5, snd: 'metal' },
+    ktyre: { r: 0.45, lift: 0.9, w: 0.3, snd: 'soft', bounce: 0.5 },
+  };
+  const KNOCK_THEME = {
+    harbour: ['kcrate', 'kcrate', 'kbox', 'cone'], coast: ['kball', 'kball', 'kcrate', 'cone'],
+    canyon: ['ktyre', 'ktyre', 'cone', 'kbale'], ash: ['ktyre', 'cone'], dustbowl: ['ktyre', 'kbale', 'cone'],
+    airstrip: ['cone', 'cone', 'ktyre'], salt: ['cone', 'ktyre'], dusk: ['cone', 'ktyre'],
+    rainline: ['cone', 'kbin', 'ktyre'], city: ['cone', 'kbin', 'kbox'], neon: ['cone', 'kbox', 'kbin'],
+    pine: ['kbale', 'kbale', 'ktyre', 'cone'], alpine: ['kbale', 'cone', 'ktyre'], goldpass: ['ktyre', 'kbale', 'cone'],
+    tour: ['cone', 'ktyre', 'kbale'], frost: ['cone', 'ktyre', 'kbale'], endu: ['cone', 'ktyre'],
+    scrap: ['ktyre', 'ktyre', 'kbin', 'kbox'], rail: ['kcrate', 'kbox', 'cone', 'ktyre'],
+  };
+  function knockables(track, group, list) {
+    if (!list.length) return;
+    const by = {}, items = [], q = {};
+    for (const it of list) if (KNOCK[it.k]) (by[it.k] || (by[it.k] = [])).push(it);
+    // where the ground is under a thing: the road and its run-off, or the
+    // terrain beyond the walls
+    const surf = (o) => {
+      track.query(o.x, o.z, o.hint == null ? -1 : o.hint, q);
+      o.hint = q.i;
+      return Math.abs(q.lat) <= q.wall ? track.elevAlong(q.along) + track.bankH(q.i, U.clamp(q.lat, -q.hw, q.hw)) : gy(o.x, o.z);
+    };
+    for (const k in by) {
+      const list2 = by[k];
+      const o3 = { x: 0, z: 0, hint: -1 };
+      // stand each one on the surface it is really on (the road sits over
+      // the terrain beside it)
+      for (const it of list2) {
+        o3.x = it.x;
+        o3.z = it.z;
+        it.abs = true;
+        it.y = surf(o3) + (it.y || 0);
+      }
+      const mesh = instanced(k, list2, group, true);
+      if (!mesh) continue;
+      list2.forEach((it, i) => {
+        items.push({ k, K: KNOCK[k], mesh, i, hx: it.x, hy: it.y, hz: it.z, hr: it.r || 0, s: it.s || 1, st: 0, x: it.x, y: it.y, z: it.z, vx: 0, vy: 0, vz: 0, ax: 0, ay: it.r || 0, az: 0, wx: 0, wy: 0, wz: 0, t: 0, hint: -1 });
+      });
+    }
+    if (!items.length) return;
+    const CELL = 8, grid = new Map(), loose = [], awake = [];
+    const key = (i, j) => i * 100003 + j;
+    const place = (o) => {
+      const kk = key(Math.floor(o.x / CELL), Math.floor(o.z / CELL));
+      (grid.get(kk) || (grid.set(kk, []), grid.get(kk))).push(o);
+    };
+    const tmp = new THREE.Object3D(), dirty = new Set();
+    const write = (o) => {
+      tmp.position.set(o.x, o.y, o.z);
+      tmp.rotation.set(o.ax, o.ay, o.az);
+      tmp.scale.setScalar(o.s);
+      tmp.updateMatrix();
+      o.mesh.setMatrixAt(o.i, tmp.matrix);
+      dirty.add(o.mesh);
+    };
+    const home = () => {
+      grid.clear();
+      loose.length = 0;
+      awake.length = 0;
+      for (const o of items) {
+        if (o.st || o.x !== o.hx || o.z !== o.hz) {
+          Object.assign(o, { st: 0, x: o.hx, y: o.hy, z: o.hz, ax: 0, ay: o.hr, az: 0, vx: 0, vy: 0, vz: 0 });
+          write(o);
+        }
+        place(o);
+      }
+    };
+    home();
+    let lastT = 0, sndT = 0;
+    const noise = (o, v) => {
+      const cam = group.userData.cam, now = performance.now();
+      if (!cam || !G.Audio || !G.Audio.knock || now - sndT < 70) return;
+      const k = U.clamp(1.1 - Math.hypot(cam.fx - o.x, cam.fz - o.z) / 70, 0, 1) * U.clamp(v / 20, 0.25, 1);
+      if (k < 0.05) return;
+      sndT = now;
+      G.Audio.knock(o.K.snd, k);
+    };
+    const launch = (o, x, z, vx, vz, sp) => {
+      const dx = o.x - x, dz = o.z - z, d = Math.hypot(dx, dz) || 1, lf = o.K.lift / Math.sqrt(o.s);
+      const cap = Math.min(1, 24 / sp);
+      o.vx = (vx * (0.75 + Math.random() * 0.35) + (dx / d) * sp * 0.25) * cap;
+      o.vz = (vz * (0.75 + Math.random() * 0.35) + (dz / d) * sp * 0.25) * cap;
+      o.vy = (2.5 + Math.random() * 3 + Math.min(sp, 40) * 0.12) * lf;
+      const w = Math.min(1, sp / 25) * 14;
+      o.wx = (Math.random() - 0.5) * w;
+      o.wy = (Math.random() - 0.5) * w * 0.6;
+      o.wz = (Math.random() - 0.5) * w;
+      if (!o.st) {
+        const a = grid.get(key(Math.floor(o.x / CELL), Math.floor(o.z / CELL)));
+        if (a) a.splice(a.indexOf(o), 1);
+      } else {
+        const li = loose.indexOf(o);
+        if (li >= 0) loose.splice(li, 1);
+      }
+      o.st = 1;
+      o.t = 0;
+      awake.push(o);
+      noise(o, sp);
+    };
+    const test = (o, x, z, vx, vz, sp) => {
+      const dx = o.x - x, dz = o.z - z, rr = o.K.r * o.s + 1.15;
+      if (dx * dx + dz * dz < rr * rr) launch(o, x, z, vx, vz, sp);
+    };
+    group.userData.knock = {
+      // a car at (x, z) moving at (vx, vz): anything it touches goes flying
+      hit(x, z, vx, vz) {
+        const sp = Math.hypot(vx, vz);
+        if (sp < 2.5) return;
+        const ci = Math.floor(x / CELL), cj = Math.floor(z / CELL);
+        for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+          const a = grid.get(key(ci + i, cj + j));
+          if (a) for (let n = a.length - 1; n >= 0; n--) test(a[n], x, z, vx, vz, sp);
+        }
+        for (let n = loose.length - 1; n >= 0; n--) test(loose[n], x, z, vx, vz, sp);
+      },
+      reset: home,
+      stats: () => ({ n: items.length, flying: awake.length, moved: loose.length }),
+    };
+    group.userData.animFns.push((tt, dt0) => {
+      const t = (group.userData.env || { t: 0 }).t;
+      if (t < lastT - 0.5) home(); // a new race
+      lastT = t;
+      const dt = Math.min(0.05, dt0 || 1 / 60);
+      for (let n = awake.length - 1; n >= 0; n--) {
+        const o = awake[n];
+        o.t += dt;
+        o.vy -= 20 * dt;
+        o.x += o.vx * dt;
+        o.y += o.vy * dt;
+        o.z += o.vz * dt;
+        o.ax += o.wx * dt;
+        o.ay += o.wy * dt;
+        o.az += o.wz * dt;
+        const g = surf(o);
+        if (o.y <= g) {
+          o.y = g;
+          if (o.vy < -2) {
+            o.vy = -o.vy * (o.K.bounce || 0.28);
+            o.vx *= 0.7;
+            o.vz *= 0.7;
+            o.wx *= 0.6;
+            o.wy *= 0.6;
+            o.wz *= 0.6;
+            if (o.vy > 1.5) noise(o, o.vy * 2);
+          } else {
+            // skid to a stop, then settle upright or on its side
+            o.vy = 0;
+            const f = Math.exp(-5 * dt);
+            o.vx *= f;
+            o.vz *= f;
+            o.wx *= f;
+            o.wy *= f;
+            o.wz *= f;
+            if (Math.hypot(o.vx, o.vz) < 0.5 || o.t > 5) {
+              const side = Math.random() < 0.55;
+              o.ax = 0;
+              o.az = side ? (Math.random() < 0.5 ? 1 : -1) * Math.PI / 2 : 0;
+              o.y = g + (side ? (o.K.w / 2) * o.s : 0);
+              o.st = 2;
+              awake.splice(n, 1);
+              loose.push(o);
+            }
+          }
+        }
+        write(o);
+      }
+      for (const m of dirty) m.instanceMatrix.needsUpdate = true;
+      dirty.clear();
+    });
+  }
+  // Scatter knockables along the road: `n` spots, each a small cluster of
+  // `kinds` (a pick per spot), on the tarmac near the edges or out on the
+  // run-off, kept off the grid, the hazards and any crossing lane.
+  function strewn(track, rng, n, kinds, opt) {
+    const o = opt || {}, out = [], q = {};
+    const L = track.length, sp = track.sp;
+    const grid = [];
+    for (let k = 0; k < 8; k++) {
+      const g = track.gridSlot(k);
+      track.query(g.x, g.z, -1, q);
+      grid.push(q.along);
+    }
+    const busy = (a) => {
+      for (const d of grid) if (Math.abs(a - d) < 35) return true;
+      for (const pt of track.patches || []) if (Math.abs(a - pt.at) < pt.hl + 6) return true;
+      for (const pd of track.pads || []) if (Math.abs(a - (pd.at != null ? pd.at : pd.ic * sp)) < 10) return true;
+      for (const ob of track.obs || []) if (Math.abs(a - ob.at) < 10) return true;
+      for (const x of track.xings || []) if (Math.abs(a - x.at) < 12) return true;
+      for (const d of track.dyn || []) if (d.k !== 'train' && Math.abs(a - d.at) < (d.len || 10) / 2 + 8) return true;
+      if (track.pit && Math.abs(a - track.pit.at) < track.pit.hl + 30) return true;
+      return a < (o.from || 20) || a > L - (o.to || 20);
+    };
+    for (let k = 0, tries = 0; k < n && tries < n * 6; tries++) {
+      const a = (o.from || 20) + rng() * (L - (o.from || 20) - (o.to || 20));
+      if (busy(a)) continue;
+      const i = track.idx(Math.round(a / sp)), side = rng() < 0.5 ? 1 : -1;
+      const W = track.W[i], wd = track.wallD[i];
+      // mostly just off the racing line near an edge, sometimes right out on it
+      const lat = side * (rng() < (o.mid || 0.25) ? rng() * W * 0.6 : Math.min(wd - 1, W - 1.2 + rng() * (wd - W)));
+      const kind = kinds[Math.floor(rng() * kinds.length)];
+      // (sized to read from the chase camera: at life size a box was a speck)
+      const big = kind === 'kbear' ? 1.4 + rng() * 0.5 : ['cart', 'kchair', 'klamp', 'cone', 'kbin', 'wetsign'].includes(kind) ? 1 + rng() * 0.15 : 1.2 + rng() * 0.35;
+      const pile = kind === 'kbox' || kind === 'ktp' || kind === 'kcrate';
+      const cnt = pile ? 3 + Math.floor(rng() * 4) : kind === 'cone' ? 3 : kind === 'kball' ? 1 + Math.floor(rng() * 3) : 1;
+      const cols = pile ? Math.ceil(cnt / 2) : cnt, w = KNOCK[kind].w * big;
+      for (let c = 0; c < cnt; c++) {
+        // a pile is two rows along the road, some with another on top
+        const row = pile ? c % 2 : 0, col = pile ? Math.floor(c / 2) : c;
+        const al = (col - (cols - 1) / 2) * (pile ? w * 1.05 : 0.9) + (rng() - 0.5) * 0.2;
+        const lo = pile ? (row - 0.5) * w * 1.05 : (rng() - 0.5) * 0.5;
+        const x = track.X[i] + track.NX[i] * (lat + lo) + track.TX[i] * al, z = track.Z[i] + track.NZ[i] * (lat + lo) + track.TZ[i] * al;
+        const s = big * (0.92 + rng() * 0.16), r = pile ? track.H[i] + (rng() - 0.5) * 0.3 : rng() * 6.28;
+        out.push({ k: kind, x, z, r, s });
+        if (pile && rng() < 0.45) out.push({ k: kind, x, z, y: KNOCK[kind].w * s, r: r + (rng() - 0.5) * 0.4, s: s * 0.95 });
+      }
+      k++;
+    }
+    return out;
+  }
+
   // ------------------------------------------------------- v5 moving hazards
   // Rockfall zones, wrecking balls, crosswind socks and the pit box. Where a
   // moving hazard is comes from track.dynPos(race time) — the same function
@@ -1548,7 +1855,9 @@
         // a carriage). Built in the crossing's frame like the railway: local
         // X across the road, Z along it; everything is mirror-symmetric in X.
         const i = o.i, y0 = track.Y[i], H0 = track.H[i], cx = track.X[i], cz = track.Z[i];
-        const fork = o.look === 'forklift', wd = track.wallD[i];
+        // (v5.7 Server Farm: delivery robots, laid out like the forklifts)
+        const robo = o.look === 'robot', fork = o.look === 'forklift' || robo, wd = track.wallD[i];
+        const LANE = robo ? [0x2fe0c8, 0x1b1f28] : [0xf2c230, 0x1b1d22];
         const ground = (x, z) => (_gH ? (_gH.mesh || _gH)(x, z) : y0);
         const W = (lx, lz) => [cx + lx * Math.cos(H0) + lz * Math.sin(H0), cz - lx * Math.sin(H0) + lz * Math.cos(H0)];
         if (!o.car) {
@@ -1561,15 +1870,16 @@
             // yellow and black stripes down both edges of the forklift lane,
             // right across the aisle; a stockroom at each end, its door hung
             // with plastic strips (the forklifts come and go through it)
-            for (let k = -o.span + 1.6, n = 0; k < o.span - 1.6; k += 1.2, n++) for (const sz of [-2.2, 2.2]) xb.box(k + 0.6, 0.03, sz, 1.2, 0.02, 0.32, C(n % 2 ? 0x1b1d22 : 0xf2c230));
+            for (let k = -o.span + 1.6, n = 0; k < o.span - 1.6; k += 1.2, n++) for (const sz of [-2.2, 2.2]) xb.box(k + 0.6, 0.03, sz, 1.2, 0.02, 0.32, C(LANE[n % 2]));
             for (const sx of [-1, 1]) {
               const face = sx * (o.span - 1.6);
-              xb.box(sx * (o.span + 2.4), 2.6, 0, 8, 5.2, 10, C(0xd9d6cf));
-              xb.box(sx * (o.span + 2.4), 5.25, 0, 8.3, 0.1, 10.3, C(0x9a9ea5));
+              xb.box(sx * (o.span + 2.4), 2.6, 0, 8, 5.2, 10, C(robo ? 0x2a3140 : 0xd9d6cf));
+              xb.box(sx * (o.span + 2.4), 5.25, 0, 8.3, 0.1, 10.3, C(robo ? 0x1b1f28 : 0x9a9ea5));
               xb.box(face - sx * 0.03, 1.7, 0, 0.04, 3.4, 3.4, C(0x2a2d33));
-              for (let k = -6; k <= 6; k++) xb.box(face - sx * 0.07, 1.72, k * 0.25, 0.03, 3.3, 0.18, C(k % 2 ? 0xb9c6cc : 0xa7b6bd));
+              if (robo) xb.box(face - sx * 0.05, 3.5, 0, 0.04, 0.08, 3.6, C(0x2fe0c8)); // a light strip over the door
+              else for (let k = -6; k <= 6; k++) xb.box(face - sx * 0.07, 1.72, k * 0.25, 0.03, 3.3, 0.18, C(k % 2 ? 0xb9c6cc : 0xa7b6bd));
               xb.box(face - sx * 0.05, 4.1, 0, 0.06, 0.7, 4.2, C(0x2a2d33));
-              pixText(txt, 'STOCKROOM', [face - sx * 0.1, 4.1, 0], [0, 0, sx], [0, 1, 0], 0.06, C(0xf2c230), [-sx, 0, 0]);
+              pixText(txt, robo ? 'ROBOT DOCK' : 'STOCKROOM', [face - sx * 0.1, 4.1, 0], [0, 0, sx], [0, 1, 0], 0.055, C(LANE[0]), [-sx, 0, 0]);
               for (const sz of [-4, 4]) {
                 xb.box(face - sx * 0.1, 3.9, sz, 0.12, 0.12, 0.12, C(0x3b3d42));
                 lampOn.push([face - sx * 0.18, 3.9, sz]);
@@ -1579,8 +1889,8 @@
             for (const sx of [wd + 0.9, -wd - 0.9]) {
               for (const sz of [-3.4, 3.4]) {
                 xb.box(sx, 1.35, sz, 0.12, 2.7, 0.12, C(0x2a2d33));
-                xb.box(sx, 2.25, sz, 1.5, 0.5, 0.06, C(0xf2c230));
-                pixText(txt, 'FORKLIFTS', [sx, 2.25, sz + Math.sign(sz) * 0.04], [Math.sign(sz), 0, 0], [0, 1, 0], 0.035, C(0x1b1d22), [0, 0, Math.sign(sz)]);
+                xb.box(sx, 2.25, sz, 1.5, 0.5, 0.06, C(LANE[0]));
+                pixText(txt, robo ? 'ROBOTS' : 'FORKLIFTS', [sx, 2.25, sz + Math.sign(sz) * 0.04], [Math.sign(sz), 0, 0], [0, 1, 0], 0.035, C(0x1b1d22), [0, 0, Math.sign(sz)]);
                 xb.box(sx, 2.8, sz, 0.26, 0.26, 0.26, C(0x3b3d42));
                 lampOn.push([sx, 2.8, sz + Math.sign(sz) * 0.14]);
               }
@@ -1638,7 +1948,7 @@
           // amber flashers, two sets flashed in turn while it's coming
           const mk = (odd) => {
             const lb = new G.CarModel.GB();
-            lampOn.forEach((q, k) => { if (k % 2 === odd) lb.box(q[0], q[1], q[2], 0.3, 0.3, 0.3, C(0xffa21a)); });
+            lampOn.forEach((q, k) => { if (k % 2 === odd) lb.box(q[0], q[1], q[2], 0.3, 0.3, 0.3, C(robo ? 0x2fe0c8 : 0xffa21a)); });
             const m = new THREE.Mesh(lb.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true }));
             m.position.set(cx, y0, cz);
             m.rotation.y = H0;
@@ -1661,7 +1971,8 @@
               const cam = group.userData.cam;
               const k = cam ? U.clamp(1.15 - Math.hypot(cam.fx - cx, cam.fz - cz) / 120, 0, 1) : 0;
               if (G.Audio && k > 0) {
-                if (fork) G.Audio.forkBeep(k);
+                if (robo) G.Audio.robotChirp(k);
+                else if (fork) G.Audio.forkBeep(k);
                 else G.Audio.tractorHorn(k);
               }
             }
@@ -1670,7 +1981,18 @@
         // this vehicle, built facing +Z and turned to the way it's going
         const vb = new G.CarModel.GB(), dark = C(0x24262b);
         let beacon = null;
-        if (fork && o.car === 0) {
+        if (robo) {
+          // a delivery robot: a white box on little wheels, a face on the
+          // front, a server riding on top
+          vb.box(0, 0.42, 0, 0.9, 0.52, 1.05, C(0xeef1f4));
+          vb.box(0, 0.2, 0, 0.94, 0.12, 1.09, C(0x3a4250));
+          vb.box(0, 0.5, 0.53, 0.62, 0.26, 0.02, C(0x0e1420));
+          for (const x of [-0.14, 0.14]) vb.box(x, 0.52, 0.545, 0.08, 0.08, 0.01, C(0x2fe0c8));
+          vb.box(0, 0.76, -0.05, 0.62, 0.16, 0.78, C(0x3a3e46));
+          for (let k = 0; k < 3; k++) vb.box(-0.12 + k * 0.12, 0.78, 0.345, 0.05, 0.03, 0.01, C(k % 2 ? 0x2fe07a : 0x3aa8ff));
+          for (const x of [-0.4, 0.4]) for (const z of [-0.38, 0.38]) cylX(vb, x, 0.12, z, 0.12, 0.1, 8, C(0x111214));
+          beacon = [0, 0.9, -0.35];
+        } else if (fork && o.car === 0) {
           // the load on the forks: a pallet of boxes
           for (const x of [-0.3, 0.3]) vb.box(x, 0.2, -0.3, 0.12, 0.05, 1.6, dark);
           vb.box(0, 0.32, 0, 1.15, 0.14, 1.2, C(0xa9855a));
@@ -1718,7 +2040,7 @@
         let bm = null;
         if (beacon) {
           const bg = new G.CarModel.GB();
-          bg.box(beacon[0], beacon[1], beacon[2], 0.22, 0.2, 0.22, C(0xffa21a));
+          bg.box(beacon[0], beacon[1], beacon[2], 0.22, 0.2, 0.22, C(robo ? 0x2fe0c8 : 0xffa21a));
           bm = new THREE.Mesh(bg.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true }));
           car.add(bm);
         }
@@ -1817,6 +2139,36 @@
           if (!p) { car.visible = false; return; }
           car.visible = true;
           car.position.set(p.x, y0, p.z);
+        });
+      } else if (o.k === 'swing' && o.look === 'scrubber') {
+        // v5.7 Megastore: a ride-on floor scrubber working back and forth
+        // across the aisle, on a swing's timing (lat + amp sin(2 pi t / period))
+        const i = o.i, y0 = track.Y[i];
+        const vb = new G.CarModel.GB(), yel = C(0xf2c230), dk = C(0x2a2d33);
+        vb.box(0, 0.55, 0, 1.3, 0.8, 1.9, yel); // body
+        vb.box(0, 0.12, 0.62, 1.5, 0.16, 0.45, dk); // squeegee
+        vb.box(0, 0.12, -0.75, 1.4, 0.12, 0.3, C(0x6b7078)); // brush deck
+        vb.box(0, 1.05, -0.3, 0.55, 0.22, 0.55, C(0x1b1d22)); // seat
+        vb.box(0, 1.28, 0.35, 0.08, 0.5, 0.08, dk);
+        vb.box(0, 1.52, 0.35, 0.42, 0.04, 0.12, dk); // wheel
+        for (const x of [-0.55, 0.55]) for (const z of [-0.75, 0.75]) vb.box(x, 1.5, z, 0.06, 1.1, 0.06, dk);
+        vb.box(0, 2.05, 0, 1.3, 0.06, 1.75, dk); // canopy
+        for (const x of [-0.6, 0.6]) for (const z of [-0.6, 0.6]) cylX(vb, x, 0.18, z, 0.18, 0.12, 8, C(0x111214));
+        const mesh = new THREE.Mesh(vb.geometry(), G.CarModel.material());
+        mesh.castShadow = true;
+        group.add(mesh);
+        const bg = new G.CarModel.GB();
+        bg.box(0, 2.16, 0, 0.2, 0.16, 0.2, C(0xffa21a));
+        const beacon = new THREE.Mesh(bg.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+        mesh.add(beacon);
+        const tp = {};
+        let face = track.H[i] + Math.PI / 2;
+        group.userData.animFns.push(() => {
+          const t = env().t, p = track.dynPos(o, t, tp);
+          mesh.position.set(p.x, y0, p.z);
+          if (Math.hypot(p.vx, p.vz) > 0.25) face = Math.atan2(p.vx, p.vz);
+          mesh.rotation.y = face;
+          beacon.visible = Math.floor(t * 3) % 2 === 0;
         });
       } else if (o.k === 'swing') {
         // gantry across the road, chain + ball on a pivot
@@ -1943,6 +2295,7 @@
     if (track.winds.length) {
       const socks = [];
       for (const W of track.winds) {
+        if (W.blast || track.theme.props === 'datacenter') continue; // (a launch's blast zone, or the data centre's fans: their scenes show them)
         const n = Math.max(2, Math.round((W.hl * 2) / 30));
         for (let k = 0; k <= n; k++) {
           const d = W.at + (k / n - 0.5) * W.hl * 1.9, pq = track.pointAt(d, 0);
@@ -2583,6 +2936,107 @@
         gb.box(0, 0.95, z, 0.6, 1.5, 0.8, C(0xf2f2ee));
         gb.box(0, 1.5, z, 0.62, 0.3, 0.82, C(0xc8352c));
       }
+    }
+    // ---------------- v5.7 knockables (each stands on its own base)
+    else if (kind === 'kbox') {
+      gb.box(0, 0.3, 0, 0.62, 0.6, 0.6, C(0xc49a6c));
+      gb.box(0, 0.3, 0, 0.64, 0.08, 0.62, C(0xd9c7a0)); // tape round the middle
+      gb.box(0, 0.605, 0, 0.12, 0.012, 0.6, C(0xd9c7a0)); // and over the top
+      gb.box(0.2, 0.42, 0.305, 0.16, 0.1, 0.01, C(0x2a2d33)); // a label
+    } else if (kind === 'ktp') {
+      // a jumbo pack of toilet rolls
+      gb.box(0, 0.25, 0, 0.5, 0.5, 0.5, C(0xf4f4f2));
+      gb.box(0, 0.25, 0, 0.52, 0.12, 0.52, C(0x2f6bb0));
+      for (const [x, z] of [[-0.125, -0.125], [0.125, -0.125], [-0.125, 0.125], [0.125, 0.125]]) gb.box(x, 0.505, z, 0.17, 0.012, 0.17, C(0xdcdcd6));
+    } else if (kind === 'kcrate') {
+      const w = C(0xa8804f), w2 = C(0x8a6a40);
+      gb.box(0, 0.35, 0, 0.66, 0.66, 0.66, w);
+      for (const y of [0.1, 0.35, 0.6]) gb.box(0, y, 0, 0.7, 0.07, 0.7, w2);
+      for (const s of [-1, 1]) gb.beam([s * 0.34, 0.05, -0.34], [s * 0.34, 0.65, 0.34], 0.06, 0.06, w2);
+    } else if (kind === 'kball') {
+      // a beach ball: faces in red, white, blue and yellow
+      const g = new THREE.IcosahedronGeometry(0.45, 1), p = g.attributes.position;
+      const pal = [0xe8322b, 0xf4f4f0, 0x2f6bff, 0xffc400].map(C);
+      for (let k = 0; k < p.count; k += 3) {
+        const v = (j) => [p.getX(k + j), p.getY(k + j) + 0.45, p.getZ(k + j)];
+        const cy = (p.getY(k) + p.getY(k + 1) + p.getY(k + 2)) / 3, cx = (p.getX(k) + p.getX(k + 1) + p.getX(k + 2)) / 3, cz = (p.getZ(k) + p.getZ(k + 1) + p.getZ(k + 2)) / 3;
+        const seg = Math.abs(cy) > 0.36 ? 1 : Math.floor(((Math.atan2(cz, cx) + Math.PI) / (Math.PI * 2)) * 6) % 3;
+        gb.tri(v(0), v(1), v(2), pal[seg === 1 ? 1 : seg === 0 ? 0 : k % 2 ? 2 : 3], 0, 0.45, 0);
+      }
+      g.dispose();
+    } else if (kind === 'kbear') {
+      // a giant teddy bear, sitting
+      const fur = C(0x9a6a3e), light = C(0xd9b48a);
+      ico(gb, 0, 0.42, 0, 0.42, fur);
+      ico(gb, 0, 0.98, 0.02, 0.3, fur);
+      for (const s of [-1, 1]) {
+        ico(gb, s * 0.22, 1.24, 0, 0.1, fur); // ears
+        ico(gb, s * 0.34, 0.5, 0.16, 0.14, fur); // arms
+        ico(gb, s * 0.2, 0.14, 0.34, 0.15, fur); // feet
+        gb.box(s * 0.1, 1.04, 0.27, 0.05, 0.05, 0.02, C(0x111214)); // eyes
+      }
+      ico(gb, 0, 0.92, 0.25, 0.1, light); // muzzle
+      ico(gb, 0, 0.45, 0.3, 0.2, light); // tummy
+      gb.box(0, 0.74, 0.2, 0.3, 0.08, 0.06, C(0xd3313a)); // bow
+    } else if (kind === 'klamp') {
+      cyl(gb, 0, 0.02, 0, 0.2, 0.04, 10, C(0x2a2d33));
+      gb.box(0, 0.8, 0, 0.04, 1.56, 0.04, C(0x2a2d33));
+      cone(gb, 0, 1.45, 0, 0.3, 0.36, 10, C(0xf2e6c8));
+    } else if (kind === 'kchair') {
+      const blk = C(0x1d1f24);
+      gb.box(0, 0.05, 0, 0.6, 0.05, 0.08, blk);
+      gb.box(0, 0.05, 0, 0.08, 0.05, 0.6, blk);
+      gb.box(0, 0.28, 0, 0.06, 0.42, 0.06, C(0x8a9097));
+      gb.box(0, 0.52, 0, 0.5, 0.09, 0.5, blk);
+      gb.box(0, 0.88, -0.22, 0.45, 0.56, 0.07, blk);
+      for (const s of [-1, 1]) gb.box(s * 0.26, 0.68, 0, 0.04, 0.04, 0.34, blk);
+    } else if (kind === 'kplant') {
+      cyl(gb, 0, 0.2, 0, 0.24, 0.4, 8, C(0xb8653f));
+      for (const [x, y, z, r] of [[0, 0.72, 0, 0.3], [0.14, 0.9, 0.05, 0.22], [-0.12, 0.85, -0.06, 0.22], [0, 1.08, 0, 0.16]]) ico(gb, x, y, z, r, C(0x3f7d3a));
+    } else if (kind === 'kbin') {
+      cyl(gb, 0, 0.4, 0, 0.28, 0.8, 10, C(0x3a4a3e));
+      cyl(gb, 0, 0.83, 0, 0.31, 0.06, 10, C(0x2c3a30));
+      gb.box(0, 0.9, 0, 0.18, 0.05, 0.05, C(0x1d1f24));
+    } else if (kind === 'kbale') {
+      gb.box(0, 0.23, 0, 0.9, 0.46, 0.5, C(0xd9b860));
+      for (const x of [-0.22, 0.22]) gb.box(x, 0.23, 0, 0.03, 0.47, 0.51, C(0xa88a3e));
+    } else if (kind === 'kpumpkin') {
+      ico(gb, 0, 0.25, 0, 0.3, C(0xe8761e));
+      gb.box(0, 0.5, 0, 0.05, 0.12, 0.05, C(0x5a6a2e));
+    } else if (kind === 'kspool') {
+      // a cable drum on its rim
+      for (const s of [-1, 1]) cylX(gb, s * 0.3, 0.42, 0, 0.42, 0.06, 12, C(0x9a7550));
+      cylX(gb, 0, 0.42, 0, 0.24, 0.56, 10, C(0x2a2d33));
+    } else if (kind === 'kserver') {
+      gb.box(0, 0.12, 0, 0.46, 0.24, 0.62, C(0x3a3e46));
+      gb.box(0, 0.12, 0.312, 0.42, 0.18, 0.01, C(0x1d1f24));
+      for (let k = 0; k < 4; k++) gb.box(-0.15 + k * 0.1, 0.16, 0.318, 0.04, 0.03, 0.01, C(k % 2 ? 0x2fe07a : 0x3aa8ff));
+    } else if (kind === 'ktyre') {
+      cyl(gb, 0, 0.13, 0, 0.36, 0.26, 12, C(0x1c1d21));
+      cyl(gb, 0, 0.135, 0, 0.18, 0.265, 10, C(0x2e3035));
+    } else if (kind === 'srack') {
+      // v5.7 Server Farm: three cabinets side by side, fronts to +z
+      // (one box for the three, the doors and a few slats as flat quads on
+      // the front: thousands of these line the aisles)
+      gb.box(0, 1.15, 0, 2.98, 2.3, 1.2, C(0x151922));
+      for (let k = -1; k <= 1; k++) {
+        gb.quadN([k - 0.43, 0.1, 0.605], [k + 0.43, 0.1, 0.605], [k + 0.43, 2.2, 0.605], [k - 0.43, 2.2, 0.605], C(0x222936), [0, 0, 1]);
+        for (let s = 0; s < 3; s++) gb.quadN([k - 0.35, 0.5 + s * 0.6, 0.612], [k + 0.05, 0.5 + s * 0.6, 0.612], [k + 0.05, 0.55 + s * 0.6, 0.612], [k - 0.35, 0.55 + s * 0.6, 0.612], C(0x2d3544), [0, 0, 1]);
+      }
+    } else if (kind === 'crac') {
+      gb.box(0, 1.1, 0, 2.6, 2.2, 1.3, C(0xc9ccd1));
+      for (let k = 0; k < 6; k++) gb.box(0, 0.4 + k * 0.28, 0.655, 2.3, 0.05, 0.01, C(0x8a9097));
+      for (const x of [-0.6, 0.6]) cyl(gb, x, 2.25, 0, 0.45, 0.1, 12, C(0x3a3f47));
+    } else if (kind === 'fanblade') {
+      // five blades round a hub, turning about local z
+      gb.box(0, 0, 0, 0.5, 0.5, 0.3, C(0x8a9097));
+      for (let k = 0; k < 5; k++) {
+        const a = (k * 2 * Math.PI) / 5;
+        gb.beam([0, 0, 0], [Math.cos(a) * 1.75, Math.sin(a) * 1.75, 0.05], 0.55, 0.06, C(0xaab4c0));
+      }
+    } else if (kind === 'buoy') {
+      cyl(gb, 0, 0.15, 0, 0.7, 0.3, 8, C(0x2a2d33));
+      cone(gb, 0, 0.3, 0, 0.55, 1.5, 8, C(0xc8352c));
     } else if (kind === 'slab') {
       // v5.6.1 Harrow City: a lump of concrete off a building, rebar sticking out
       gb.box(0, 0, 0, 2.0, 0.7, 1.5, C(0x8e8c88));
@@ -2998,6 +3452,8 @@
       }
     }
     for (const k in by) instanced(k, by[k], group, k === 'pillar' || k === 'rack');
+    // v5.7: stock left all over the aisle - it goes flying when you hit it
+    knockables(track, group, strewn(track, rng, 56, ['kbox', 'kbox', 'kbox', 'ktp', 'ktp', 'cart', 'kball', 'kbear', 'klamp', 'kchair', 'kplant', 'wetsign'], { mid: 0.45 }));
     yield 'store';
     resume();
   }
@@ -3315,6 +3771,8 @@
     for (const k in Bz) instanced(k, Bz[k], group, k !== 'cone' && k !== 'chain');
     fireFx(group, fires);
     flashFx(group, flash);
+    // v5.7: cones, bins and boxes left in the road when everyone went
+    knockables(track, group, strewn(track, rng, 30, ['cone', 'cone', 'kbin', 'kbox', 'kcrate', 'ktyre'], { mid: 0.2 }));
     yield 'city';
     resume();
   }
@@ -3985,10 +4443,527 @@
       }
     }
     instanced('lamp', lamps, group, true);
+    // v5.7: cones and boxes along the way, pumpkins spilled by the farm
+    // stand, and bales off the hay wagon by the tractor crossing
+    const kn = strewn(track, rng, 12, ['cone', 'kbox', 'kbale', 'kpumpkin'], { mid: 0.15 });
+    {
+      const i = track.idx(Math.round(1158 / track.sp)), W = track.W[i];
+      for (let k = 0; k < 7; k++) {
+        const al = (rng() - 0.5) * 9, lat = W - 0.8 - rng() * 2.2;
+        kn.push({ k: 'kpumpkin', x: track.X[i] + track.NX[i] * lat + track.TX[i] * al, z: track.Z[i] + track.NZ[i] * lat + track.TZ[i] * al, r: rng() * 6, s: 0.8 + rng() * 0.5 });
+      }
+      for (const x of track.xings || []) {
+        for (let k = 0; k < 4; k++) {
+          const ii = track.idx(Math.round((x.at + 9 + rng() * 10) / track.sp)), lat = (k % 2 ? 1 : -1) * (track.W[ii] - 0.6 - rng() * 1.5);
+          kn.push({ k: 'kbale', x: track.X[ii] + track.NX[ii] * lat, z: track.Z[ii] + track.NZ[ii] * lat, r: rng() * 6 });
+        }
+      }
+    }
+    knockables(track, group, kn);
     yield 'valley';
     resume();
   }
-  const SCENES = { store: sceneStore, deadcity: sceneCity, suburb: sceneSuburb };
+  // ---------------------------------------------------------- Launch Coast
+  // v5.7: a spaceport by the sea at golden hour. The rocket on the pad in the
+  // infield lifts off on a schedule (track.launch, race time): while it does
+  // the physics pushes cars off the road nearest the pad (a blast zone), and
+  // here are the flames, the smoke, the roar and the climb away into the
+  // evening. Countdown clocks by the road say when the next one goes.
+  function launchClock(group, L) {
+    const cv = document.createElement('canvas');
+    cv.width = 256;
+    cv.height = 88;
+    const ctx = cv.getContext('2d'), tex = new THREE.CanvasTexture(cv);
+    let shown = '';
+    const draw = (s) => {
+      if (s === shown) return;
+      shown = s;
+      ctx.fillStyle = '#0b0d10';
+      ctx.fillRect(0, 0, 256, 88);
+      ctx.fillStyle = s === 'LIFTOFF' ? '#ffd23a' : '#ff5a2a';
+      ctx.font = 'bold 54px monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(s, 128, 47);
+      tex.needsUpdate = true;
+    };
+    draw('T-00:00');
+    const mat = new THREE.MeshBasicMaterial({ map: tex });
+    return {
+      mat,
+      tick(t) {
+        if (!(t > 0)) return draw('T-00:' + String(Math.round(L.every - (L.off % L.every))).padStart(2, '0'));
+        const ph = (((t + L.off) % L.every) + L.every) % L.every;
+        if (ph < 8) return draw('LIFTOFF');
+        const s = Math.ceil(L.every - ph);
+        draw('T-' + String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0'));
+      },
+    };
+  }
+  function* sceneLaunch(track, group, detail, resume) {
+    const rng = U.rng(U.hashStr(track.id + 'launch'));
+    const b = track.bounds, q = {};
+    const lat = (x, z) => {
+      track.query(x, z, -1, q);
+      return Math.abs(q.lat) - q.wall;
+    };
+    const P = {};
+    const add = (k, it) => (P[k] || (P[k] = [])).push(it);
+    const hg = new G.CarModel.GB(), txt = new G.CarModel.GB(), wg = new G.CarModel.GB();
+    const L = track.launch || { pad: [(b.x0 + b.x1) / 2, (b.z0 + b.z1) / 2], every: 60, off: 0, dur: 5 };
+    const [px, pz] = L.pad, py = gy(px, pz);
+    const steel = C(0x7d838c), steel2 = C(0x9aa0a8), conc = C(0xc9c6bd);
+    // 1. the pad: a concrete apron, the flame trench, the mount, the tower
+    lpatch(hg, px, pz, 0, 0, 0, 80, 80, conc, 0.06);
+    lpatch(hg, px, pz, 0, -36, 0, 44, 14, C(0x34332f), 0.09);
+    for (const [a, c] of [[-5, -5], [5, -5], [-5, 5], [5, 5]]) boxAt(hg, px, py, pz, 0, a, 3, c, 1.6, 6, 1.6, C(0x6b7078));
+    for (let k = 0; k < 8; k++) {
+      const an = (k / 8) * Math.PI * 2;
+      boxAt(hg, px, py, pz, -an, 0, 6.1, 6, 5, 0.6, 1.4, C(0x6b7078));
+    }
+    const TH = 70, tx = px - 13;
+    for (const [a, c] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) boxAt(hg, tx, py, pz, 0, a, TH / 2, c, 0.9, TH, 0.9, steel);
+    for (let y = 4; y < TH; y += 6) {
+      boxAt(hg, tx, py, pz, 0, 0, y, -4, 8.6, 0.4, 0.4, steel2);
+      boxAt(hg, tx, py, pz, 0, 0, y, 4, 8.6, 0.4, 0.4, steel2);
+      boxAt(hg, tx, py, pz, 0, -4, y, 0, 0.4, 0.4, 8.6, steel2);
+      boxAt(hg, tx, py, pz, 0, 4, y, 0, 0.4, 0.4, 8.6, steel2);
+      for (const s of [-1, 1]) {
+        hg.beam([tx - 4, py + y, pz + s * 4], [tx + 4, py + y + 6, pz + s * 4], 0.25, 0.25, steel2);
+        hg.beam([tx + s * 4, py + y, pz - 4], [tx + s * 4, py + y + 6, pz + 4], 0.25, 0.25, steel2);
+      }
+    }
+    for (let k = 0; k < 4; k++) boxAt(hg, tx, py, pz, 0, 0, TH + 1.5 + k * 3, 0, 1.2, 3, 1.2, C(k % 2 ? 0xf2f2ee : 0xc8352c)); // mast, red and white
+    for (const y of [44, 58]) boxAt(hg, tx, py, pz, 0, 6.2, y, 0, 5, 1.6, 2.2, steel); // service arms
+    // lightning masts round the pad, wired to the tower top
+    for (const [a, c] of [[-40, -40], [40, -40], [-40, 40], [40, 40]]) {
+      boxAt(hg, px, py, pz, 0, a, 42, c, 0.8, 84, 0.8, C(0x9aa0a8));
+      wg.beam([px + a, py + 84, pz + c], [tx, py + TH + 13, pz], 0.08, 0.08, C(0x2a2d33));
+    }
+    // 2. the rocket: a booster and an upper stage, fins and engines. Its own
+    // mesh, so it can fly
+    const rk = new G.CarModel.GB(), R = 4.2, white = C(0xf2f2ee), blk = C(0x1b1d22);
+    cyl(rk, 0, 22, 0, R, 44, 16, white);
+    cyl(rk, 0, 9, 0, R + 0.06, 3, 16, blk);
+    cyl(rk, 0, 43.2, 0, R + 0.06, 1.4, 16, blk);
+    cyl(rk, 0, 52, 0, R * 0.95, 16, 16, white);
+    cone(rk, 0, 60, 0, R * 0.95, 9, 16, white);
+    for (let k = 0; k < 4; k++) boxAt(rk, 0, 0, 0, (k * Math.PI) / 2 + Math.PI / 4, R + 1, 3, 0, 2.2, 6, 0.4, blk);
+    for (const [a, c] of [[0, 0], [2, 0], [-1, 1.7], [-1, -1.7]]) cyl(rk, a, -0.8, c, 1.1, 1.6, 10, C(0x2a2d33));
+    for (let k = 0; k < 6; k++) boxAt(rk, 0, 0, 0, (k * Math.PI) / 3, R + 0.03, 30, 0, 0.02, 10, 0.5, C(0xc8352c)); // stripes down the side
+    const rocket = new THREE.Mesh(rk.geometry(), G.CarModel.material());
+    rocket.castShadow = true;
+    rocket.position.set(px, py + 7.6, pz);
+    group.add(rocket);
+    // its flames: an outer cone and a hot core, additive, under the engines
+    const fmat = (c, o) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false });
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(3.4, 22, 12, 1, true), fmat(0xff9a3a, 0.8));
+    flame.rotation.x = Math.PI;
+    flame.position.y = -12;
+    const core = new THREE.Mesh(new THREE.ConeGeometry(1.8, 12, 10, 1, true), fmat(0xfff2c0, 0.95));
+    core.rotation.x = Math.PI;
+    core.position.y = -7;
+    flame.visible = core.visible = false;
+    rocket.add(flame, core);
+    const glow = glowPoints(group, [px, py + 4, pz], 0xffb060, 90, 0);
+    // 3. the assembly building beside the start: huge, with its tall door
+    // facing the road and a band of colour across the top
+    {
+      const vx = b.x0 - 140, vz = (b.z0 + b.z1) / 2 - 40, vy = gy(vx, vz);
+      if (lat(vx, vz) > 60) {
+        boxAt(hg, vx, vy, vz, 0, 0, 36, 0, 90, 74, 72, C(0xdcdad2));
+        boxAt(hg, vx, vy, vz, 0, 0, 74, 0, 92, 2, 74, C(0xb9b6ad));
+        faceQuad(hg, vx, vy, vz, 0, 'r', 45, 0, 29, 26, 58, C(0x4a4f57), 0.05);
+        for (let k = 1; k < 8; k++) faceQuad(hg, vx, vy, vz, 0, 'r', 45, 0, k * 7.2, 26, 0.3, C(0x3a3f47), 0.08);
+        for (const [c, y] of [[0x2f6bb0, 66], [0xc8352c, 61]]) faceQuad(hg, vx, vy, vz, 0, 'r', 45, -24, y, 14, 4, C(c), 0.06);
+        pixText(txt, 'ASSEMBLY', [vx + 45.3, vy + 66, vz + 12], [0, 0, -1], [0, 1, 0], 0.5, C(0x2a2d33), [1, 0, 0]);
+      }
+    }
+    // 4. the tank farm, a water tower, the control centre, a tracking dish
+    for (let k = 0; k < 3; k++) {
+      const x = px - 100 + k * 22, z = pz - 90;
+      if (lat(x, z) < 20) continue;
+      const y0 = gy(x, z);
+      for (const [a, c] of [[-4, -4], [4, -4], [-4, 4], [4, 4]]) boxAt(hg, x, y0, z, 0, a, 4, c, 0.6, 8, 0.6, steel);
+      ico(hg, x, y0 + 12, z, 7, C(0xf2f2ee));
+    }
+    for (let k = 0; k < 3; k++) {
+      const x = px - 110 + k * 8, z = pz - 55;
+      if (lat(x, z) > 20) cylX(hg, x, gy(x, z) + 2.6, z, 2.4, 20, 12, C(k % 2 ? 0xe8e4da : 0xd9d6cf));
+    }
+    {
+      const x = px + 50, z = pz - 55, y0 = gy(x, z);
+      if (lat(x, z) > 20) {
+        for (const [a, c] of [[-3, -3], [3, -3], [-3, 3], [3, 3]]) boxAt(hg, x, y0, z, 0, a, 9, c, 0.5, 18, 0.5, steel);
+        ico(hg, x, y0 + 22, z, 6, C(0xe8e4da));
+        pixText(txt, 'LC-2', [x, y0 + 22, z + 6.1], [1, 0, 0], [0, 1, 0], 0.25, C(0x2f6bb0), [0, 0, 1]);
+      }
+    }
+    for (const [ox, oz] of [[-60, 140], [90, 150]]) {
+      const x = px + ox, z = pz + oz, y0 = gy(x, z);
+      if (lat(x, z) < 30) continue;
+      boxAt(hg, x, y0, z, 0.3, 0, 0.5, 0, 1, 7, 1, steel);
+      const dish = rotPt(x, z, 0.3, 0, 0);
+      cone(hg, dish[0], y0 + 7, dish[1], 5, -1.6, 14, C(0xf2f2ee));
+      boxAt(hg, x, y0, z, 0.3, 0, 8.5, 0, 0.3, 3, 0.3, steel);
+    }
+    // 5. the crowd along the top road, and palms along the coast
+    for (let i = 0; i < track.N; i += 4) {
+      const pq = { x: track.X[i], z: track.Z[i] };
+      const dxp = pq.x - px, dzp = pq.z - pz, d = Math.hypot(dxp, dzp);
+      for (const side of [1, -1]) {
+        const L2 = side * (track.wallD[i] + 5), x = track.X[i] + track.NX[i] * L2, z = track.Z[i] + track.NZ[i] * L2;
+        const away = Math.hypot(x - px, z - pz) > d; // the far side of the road from the pad
+        if (d > 200 && d < 320 && away && i % 12 === 0 && lat(x, z) > 2) add('fans', { x, z, r: Math.atan2(px - x, pz - z) });
+        if (i % 16 === 8 && lat(x, z) > 1.5 && rng() < 0.7) add('palm', { x: x + (rng() - 0.5) * 4, z: z + (rng() - 0.5) * 4, r: rng() * 6, s: 0.9 + rng() * 0.5 });
+      }
+    }
+    // 6. the countdown clocks, beside the road where it comes up on the pad
+    const clock = launchClock(group, L);
+    for (const [along, side] of [[L.at - L.hl - 140, 1], [30, -1]]) {
+      const pq = track.pointAt(((along % track.length) + track.length) % track.length, 0), i = pq.i;
+      const L2 = side * (track.wallD[i] + 7), x = track.X[i] + track.NX[i] * L2, z = track.Z[i] + track.NZ[i] * L2, y0 = gy(x, z);
+      const r = track.H[i] + Math.PI;
+      for (const s of [-1, 1]) boxAt(hg, x, y0, z, r, s * 4.2, 4.5, 0, 0.35, 9, 0.35, C(0x2a2d33));
+      boxAt(hg, x, y0, z, r, 0, 8.4, -0.12, 9.2, 3.6, 0.2, C(0x15171b));
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(8.6, 3.1), clock.mat);
+      face.position.set(x, y0 + 8.4, z);
+      face.rotation.y = r;
+      group.add(face);
+    }
+    worldMesh(group, hg, null, 'spaceport', true);
+    worldMesh(group, txt, null, 'spaceportText');
+    worldMesh(group, wg, null, 'wires');
+    yield 'launch set';
+    resume();
+    // 7. the launch itself
+    let lastN = -1, smokeAcc = 0;
+    const fxp = () => group.userData.fx;
+    group.userData.animFns.push((tt, dt0) => {
+      const t = (group.userData.env || { t: 0 }).t, dt = Math.min(0.05, dt0 || 1 / 60);
+      clock.tick(t);
+      const ph = t > 0 ? (((t + L.off) % L.every) + L.every) % L.every : L.every - 20;
+      const n = t > 0 ? Math.floor((t + L.off) / L.every) : -1;
+      const flying = ph < 34, onPad = ph >= L.every - 22;
+      rocket.visible = flying || onPad;
+      let y = 0;
+      if (flying) y = ph < 1.2 ? 0 : 1.7 * (ph - 1.2) * (ph - 1.2);
+      rocket.position.set(px + y * 0.05, py + 7.6 + y, pz);
+      rocket.rotation.z = -Math.min(0.35, y / 2500);
+      const burning = flying && ph > 0.1;
+      flame.visible = core.visible = burning;
+      if (burning) {
+        const f = 0.85 + Math.random() * 0.3;
+        flame.scale.set(f, 1 + Math.min(1.5, y / 200) + Math.random() * 0.2, f);
+        core.scale.set(f, 1, f);
+      }
+      glow.material.opacity = burning ? Math.max(0, 1 - y / 900) * (0.75 + Math.random() * 0.25) : 0;
+      glow.position.y = y;
+      const fx = fxp();
+      // ignition: smoke rolling out of the trench and round the pad
+      if (fx && t > 0 && ph > -0.1 && ph < 7) {
+        // (a running total: at a high frame rate dt x rate rounds to nothing)
+        smokeAcc += dt * (ph < 3 ? 110 : 50);
+        for (; smokeAcc >= 1; smokeAcc--) {
+          const a = Math.random() * Math.PI * 2, s = 8 + Math.random() * 14;
+          fx.emit('smoke', px + Math.cos(a) * 6, py + 1 + Math.random() * 3, pz + Math.sin(a) * 6, Math.cos(a) * s, 1 + Math.random() * 4, Math.sin(a) * s, 9 + Math.random() * 7, [0.86, 0.84, 0.8]);
+        }
+      }
+      // the last seconds: vapour venting off the side
+      if (fx && onPad && ph > L.every - 8 && Math.random() < dt * 12) fx.emit('smoke', px + R, py + 30 + Math.random() * 20, pz, 2, 0.5, 0, 2.5, [0.95, 0.96, 0.98]);
+      if (t > 0 && ph < 1 && n !== lastN) {
+        lastN = n;
+        const cam = group.userData.cam;
+        const d = cam ? Math.hypot(cam.fx - px, cam.fz - pz) : 999;
+        if (G.Audio && G.Audio.launchRoar) G.Audio.launchRoar(U.clamp(1.2 - d / 700, 0.15, 1));
+      }
+      // the ground shakes near the pad
+      const w = group.userData.world, cam = group.userData.cam;
+      if (w && cam && t > 0 && ph < L.dur + 2 && Math.hypot(cam.fx - px, cam.fz - pz) < 260) w.shake(0.3);
+    });
+    for (const k in P) instanced(k, P[k], group, true);
+    knockables(track, group, strewn(track, rng, 32, ['kcrate', 'cone', 'kbox', 'kball'], { mid: 0.2 }));
+    yield 'launch';
+    resume();
+  }
+
+  // ------------------------------------------------------------ Server Farm
+  // v5.7: a data centre at night. Aisles of racks winking green and blue,
+  // cooling units, pillars into the dark, and fans in the walls that blow
+  // the gusts across the road (the wind zones); delivery robots cross from
+  // their docks (the robot crossings).
+  function* sceneData(track, group, detail, resume) {
+    const rng = U.rng(U.hashStr(track.id + 'data'));
+    const b = track.bounds, q = {};
+    const lat = (x, z) => {
+      track.query(x, z, -1, q);
+      return Math.abs(q.lat) - q.wall;
+    };
+    const G0 = 36, M = 160, reach = 60 + 35 * detail;
+    const by = { srack: [], crac: [], pillar: [], clight: [] };
+    const leds = [[], [], []];
+    let n = 0;
+    for (let gx = Math.floor((b.x0 - M) / G0); gx <= Math.ceil((b.x1 + M) / G0); gx++) {
+      for (let gz = Math.floor((b.z0 - M) / G0); gz <= Math.ceil((b.z1 + M) / G0); gz++) {
+        const cx = gx * G0 + 18, cz = gz * G0 + 18, d = lat(cx, cz);
+        if (d > reach) continue;
+        if (((gx % 3) + 3) % 3 === 1 && ((gz % 3) + 3) % 3 === 1 && d > 36) by.pillar.push({ x: cx, z: cz, r: 0 });
+        const alongX = (gx + gz) % 2 === 0, r = alongX ? 0 : Math.PI / 2;
+        for (const off of [-7, 7]) {
+          if (rng() < 0.12) {
+            const p = rotPt(cx, cz, r, 0, off);
+            if (lat(p[0], p[1]) > 6 && !track.nearRail(p[0], p[1], 4)) by.crac.push({ x: p[0], z: p[1], r: r + (off > 0 ? Math.PI : 0) });
+            continue;
+          }
+          for (let u = -12; u <= 12; u += 3.1) {
+            const p = rotPt(cx, cz, r, u, off);
+            if (lat(p[0], p[1]) < 5 || track.nearRail(p[0], p[1], 4)) continue;
+            const face = r + (off > 0 ? Math.PI : 0); // fronts to the aisle between the two rows
+            by.srack.push({ x: p[0], z: p[1], r: face });
+            // lights on the front: a few per unit, in three colours that blink apart
+            const y0 = gy(p[0], p[1]);
+            for (let k = 0; k < 3; k++) {
+              const f = rotPt(p[0], p[1], face, (k - 1) * 1.0 + (rng() - 0.5) * 0.4, 0.66);
+              leds[Math.floor(rng() * 3)].push(f[0], y0 + 0.4 + rng() * 1.7, f[1]);
+            }
+          }
+        }
+        if (++n % 30 === 0) {
+          yield 'server cells';
+          resume();
+        }
+      }
+    }
+    // ceiling light strips in rows, cold white, never over the road
+    const lit = new G.CarModel.GB(), haze = [];
+    for (let z = Math.floor((b.z0 - 180) / 28) * 28; z <= b.z1 + 180; z += 28) {
+      for (let x = Math.floor((b.x0 - 180) / 40) * 40; x <= b.x1 + 180; x += 40) {
+        const dl = lat(x, z);
+        if (dl > reach - 40 || dl < 26) continue;
+        const y = gy(x, z) + 15;
+        by.clight.push({ x, z, y: 15, r: 0 });
+        lit.quadN([x - 3.45, y - 0.01, z - 0.5], [x + 3.45, y - 0.01, z - 0.5], [x + 3.45, y - 0.01, z + 0.5], [x - 3.45, y - 0.01, z + 0.5], C(0xdbe8ff), [0, -1, 0]);
+        haze.push(x, y - 0.6, z);
+      }
+    }
+    worldMesh(group, lit, new THREE.MeshBasicMaterial({ vertexColors: true }), 'ceilingLights');
+    glowPoints(group, haze, 0x8fb4ff, 10, 0.26);
+    const pools = [];
+    for (let i = 0; i < track.N; i += 12) pools.push([track.X[i], track.Z[i], 10, track.Y[i]]);
+    groundGlow(group, pools, 0x4a6aa8, 0.22);
+    // the rack lights, each colour on its own blink
+    const ledPts = [[0x2fe07a, 2.4], [0x3aa8ff, 2.4], [0xffb02a, 2]].map(([c, s], k) => glowPoints(group, leds[k], c, s, 0.9));
+    // a lit strip along the top front of every rack, so the aisles read in
+    // the dark from the chase camera (the racks themselves are near black)
+    if (by.srack.length) {
+      const sg = new G.CarModel.GB();
+      sg.quadN([-1.45, 2.18, 0.62], [1.45, 2.18, 0.62], [1.45, 2.3, 0.62], [-1.45, 2.3, 0.62], C(0x2fe0c8), [0, 0, 1]);
+      sg.quadN([-1.45, 2.42, 0.6], [1.45, 2.42, 0.6], [1.45, 2.42, -0.6], [-1.45, 2.42, -0.6], C(0x1a6f78), [0, 1, 0]);
+      const sm = new THREE.InstancedMesh(sg.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true }), by.srack.length);
+      const o = new THREE.Object3D();
+      by.srack.forEach((it, k) => {
+        o.position.set(it.x, gy(it.x, it.z), it.z);
+        o.rotation.set(0, it.r || 0, 0);
+        o.updateMatrix();
+        sm.setMatrixAt(k, o.matrix);
+      });
+      sm.computeBoundingSphere();
+      group.add(sm);
+    }
+    group.userData.animFns.push((t) => {
+      ledPts.forEach((p, k) => {
+        if (p) p.material.opacity = 0.35 + 0.55 * (0.5 + 0.5 * Math.sin(t * (2.1 + k * 1.3) + k * 2));
+      });
+    });
+    yield 'server lights';
+    resume();
+    // fans in the wall on the windward side of each gust zone, turning with it
+    const frame = new G.CarModel.GB(), blades = [];
+    for (const W of track.winds) {
+      const nF = Math.max(3, Math.round((W.hl * 2) / 12));
+      for (let k = 0; k <= nF; k++) {
+        const pq = track.pointAt(W.at + (k / nF - 0.5) * W.hl * 1.8, 0), i = pq.i;
+        const L2 = -W.dir * (track.wallD[i] + 3.2), x = track.X[i] + track.NX[i] * L2, z = track.Z[i] + track.NZ[i] * L2, y0 = gy(x, z);
+        const yaw = Math.atan2(track.NX[i] * W.dir, track.NZ[i] * W.dir); // facing across the road, the way it blows
+        boxAt(frame, x, y0, z, yaw, 0, 2.3, -0.6, 4.4, 4.6, 0.8, C(0x2a3140));
+        faceQuad(frame, x, y0, z, yaw, 'f', -0.2, 0, 2.3, 3.8, 3.8, C(0x0b0f16), 0.02);
+        blades.push({ x, y: y0 + 2.3, z, yaw, W });
+      }
+    }
+    worldMesh(group, frame, null, 'fanFrames', true);
+    if (blades.length) {
+      const bm = new THREE.InstancedMesh(geo('fanblade'), G.CarModel.material(), blades.length);
+      bm.userData.sharedGeo = true;
+      group.add(bm);
+      const o = new THREE.Object3D();
+      let spin = 0;
+      group.userData.animFns.push((tt, dt0) => {
+        const t = (group.userData.env || { t: 0 }).t, dt = Math.min(0.05, dt0 || 1 / 60);
+        blades.forEach((f, k) => {
+          const W = f.W, g = t > 0 ? 0.55 + 0.45 * Math.sin((t * 2 * Math.PI) / W.period + W.ph) : 0.3;
+          f.a = (f.a || 0) + dt * (4 + 16 * g);
+          o.position.set(f.x, f.y, f.z);
+          o.rotation.set(0, f.yaw, f.a);
+          o.updateMatrix();
+          bm.setMatrixAt(k, o.matrix);
+          // mist blown across the road in a strong gust
+          const fx = group.userData.fx;
+          if (fx && g > 0.8 && Math.random() < dt * 3) fx.emit('dust', f.x, f.y, f.z, Math.sin(f.yaw) * 14, 0, Math.cos(f.yaw) * 14, 1.6, [0.7, 0.82, 1]);
+        });
+        bm.instanceMatrix.needsUpdate = true;
+        spin += dt;
+      });
+    }
+    // the operations room by the start: a glass front and walls of screens
+    {
+      const i = track.idx(Math.round(60 / track.sp)), side = -1;
+      const L2 = side * (track.wallD[i] + 16), x = track.X[i] + track.NX[i] * L2, z = track.Z[i] + track.NZ[i] * L2, y0 = gy(x, z);
+      const r = track.H[i] + (side > 0 ? -Math.PI / 2 : Math.PI / 2);
+      if (lat(x, z) > 8) {
+        const og = new G.CarModel.GB();
+        boxAt(og, x, y0, z, r, 0, 2, -3, 22, 4, 0.4, C(0x2a3140));
+        for (const s of [-1, 1]) boxAt(og, x, y0, z, r, s * 11, 2, 0, 0.4, 4, 6, C(0x2a3140));
+        boxAt(og, x, y0, z, r, 0, 4.1, 0, 22.4, 0.3, 6.4, C(0x1b1f28));
+        worldMesh(group, og, null, 'opsRoom', true);
+        const sc = new G.CarModel.GB();
+        for (let k = 0; k < 6; k++) faceQuad(sc, x, y0, z, r, 'f', -2.75, -8.5 + k * 3.4, 2.4, 3, 1.7, C([0x3aa8ff, 0x2fe07a, 0x2fe0c8, 0x7a8cff, 0xffb02a, 0x3aa8ff][k]), 0.02);
+        worldMesh(group, sc, new THREE.MeshBasicMaterial({ vertexColors: true }), 'opsScreens');
+        const gl = new G.CarModel.GB();
+        faceQuad(gl, x, y0, z, r, 'f', 3, 0, 2, 21.5, 3.8, C(0x6f9ac8), 0.01);
+        worldMesh(group, gl, new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0.25, depthWrite: false }), 'opsGlass');
+      }
+    }
+    for (const k in by) instanced(k, by[k], group, k === 'pillar' || k === 'crac'); // (racks cast no shadow: thousands of them, and indoors it barely shows)
+    knockables(track, group, strewn(track, rng, 44, ['kserver', 'kserver', 'kspool', 'cone', 'kbox', 'kchair'], { mid: 0.35 }));
+    yield 'servers';
+    resume();
+  }
+
+  // ---------------------------------------------------------------- Low Tide
+  // v5.7: a fishing village, a causeway across the bay and the lighthouse
+  // island at the far end, on a grey-gold evening. The sea washes over the
+  // causeway on a rhythm (the tide patches); boats ride at their moorings,
+  // the breakwater stones line the causeway, and the lighthouse turns.
+  function* sceneTide(track, group, detail, resume) {
+    const rng = U.rng(U.hashStr(track.id + 'tide'));
+    const b = track.bounds, q = {}, th = track.theme;
+    const lat = (x, z) => {
+      track.query(x, z, -1, q);
+      return Math.abs(q.lat) - q.wall;
+    };
+    const landK = (x, z) => {
+      let land = 0;
+      for (const [cx, cz, r, soft] of th.seaLand || []) land = Math.max(land, 1 - U.smoothstep(r, r + (soft || 40), Math.hypot(x - cx, z - cz)));
+      return land;
+    };
+    const P = {};
+    const add = (k, it) => (P[k] || (P[k] = [])).push(it);
+    const hg = new G.CarModel.GB(), txt = new G.CarModel.GB();
+    const placed = [];
+    const free = (x, z, rr) => !placed.some((p) => Math.hypot(p[0] - x, p[1] - z) < rr + p[2]);
+    const WALLS = [0xc8352c, 0xf2c230, 0x2f6bb0, 0xf2efe6, 0x3f8a5a, 0xe8a07a, 0x7a9ab8];
+    // 1. the village: little gabled cottages in bright paint along the road
+    for (let i = 0; i < track.N; i += 5) {
+      if (landK(track.X[i], track.Z[i]) < 0.95) continue;
+      for (const side of [1, -1]) {
+        if (rng() < 0.35) continue;
+        const set = 10 + rng() * 5, L2 = side * (track.wallD[i] + set);
+        const x = track.X[i] + track.NX[i] * L2, z = track.Z[i] + track.NZ[i] * L2;
+        const r = track.H[i] + (side > 0 ? -Math.PI / 2 : Math.PI / 2) + (rng() - 0.5) * 0.1;
+        if (lat(x, z) < 5 || !free(x, z, 6) || landK(x, z) < 0.9) continue;
+        placed.push([x, z, 6]);
+        const y0 = gy(x, z), w = 6 + rng() * 3, d = 5 + rng() * 2, h = 3 + rng() * 1.8, wall = C(pickR(rng, WALLS));
+        boxAt(hg, x, y0, z, r, 0, (h - 1) / 2, 0, w, h + 1, d, wall);
+        roofW(hg, x, y0 + h, z, r, w, d, 2.2, 'gable', C(rng() < 0.5 ? 0x3a3f47 : 0x6b4a3a));
+        faceQuad(hg, x, y0, z, r, 'f', d / 2, 0, 1.05, 0.95, 2.1, C(0xf2efe6), 0.03);
+        for (const s of [-1, 1]) {
+          faceQuad(hg, x, y0, z, r, 'f', d / 2, s * w * 0.3, 1.6, 1, 1, C(0xf2efe6), 0.03);
+          faceQuad(hg, x, y0, z, r, 'f', d / 2, s * w * 0.3, 1.6, 0.8, 0.8, C(0x33475b), 0.05);
+        }
+        boxAt(hg, x, y0, z, r, w * 0.3, h + 2, -d * 0.2, 0.6, 1.6, 0.6, C(0x8a8f96));
+        if (rng() < 0.5) {
+          const c = rotPt(x, z, r, (rng() - 0.5) * w, -d / 2 - 1.5);
+          add('kcrate', { x: c[0], z: c[1], r: rng() * 6 });
+        }
+      }
+    }
+    yield 'village';
+    resume();
+    // 2. the breakwater: stones along both sides of the causeway, down in
+    // the water; lamps on it; boats and buoys out on the bay
+    for (let i = 0; i < track.N; i += 3) {
+      if (landK(track.X[i], track.Z[i]) > 0.3) continue;
+      for (const side of [1, -1]) {
+        const L2 = side * (track.wallD[i] + 2.5 + rng() * 2), x = track.X[i] + track.NX[i] * L2, z = track.Z[i] + track.NZ[i] * L2;
+        add('rock', { x, z, y: -1.2 + rng() * 0.6, abs: true, r: rng() * 6, s: 0.8 + rng() * 0.8 });
+        if (i % 15 === 0) {
+          const L3 = side * (track.wallD[i] + 0.8);
+          add('lamp', { x: track.X[i] + track.NX[i] * L3, z: track.Z[i] + track.NZ[i] * L3, r: track.H[i] + (side > 0 ? Math.PI / 2 : -Math.PI / 2) });
+        }
+      }
+    }
+    for (let k = 0; k < 40 * detail; k++) {
+      const x = U.lerp(b.x0 - 250, b.x1 + 250, rng()), z = U.lerp(b.z0 - 150, b.z1 + 150, rng());
+      if (landK(x, z) > 0.02 || lat(x, z) < 25) continue;
+      if (rng() < 0.4) add('boat', { x, z, y: -0.6, abs: true, r: rng() * 6.28, s: 0.7 + rng() * 0.5 });
+      else add('buoy', { x, z, y: -0.7, abs: true, r: 0, s: 1 });
+    }
+    // a jetty off the village shore, boats tied up alongside
+    {
+      let best = null;
+      for (let i = 0; i < track.N; i += 4) {
+        const k = landK(track.X[i], track.Z[i]);
+        if (k > 0.3 && k < 0.7) {
+          best = i;
+          break;
+        }
+      }
+      if (best != null) {
+        const i = best, side = 1, L2 = side * (track.wallD[i] + 30);
+        const x = track.X[i] + track.NX[i] * L2, z = track.Z[i] + track.NZ[i] * L2, r = track.H[i] + Math.PI / 2;
+        boxAt(hg, x, 0.6, z, r, 0, 0, 0, 3, 0.3, 40, C(0x8b6a48));
+        for (let k = -4; k <= 4; k++) for (const s of [-1, 1]) boxAt(hg, x, 0.6, z, r, s * 1.4, -1, k * 4.8, 0.3, 2.4, 0.3, C(0x6b4a30));
+        for (const s of [-1, 1]) {
+          const bp = rotPt(x, z, r, s * 4.5, 6 - s * 8);
+          add('boat', { x: bp[0], z: bp[1], y: -0.6, abs: true, r: r + (s > 0 ? 0 : Math.PI), s: 0.8 });
+        }
+      }
+    }
+    yield 'bay';
+    resume();
+    // 3. the lighthouse by the finish, its lamp turning
+    {
+      const i = track.N - 1, side = 1, L2 = side * (track.wallD[i] + 16);
+      const x = track.X[i] + track.NX[i] * L2 + track.TX[i] * 20, z = track.Z[i] + track.NZ[i] * L2 + track.TZ[i] * 20, y0 = gy(x, z);
+      const lh = new G.CarModel.GB();
+      for (let k = 0; k < 7; k++) cyl(lh, x, y0 + 2.5 + k * 5, z, 4 - k * 0.3, 5, 14, C(k % 2 ? 0xc8352c : 0xf2efe6));
+      cyl(lh, x, y0 + 37.5, z, 2.6, 0.6, 14, C(0x2a2d33));
+      cyl(lh, x, y0 + 39.5, z, 1.8, 3.4, 12, C(0x6f8ca8));
+      cone(lh, x, y0 + 41.2, z, 2.2, 2.4, 12, C(0xc8352c));
+      boxAt(lh, x, y0, z, 0, 7, 2, 3, 7, 4, 6, C(0xf2efe6));
+      roofW(lh, x + 7, y0 + 4, z + 3, 0, 7, 6, 2, 'gable', C(0x3a3f47));
+      worldMesh(group, lh, null, 'lighthouse', true);
+      const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff2c0, transparent: true, opacity: 0.28, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+      const beam = new THREE.Mesh(new THREE.ConeGeometry(9, 120, 16, 1, true), beamMat);
+      beam.geometry.translate(0, -60, 0);
+      beam.geometry.rotateZ(Math.PI / 2);
+      const pivot = new THREE.Object3D();
+      pivot.position.set(x, y0 + 39.5, z);
+      pivot.add(beam);
+      group.add(pivot);
+      glowPoints(group, [x, y0 + 39.5, z], 0xfff2c0, 16, 0.9);
+      group.userData.animFns.push((t) => {
+        pivot.rotation.y = t * 0.9;
+      });
+    }
+    worldMesh(group, hg, null, 'village', true);
+    worldMesh(group, txt, null, 'villageText');
+    for (const k in P) instanced(k, P[k], group, k !== 'buoy' && k !== 'rock');
+    knockables(track, group, strewn(track, rng, 20, ['kcrate', 'kcrate', 'cone', 'kbin'], { mid: 0.15 }));
+    yield 'tide';
+    resume();
+  }
+  const SCENES = { store: sceneStore, deadcity: sceneCity, suburb: sceneSuburb, launch: sceneLaunch, datacenter: sceneData, tide: sceneTide };
 
   G.TrackMesh = { build, steps };
 })(window.G);

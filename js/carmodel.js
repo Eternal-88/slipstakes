@@ -247,21 +247,24 @@
   // doors: [front edge z, rear edge z]; mirrorZ: A-pillar base.
   const BODIES = {
     coupe: {
+      // (v5.7: an 80s three-box notchback - a real boot behind a steep back
+      // window and a blunt nose. It was a fastback like every other coupe.)
       body: [
-        { z: -2.15, yb: 0.3, ym: 0.52, yt: 0.72, wb: 0.78, wm: 0.86, wt: 0.78 },
-        { z: -1.95, yb: 0.24, ym: 0.55, yt: 0.84, wb: 0.82, wm: 0.93, wt: 0.84 },
-        { z: -1.2, yb: 0.22, ym: 0.56, yt: 0.86, wb: 0.82, wm: 0.93, wt: 0.86 },
-        { z: 0.7, yb: 0.22, ym: 0.55, yt: 0.84, wb: 0.82, wm: 0.93, wt: 0.84 },
-        { z: 1.75, yb: 0.22, ym: 0.52, yt: 0.72, wb: 0.8, wm: 0.91, wt: 0.8 },
-        { z: 2.15, yb: 0.26, ym: 0.44, yt: 0.56, wb: 0.76, wm: 0.85, wt: 0.7 },
+        { z: -2.15, yb: 0.3, ym: 0.52, yt: 0.76, wb: 0.8, wm: 0.88, wt: 0.8 },
+        { z: -1.95, yb: 0.24, ym: 0.55, yt: 0.85, wb: 0.83, wm: 0.93, wt: 0.85 },
+        { z: -1.2, yb: 0.22, ym: 0.56, yt: 0.86, wb: 0.83, wm: 0.93, wt: 0.86 },
+        { z: 0.7, yb: 0.22, ym: 0.55, yt: 0.84, wb: 0.83, wm: 0.93, wt: 0.84 },
+        { z: 1.75, yb: 0.22, ym: 0.53, yt: 0.76, wb: 0.82, wm: 0.92, wt: 0.82 },
+        { z: 2.15, yb: 0.26, ym: 0.47, yt: 0.64, wb: 0.8, wm: 0.88, wt: 0.76 },
       ],
       cabin: [
-        { z: -1.5, yb: 0.84, yt: 0.95, wb: 0.8, wt: 0.66 },
-        { z: -0.95, yb: 0.86, yt: 1.27, wb: 0.83, wt: 0.64 },
-        { z: 0.05, yb: 0.86, yt: 1.29, wb: 0.83, wt: 0.64 },
-        { z: 0.85, yb: 0.84, yt: 0.86, wb: 0.82, wt: 0.78 },
+        { z: -1.3, yb: 0.85, yt: 0.9, wb: 0.8, wt: 0.72 },
+        { z: -0.82, yb: 0.86, yt: 1.27, wb: 0.83, wt: 0.66 },
+        { z: 0.15, yb: 0.86, yt: 1.29, wb: 0.83, wt: 0.66 },
+        { z: 0.85, yb: 0.84, yt: 0.87, wb: 0.82, wt: 0.78 },
       ],
-      roof: [-0.95, 0.05, 1.29], hood: [0.9, 2.0, 0.8], trunkZ: -1.8, trunkY: 0.85, wheelZ: [1.35, -1.25], doors: [0.72, -0.55],
+      roof: [-0.82, 0.15, 1.29], hood: [0.9, 2.0, 0.8], trunkZ: -1.75, trunkY: 0.86, wheelZ: [1.35, -1.25], doors: [0.72, -0.55],
+      lamps: 'quad', sig: 'eighties',
     },
     hatch: {
       body: [
@@ -272,12 +275,13 @@
         { z: 2.0, yb: 0.28, ym: 0.46, yt: 0.62, wb: 0.75, wm: 0.84, wt: 0.7 },
       ],
       cabin: [
-        { z: -1.98, yb: 0.88, yt: 1.3, wb: 0.82, wt: 0.66 },
-        { z: -1.6, yb: 0.9, yt: 1.42, wb: 0.84, wt: 0.68 },
-        { z: 0.2, yb: 0.9, yt: 1.42, wb: 0.84, wt: 0.68 },
+        { z: -1.98, yb: 0.88, yt: 1.08, wb: 0.82, wt: 0.72 },
+        { z: -1.45, yb: 0.9, yt: 1.35, wb: 0.84, wt: 0.72 },
+        { z: 0.15, yb: 0.9, yt: 1.37, wb: 0.84, wt: 0.72 },
         { z: 0.95, yb: 0.88, yt: 0.92, wb: 0.82, wt: 0.78 },
       ],
-      roof: [-1.6, 0.2, 1.42], hood: [1.0, 1.9, 0.86], trunkZ: -1.95, trunkY: 1.3, wheelZ: [1.25, -1.25], doors: [0.8, -0.5],
+      roof: [-1.45, 0.15, 1.37], hood: [1.0, 1.9, 0.86], trunkZ: -1.95, trunkY: 1.08, wheelZ: [1.25, -1.25], doors: [0.8, -0.5],
+      sig: 'hothatch',
     },
     roadster: {
       body: [
@@ -294,6 +298,7 @@
         { z: 0.5, yb: 0.76, yt: 1.08, wb: 0.72, wt: 0.66 },
       ],
       cockpit: true, hood: [0.7, 1.8, 0.74], trunkZ: -1.6, trunkY: 0.77, wheelZ: [1.2, -1.2], doors: [0.3, -0.85],
+      sig: 'speedster',
     },
     // ---- v5.3 SKIN BODIES. Same Z span and wheelZ as the car they dress, so
     // the wheels and the physics still line up; everything between changes.
@@ -389,31 +394,31 @@
         { z: 0.85, yb: 0.9, yt: 0.93, wb: 0.87, wt: 0.84 },
       ],
       roof: [-0.75, 0.35, 1.28], hood: [0.9, 2.35, 0.9], trunkZ: -2.1, trunkY: 0.94, wheelZ: [1.6, -1.45], doors: [0.8, -0.65],
-      grilleW: 0.78, hlX: 0.6, twinEx: 1, strake: 1, lip: 1,
+      grilleW: 0.78, hlX: 0.6, twinEx: 1, strake: 1, lip: 1, lamps: 'slim', sig: 'gt', roofTone: 0x15171b,
     },
     // v5.4 Rotor 7: low and curvy - a waist between rear hips and front wings,
     // a small bubble cabin, and the hoop wing it is known by.
     rotor: {
       body: [
         { z: -2.15, yb: 0.3, ym: 0.54, yt: 0.74, wb: 0.72, wm: 0.8, wt: 0.72 },
-        { z: -1.9, yb: 0.24, ym: 0.57, yt: 0.83, wb: 0.79, wm: 0.86, wt: 0.8 },
-        { z: -1.3, yb: 0.2, ym: 0.57, yt: 0.85, wb: 0.81, wm: 0.88, wt: 0.82 },
-        { z: -0.4, yb: 0.19, ym: 0.54, yt: 0.8, wb: 0.78, wm: 0.84, wt: 0.78 },
-        { z: 0.7, yb: 0.19, ym: 0.52, yt: 0.76, wb: 0.78, wm: 0.84, wt: 0.77 },
-        { z: 1.35, yb: 0.2, ym: 0.52, yt: 0.76, wb: 0.8, wm: 0.87, wt: 0.79 },
-        { z: 1.9, yb: 0.23, ym: 0.46, yt: 0.64, wb: 0.76, wm: 0.83, wt: 0.72 },
-        { z: 2.15, yb: 0.27, ym: 0.4, yt: 0.53, wb: 0.66, wm: 0.74, wt: 0.6 },
+        { z: -1.9, yb: 0.24, ym: 0.57, yt: 0.84, wb: 0.8, wm: 0.88, wt: 0.82 },
+        { z: -1.3, yb: 0.2, ym: 0.57, yt: 0.86, wb: 0.83, wm: 0.91, wt: 0.84 },
+        { z: -0.4, yb: 0.19, ym: 0.54, yt: 0.79, wb: 0.76, wm: 0.81, wt: 0.75 },
+        { z: 0.7, yb: 0.19, ym: 0.52, yt: 0.75, wb: 0.76, wm: 0.81, wt: 0.75 },
+        { z: 1.35, yb: 0.2, ym: 0.52, yt: 0.77, wb: 0.81, wm: 0.89, wt: 0.81 },
+        { z: 1.9, yb: 0.23, ym: 0.44, yt: 0.62, wb: 0.76, wm: 0.83, wt: 0.72 },
+        { z: 2.15, yb: 0.27, ym: 0.36, yt: 0.48, wb: 0.64, wm: 0.72, wt: 0.58 },
       ],
       cabin: [
-        { z: -1.75, yb: 0.83, yt: 0.86, wb: 0.79, wt: 0.77 },
-        { z: -1.2, yb: 0.83, yt: 1.01, wb: 0.79, wt: 0.71 },
-        { z: -0.55, yb: 0.8, yt: 1.13, wb: 0.78, wt: 0.63 },
-        { z: 0.05, yb: 0.79, yt: 1.14, wb: 0.78, wt: 0.63 },
-        { z: 0.55, yb: 0.77, yt: 1.07, wb: 0.77, wt: 0.67 },
-        { z: 1.0, yb: 0.76, yt: 0.79, wb: 0.77, wt: 0.76 },
+        { z: -1.75, yb: 0.84, yt: 0.87, wb: 0.79, wt: 0.77 },
+        { z: -1.2, yb: 0.83, yt: 1.01, wb: 0.78, wt: 0.7 },
+        { z: -0.55, yb: 0.79, yt: 1.13, wb: 0.74, wt: 0.61 },
+        { z: 0.05, yb: 0.78, yt: 1.14, wb: 0.74, wt: 0.61 },
+        { z: 0.55, yb: 0.76, yt: 1.07, wb: 0.74, wt: 0.65 },
+        { z: 1.0, yb: 0.76, yt: 0.79, wb: 0.75, wt: 0.74 },
       ],
       roof: [-0.55, 0.05, 1.14], hood: [1.05, 2.05, 0.77], trunkZ: -1.85, trunkY: 0.85, wheelZ: [1.3, -1.2], doors: [0.75, -0.5],
-      grilleW: 0.66, hlX: 0.55, twinEx: 1, hoop: 1,
+      grilleW: 0.66, hlX: 0.55, twinEx: 1, hoop: 1, lamps: 'slim', sig: 'rotary',
     },
     muscle: {
       body: [
@@ -430,6 +435,7 @@
         { z: 0.7, yb: 0.9, yt: 0.94, wb: 0.86, wt: 0.82 },
       ],
       roof: [-0.95, 0.0, 1.34], hood: [0.75, 2.3, 0.92], trunkZ: -2.05, trunkY: 0.93, wheelZ: [1.5, -1.4], doors: [0.6, -0.8],
+      lamps: 'twinRound', sig: 'muscle',
     },
     // v4: desert pickup — tall body, cab forward, open bed (drawn as a dark
     // well with rails, see `bed`), big tyres (wheelR).
@@ -469,7 +475,7 @@
         { z: 1.15, yb: 0.66, yt: 0.7, wb: 0.8, wt: 0.74 },
       ],
       roof: [-0.55, 0.25, 1.14], hood: [1.15, 2.1, 0.66], trunkZ: -1.95, trunkY: 0.82, wheelZ: [1.45, -1.3], doors: [0.8, -0.5],
-      deck: [-1.85, -1.05],
+      deck: [-1.85, -1.05], sig: 'mid',
     },
     // v5: kei box — tiny, narrow and tall, stubby bonnet, big glasshouse
     kei: {
@@ -487,26 +493,29 @@
         { z: 1.15, yb: 0.9, yt: 0.96, wb: 0.7, wt: 0.66 },
       ],
       roof: [-1.5, 0.45, 1.58], hood: [1.15, 1.65, 0.9], trunkZ: -1.65, trunkY: 1.46, wheelZ: [1.08, -1.1], doors: [0.95, -0.4],
-      hlX: 0.44, grilleW: 0.5,
+      hlX: 0.44, grilleW: 0.5, lamps: 'round', sig: 'kei', roofTone: 0xf2f1ea,
     },
-    // v5: electric fastback — smooth and low, long glass roof, no grille or
-    // exhaust, a light bar across the nose and tail
+    // v5: electric - no grille or exhaust, a light bar across the nose and
+    // tail. (v5.7: the wedge. It was a smooth fastback that looked like half
+    // the other cars; now a low pointed nose runs in one straight rake up to
+    // a peak over the front seats, and a flat metal sail falls to a tall tail.)
     ev: {
       body: [
-        { z: -2.35, yb: 0.3, ym: 0.54, yt: 0.78, wb: 0.84, wm: 0.94, wt: 0.84 },
-        { z: -2.1, yb: 0.22, ym: 0.56, yt: 0.86, wb: 0.88, wm: 0.97, wt: 0.88 },
-        { z: 0.6, yb: 0.22, ym: 0.56, yt: 0.84, wb: 0.88, wm: 0.97, wt: 0.88 },
-        { z: 1.7, yb: 0.22, ym: 0.5, yt: 0.7, wb: 0.86, wm: 0.95, wt: 0.82 },
-        { z: 2.35, yb: 0.26, ym: 0.4, yt: 0.52, wb: 0.8, wm: 0.88, wt: 0.68 },
+        { z: -2.35, yb: 0.32, ym: 0.58, yt: 0.88, wb: 0.84, wm: 0.93, wt: 0.86 },
+        { z: -2.15, yb: 0.24, ym: 0.6, yt: 0.92, wb: 0.88, wm: 0.97, wt: 0.9 },
+        { z: 0.6, yb: 0.22, ym: 0.54, yt: 0.8, wb: 0.88, wm: 0.97, wt: 0.88 },
+        { z: 1.7, yb: 0.22, ym: 0.45, yt: 0.64, wb: 0.86, wm: 0.95, wt: 0.84 },
+        { z: 2.35, yb: 0.26, ym: 0.33, yt: 0.43, wb: 0.8, wm: 0.88, wt: 0.74 },
       ],
       cabin: [
-        { z: -2.05, yb: 0.84, yt: 0.9, wb: 0.84, wt: 0.74 },
-        { z: -1.1, yb: 0.86, yt: 1.3, wb: 0.86, wt: 0.66 },
-        { z: 0.3, yb: 0.86, yt: 1.34, wb: 0.86, wt: 0.66 },
-        { z: 1.3, yb: 0.8, yt: 0.84, wb: 0.84, wt: 0.8 },
+        { z: -2.15, yb: 0.92, yt: 0.97, wb: 0.86, wt: 0.8 },
+        { z: -0.95, yb: 0.875, yt: 1.262, wb: 0.86, wt: 0.5 },
+        { z: -0.3, yb: 0.85, yt: 1.42, wb: 0.86, wt: 0.34 },
+        { z: -0.2, yb: 0.85, yt: 1.42, wb: 0.86, wt: 0.34 },
+        { z: 1.25, yb: 0.77, yt: 0.81, wb: 0.84, wt: 0.8 },
       ],
-      roof: [-1.1, 0.3, 1.34], hood: [1.3, 2.25, 0.8], trunkZ: -2.1, trunkY: 0.88, wheelZ: [1.5, -1.45], doors: [0.8, -0.9],
-      flush: true, glassRoof: true,
+      roof: [-0.3, -0.2, 1.42], hood: [1.25, 2.25, 0.77], trunkZ: -2.1, trunkY: 0.97, wheelZ: [1.5, -1.45], doors: [0.85, -0.3],
+      flush: true, sail: -0.95, lamps: 'bar', sig: 'cyber', noAerial: true,
     },
     // v5: Group B rally wedge — boxy, big flared arches, stock rear wing,
     // roof scoop, lamp pod and mud flaps whatever you fit
@@ -661,8 +670,11 @@
       gb.quadN([-e0.wt, e0.yt, e0.z], [e0.wt, e0.yt, e0.z], [e0.wt, e0.yt - DEEP, e0.z], [-e0.wt, e0.yt - DEEP, e0.z], trim, [0, 0, 1]);
       gb.quadN([-e1.wt, e1.yt, e1.z], [e1.wt, e1.yt, e1.z], [e1.wt, e1.yt - DEEP, e1.z], [-e1.wt, e1.yt - DEEP, e1.z], C(0x1c1e24), [0, 0, -1]);
     }
-    const pillar = L.livery === 'roof' ? acc : body;
-    const roofCol = P.weight === 'w3' ? carbon : L.livery === 'roof' || L.livery === 'checker' ? acc : bodyTop;
+    // (v5.7: some cars wear a roof in their own tone - the kei's white one,
+    // the GT's black - unless a livery says otherwise)
+    const tone = !SK && B.roofTone != null ? C(B.roofTone) : null;
+    const pillar = L.livery === 'roof' ? acc : tone || body;
+    const roofCol = P.weight === 'w3' ? carbon : L.livery === 'roof' || L.livery === 'checker' ? acc : tone || bodyTop;
     const c0 = cab[0], cN = cab[cab.length - 1];
     // An open car has no glass lid. Lofting the whole cabin volume in tinted
     // glass laid a dark slab over the cockpit and hid everything inside it;
@@ -679,10 +691,11 @@
       const roofZa = B.roof ? B.roof[0] - 0.06 : 99, roofZb = B.roof ? B.roof[1] + 0.06 : -99;
       // (the GTD: behind the doors a Mustang is a broad metal sail panel with
       // the rear window set into it)
-      const sailZ = SK && SK.id === 'gtd' ? B.doors[1] - 0.12 + 1e-6 : -99;
+      // (v5.7: and the EV's cabin is metal behind the B-pillar, B.sail)
+      const sailZ = SK && SK.id === 'gtd' ? B.doors[1] - 0.12 + 1e-6 : !SK && B.sail != null ? B.sail : -99;
       gb.loft4(cab, glass, null, (e, k) => {
         const za = cab[k].z, zb = cab[k + 1].z;
-        if (zb <= sailZ) return e === 2 ? { split: [0.58, bodyTop, glass] } : bodyTop;
+        if (zb <= sailZ) return e === 2 && SK ? { split: [0.58, bodyTop, glass] } : bodyTop;
         if (e === 2 && za >= roofZa && zb <= roofZb) return roofCol;
         return undefined;
       });
@@ -719,7 +732,7 @@
         gb.beam([sx * (c0.wb + 0.01), c0.yb + 0.01, c0.z + 0.08], [sx * (cN.wb + 0.01), cN.yb + 0.01, cN.z - 0.05], 0.025, 0.025, SK ? dark : chrome);
       }
       // antenna
-      if (car.body !== 'roadster' && !SK) gb.beam([-0.35, y - 0.01, z0 + 0.12], [-0.35, y + 0.45, z0 - 0.02], 0.015, 0.015, black); // (a skin is a track car: no aerial)
+      if (car.body !== 'roadster' && !SK && !B.noAerial) gb.beam([-0.35, y - 0.01, z0 + 0.12], [-0.35, y + 0.45, z0 - 0.02], 0.015, 0.015, black); // (a skin is a track car: no aerial)
     }
     if (B.cockpit) {
       // Everything in here is measured off the CABIN, not written as numbers:
@@ -1012,10 +1025,28 @@
     // A skin draws its own face, so the stock lamps stay off: drawn together
     // the pop-up car had four headlights and the GTD's bars were buried
     // inside the stock units where nobody could see them.
-    if (!SK) for (const sx of [-1, 1]) {
-      gb.box(sx * hlX, fy, fz - 0.02, 0.4, 0.16, 0.06, dark);
-      gb.box(sx * hlX, fy + 0.02, fz, 0.34, 0.08, 0.05, light);
-      gb.box(sx * (hlX + 0.02), fy - 0.05, fz, 0.28, 0.02, 0.04, white);
+    // (v5.7: each car its own face - round, twin round, quad, slim, or
+    // the EV's light bar alone - where every car had the same two boxes)
+    const lampKind = SK ? 'none' : B.lamps || 'box';
+    for (const sx of [-1, 1]) {
+      if (lampKind === 'box') {
+        gb.box(sx * hlX, fy, fz - 0.02, 0.4, 0.16, 0.06, dark);
+        gb.box(sx * hlX, fy + 0.02, fz, 0.34, 0.08, 0.05, light);
+        gb.box(sx * (hlX + 0.02), fy - 0.05, fz, 0.28, 0.02, 0.04, white);
+      } else if (lampKind === 'round' || lampKind === 'twinRound') {
+        const one = lampKind === 'round', R0 = one ? 0.12 : 0.09;
+        for (const lx of one ? [hlX] : [hlX + 0.1, hlX - 0.13]) {
+          gb.box(sx * lx, fy + 0.01, fz - 0.01, R0 * 2, R0 * 2, 0.04, dark); // (the housing, sunk into the nose)
+          gb.disc([sx * lx, fy + 0.01, fz + 0.011], [1, 0, 0], [0, 1, 0], [0, 0, 1], R0 * 0.95, 12, dark);
+          gb.disc([sx * lx, fy + 0.01, fz + 0.015], [1, 0, 0], [0, 1, 0], [0, 0, 1], R0 * 0.72, 12, light);
+        }
+      } else if (lampKind === 'quad') {
+        gb.box(sx * hlX, fy, fz - 0.015, 0.44, 0.15, 0.06, dark);
+        for (const d of [-0.11, 0.11]) gb.box(sx * hlX + d, fy + 0.005, fz + 0.012, 0.17, 0.1, 0.04, light);
+      } else if (lampKind === 'slim') {
+        gb.box(sx * hlX, fy + 0.03, fz - 0.012, 0.44, 0.06, 0.05, dark);
+        gb.box(sx * (hlX + 0.01), fy + 0.03, fz + 0.012, 0.38, 0.032, 0.04, light);
+      }
     }
     // rear: diffuser + fins, plate, exhaust tips, tail lights (dynamic range)
     gb.box(0, rS.yb + 0.06, rz + 0.02, rS.wb * 2 - 0.2, 0.1, 0.1, dark);
@@ -1080,7 +1111,8 @@
     const tw = G.Parts.opt('width', P.width).vis;
     const wheelX = car.track / 2 + 0.06 + (tw - 1) * 0.08;
     const wheelY = WR - rideH; // wheel centre in body space
-    if (L.kit !== 'wide') for (const wz of B.wheelZ) {
+    const flared = !SK && B.sig === 'hothatch' && P.width !== 'wide' && L.kit !== 'wide'; // (v5.7: the hot hatch's box flares cover the arches)
+    if (L.kit !== 'wide' && !flared) for (const wz of B.wheelZ) {
       for (const sx of [-1, 1]) {
         const K = 9;
         for (let k = 0; k < K; k++) {
@@ -1101,7 +1133,7 @@
     // out of the wheels in every corner)
     // fuel cap
     const fcz = (B.wheelZ[1] + rz) / 2 + 0.1, fcs = secAt(B, fcz);
-    gb.disc([-(surfX(fcs, fcs.ym + 0.12) + 0.006), fcs.ym + 0.12, fcz], [0, 1, 0], [0, 0, 1], [-1, 0, 0], 0.07, 8, dark);
+    if (!flared) gb.disc([-(surfX(fcs, fcs.ym + 0.12) + 0.006), fcs.ym + 0.12, fcz], [0, 1, 0], [0, 0, 1], [-1, 0, 0], 0.07, 8, dark);
 
     // ---- induction visuals
     // (a mid-engined car wears its blower / scoop / vents on the engine deck)
@@ -1387,6 +1419,126 @@
         gb.box(0, fy + 0.09, fz + 0.06, 0.9, 0.14, 0.06, black);
         for (const lx of [-0.3, -0.1, 0.1, 0.3]) gb.box(lx, fy + 0.02, fz + 0.1, 0.14, 0.1, 0.03, light);
       }
+    }
+    // ---- v5.7 signatures: the one or two things each car is known by from
+    // the chase camera, where every car had read as the same box with dark
+    // windows. Only on the stock car: a skin brings its own face.
+    const sig = !SK && B.sig;
+    const bareTail = P.aero === 'none' && L.spoiler === 'none';
+    if (sig === 'kei') {
+      // a roof rack: two rails on little feet and three bars across
+      const [rz0, rz1, ryy] = B.roof, rw = cab[1].wt - 0.1;
+      for (const sx of [-1, 1]) {
+        gb.box(sx * rw, ryy + 0.075, (rz0 + rz1) / 2, 0.05, 0.035, rz1 - rz0 - 0.16, black);
+        for (const z of [rz0 + 0.14, rz1 - 0.14]) gb.box(sx * rw, ryy + 0.034, z, 0.036, 0.064, 0.044, black);
+      }
+      for (let k = 0; k < 3; k++) gb.box(0, ryy + 0.1, U.lerp(rz0 + 0.25, rz1 - 0.25, k / 2), rw * 2 + 0.08, 0.02, 0.042, black);
+    } else if (sig === 'hothatch') {
+      // box flares over every wheel, a spoiler on the tailgate, louvres in
+      // the bonnet and round fog lamps in the bumper
+      if (P.width !== 'wide' && L.kit !== 'wide') for (const wz of B.wheelZ) for (const sx of [-1, 1]) {
+        gb.box(sx * (wheelX + 0.05), wheelY + 0.31 * wk, wz, 0.19, 0.1, 0.96 * wk, body);
+        gb.box(sx * (wheelX + 0.14), wheelY + 0.2 * wk, wz, 0.04, 0.2, 0.9 * wk, body);
+      }
+      if (bareTail) {
+        const [rz0, , ryy] = B.roof;
+        gb.box(0, ryy + 0.025, rz0 - 0.1, cab[1].wt * 2 + 0.06, 0.035, 0.32, body);
+        for (const sx of [-1, 1]) gb.box(sx * (cab[1].wt + 0.02), ryy - 0.02, rz0 - 0.12, 0.03, 0.1, 0.28, body);
+      }
+      if (P.cooling !== 'race' && P.induction !== 't2') for (const sx of [-1, 1]) {
+        const vz = (B.hood[0] + B.hood[1]) / 2;
+        topBox(sx * 0.33, vz, 0.28, 0.36, 0.022, black);
+        for (let k = 0; k < 4; k++) topBox(sx * 0.33, vz - 0.13 + k * 0.087, 0.24, 0.022, 0.01, carbon, 0.022);
+      }
+      if (P.suspension !== 'rally') for (const sx of [-1, 1]) {
+        gb.disc([sx * 0.52, fS.yb + 0.15, fz + 0.012], [1, 0, 0], [0, 1, 0], [0, 0, 1], 0.07, 10, dark);
+        gb.disc([sx * 0.52, fS.yb + 0.15, fz + 0.02], [1, 0, 0], [0, 1, 0], [0, 0, 1], 0.05, 10, C(0xfff0a8));
+      }
+    } else if (sig === 'speedster') {
+      // headrest fairings: full height behind each seat, sloping away into
+      // the deck towards the tail
+      const ckR = hole[0];
+      for (const sx of [-1, 1]) {
+        const x = sx * 0.3, z0 = ckR - 0.17, z1 = ckR - 1.1, w = 0.34, h = 0.22;
+        const y0 = topY(z0) - 0.01, y1 = topY(z1) - 0.01;
+        const A = [x - w / 2, y0, z0], Bq = [x + w / 2, y0, z0], Ct = [x + w * 0.38, y0 + h, z0], Dt = [x - w * 0.38, y0 + h, z0];
+        const E = [x - w * 0.28, y1, z1], F = [x + w * 0.28, y1, z1];
+        const ix = x, iy = y0 + h * 0.3, iz = (z0 * 2 + z1) / 3;
+        gb.quad(A, Bq, Ct, Dt, body, ix, iy, iz);
+        gb.quad(Dt, Ct, F, E, bodyTop, ix, iy, iz);
+        gb.tri(A, Dt, E, body, ix, iy, iz);
+        gb.tri(Bq, Ct, F, body, ix, iy, iz);
+      }
+    } else if (sig === 'rotary') {
+      // a centre bulge down the bonnet, and the lids of the pop-up lamps
+      // drawn shut in it
+      const hz = (B.hood[0] + B.hood[1]) / 2, hl = B.hood[1] - B.hood[0] - 0.3;
+      if (P.induction === 'na') topBox(0, hz - 0.05, 0.4, hl, 0.035, bodyTop);
+      for (const sx of [-1, 1]) {
+        const pz = B.hood[1] - 0.32;
+        for (const dz of [-0.13, 0.13]) topBox(sx * 0.55, pz + dz, 0.32, 0.018, 0.008, dark, 0.004);
+        for (const dx of [-0.15, 0.15]) topBox(sx * 0.55 + dx, pz, 0.018, 0.26, 0.008, dark, 0.004);
+      }
+      // black louvres over the back window, the thing you know it by from behind
+      const cabAt = (z) => {
+        for (let k = 0; k < cab.length - 1; k++) {
+          if (z <= cab[k + 1].z) {
+            const t = (z - cab[k].z) / (cab[k + 1].z - cab[k].z);
+            return { yt: U.lerp(cab[k].yt, cab[k + 1].yt, t), wt: U.lerp(cab[k].wt, cab[k + 1].wt, t) };
+          }
+        }
+        return cab[cab.length - 1];
+      };
+      const lz0 = cab[0].z + 0.12, lz1 = B.roof[0] - 0.1;
+      for (let k = 0; k < 6; k++) {
+        const z = U.lerp(lz0, lz1, k / 5), c = cabAt(z);
+        gb.box(0, c.yt + 0.04, z, c.wt * 2 - 0.24, 0.02, 0.07, black);
+      }
+      for (const sx of [-1, 1]) {
+        const a = cabAt(lz0), b2 = cabAt(lz1);
+        gb.beam([sx * (a.wt - 0.13), a.yt + 0.045, lz0], [sx * (b2.wt - 0.13), b2.yt + 0.045, lz1], 0.03, 0.03, black);
+      }
+    } else if (sig === 'eighties') {
+      // big black bumpers that stand off the nose and tail corners, a
+      // rubbing strip down each side, and a ducktail on the boot
+      gb.box(0, fS.yb + 0.075, fz + 0.035, fS.wm * 2 + 0.04, 0.1, 0.12, dark);
+      for (const sx of [-1, 1]) gb.box(sx * (rS.wm - 0.1), rS.yb + 0.16, rz - 0.03, 0.34, 0.12, 0.12, dark);
+      sideBand(midS.ym - 0.07, midS.ym - 0.02, dark, rz + 0.25, fz - 0.25, 0.016);
+      if (bareTail) {
+        const dz = rz + 0.14, dS = secAt(B, dz);
+        gb.box(0, dS.yt + 0.03, dz, dS.wt * 2 - 0.12, 0.05, 0.22, body);
+        gb.beam([-(dS.wt - 0.06), dS.yt + 0.07, dz - 0.1], [dS.wt - 0.06, dS.yt + 0.07, dz - 0.1], 0.05, 0.09, body);
+      }
+    } else if (sig === 'muscle') {
+      // a long power bulge, a shaker scoop through it (unless a blower or
+      // turbo has the bonnet), chrome bumpers and a lip on the boot
+      const [bz0, bz1] = B.hood;
+      topBox(0, (bz0 + bz1) / 2, 0.66, bz1 - bz0 - 0.3, 0.045, bodyTop);
+      if (P.induction === 'na') {
+        const sz = bz0 + 0.55;
+        topBox(0, sz, 0.42, 0.42, 0.2, black, 0.04);
+        topBox(0, sz + 0.2, 0.34, 0.02, 0.1, C(0x0b0c0e), 0.12);
+        topBox(0, sz, 0.46, 0.46, 0.03, chrome, 0.03);
+      }
+      gb.box(0, fS.yb + 0.075, fz + 0.03, fS.wm * 2 - 0.02, 0.07, 0.08, chrome);
+      for (const sx of [-1, 1]) gb.box(sx * (rS.wm - 0.12), rS.yb + 0.17, rz - 0.025, 0.36, 0.06, 0.08, chrome);
+      if (bareTail && !B.lip) {
+        const lz = rz + 0.14, lS = secAt(B, lz);
+        gb.box(0, lS.yt + 0.035, lz, lS.wt * 2 - 0.1, 0.06, 0.2, bodyTop);
+      }
+    } else if (sig === 'gt') {
+      // a centre bulge and a louvre either side of it on the long bonnet
+      const [bz0, bz1] = B.hood, lz = bz0 + (bz1 - bz0) * 0.42;
+      if (P.induction === 'na') topBox(0, (bz0 + bz1) / 2, 0.38, bz1 - bz0 - 0.4, 0.03, bodyTop);
+      if (P.cooling !== 'race') for (const sx of [-1, 1]) {
+        topBox(sx * 0.46, lz, 0.26, 0.5, 0.018, C(0x15171b));
+        for (let k = 0; k < 5; k++) topBox(sx * 0.46, lz - 0.2 + k * 0.1, 0.22, 0.025, 0.012, carbon, 0.018);
+      }
+    } else if (sig === 'mid') {
+      // flying buttresses from the roof back to the tail, the engine deck
+      // sunk between them
+      const [rz0, , ryy] = B.roof, rw = cab[1].wt - 0.06, tz2 = rz + 0.32, tS = secAt(B, tz2);
+      for (const sx of [-1, 1]) gb.beam([sx * rw, ryy - 0.03, rz0 + 0.05], [sx * (tS.wt - 0.08), tS.yt + 0.06, tz2], 0.17, 0.09, bodyTop);
     }
     if (B.glassRoof) {
       const [gz0, gz1, gy] = B.roof;
