@@ -44,6 +44,7 @@
           </div>
         </div>
         <div class="hud-pit"><b class="hp-t"></b><em class="hp-s"></em></div>
+        <div class="hud-call"><b></b><em></em></div>
         <div class="hud-lights"><i></i><i></i><i></i><i></i><i></i></div>
         <div class="hud-center"><div class="cd"></div><div class="banner"></div><div class="sub"></div></div>
         <div class="hud-tags"></div>
@@ -57,7 +58,7 @@
         cd: $('.cd'), banner: $('.banner'), sub: $('.sub'), tags: $('.hud-tags'), br: $('.hud-br'), tl: $('.hud-tl'), debug: $('.hud-debug'), help: $('.hud-help'),
         lights: root.querySelectorAll('.hud-lights i'), lightsBox: $('.hud-lights'), prog: $('.hud-prog'), pgDots: $('.pg-dots'), vig: $('.hud-vig'), flash: $('.hud-flash'),
         fuel: $('.fuel i'), fuelBox: $('.gauge.fuel'), engBox: $('.gauge.eng'), tyreLbl: $('.gauge.tyre span'), pit: $('.hud-pit'), pitT: $('.hp-t'), pitS: $('.hp-s'),
-        nos: $('.nos i'), nosBox: $('.gauge.nos'), dr: $('.hud-draft'), drBar: $('.dr-m u'), drV: $('.dr-v'), drGlow: $('.hud-draftglow'), asCu: $('.as-cu'), asWind: $('.as-wind'), asNet: $('.as-net'),
+        call: $('.hud-call'), nos: $('.nos i'), nosBox: $('.gauge.nos'), dr: $('.hud-draft'), drBar: $('.dr-m u'), drV: $('.dr-v'), drGlow: $('.hud-draftglow'), asCu: $('.as-cu'), asWind: $('.as-wind'), asNet: $('.as-net'),
       };
       this.ctx = this.el.map.getContext('2d');
       this.sctx = this.el.speedo.getContext('2d');
@@ -523,12 +524,30 @@
     }
 
     banner(text, sub, secs, cls) {
+      // v5.8.1: warnings - hazards, weather, wrong way - are a small strip at
+      // the top (callout), not big red letters across the road ahead. The big
+      // banner is for the race's own moments: final lap, finished, best lap.
+      if (cls === 'warn' || cls === 'bad') return this.callout(text, sub, secs, cls);
       this.el.banner.textContent = text || '';
       this.el.sub.textContent = sub || '';
       this.el.banner.className = 'banner' + (cls ? ' ' + cls : '');
       void this.el.banner.offsetWidth;
       if (text) this.el.banner.classList.add('pop');
       this.bannerT = secs || 2.5;
+    }
+
+    // Asking again with the same words only keeps it up (the crossings and the
+    // launch ask every frame) - nothing is redrawn, nothing flickers.
+    callout(text, sub, secs, cls) {
+      const el = this.el.call;
+      const key = (text || '') + '|' + (sub || '') + '|' + (cls || '');
+      if (this._callK !== key) {
+        this._callK = key;
+        el.firstChild.textContent = text || '';
+        el.lastChild.textContent = sub || '';
+        el.className = 'hud-call on ' + (cls || 'warn');
+      }
+      this.callT = Math.max(this.callT || 0, secs || 2.5);
     }
 
     flash(kind) {
@@ -550,6 +569,13 @@
         el.sub.textContent = '';
       }
       this.cache.bannerOn = this.bannerT > 0;
+      if (this._callK) {
+        this.callT -= dt;
+        if (this.callT <= 0) {
+          this._callK = null;
+          el.call.className = 'hud-call ' + (el.call.className.includes('bad') ? 'bad' : 'warn'); // (fades out in its colour)
+        }
+      }
       // countdown + start lights
       let cd = '';
       let lit = 0, green = false;
@@ -769,7 +795,7 @@
         if (world && world.pitCall) world.pitCall(!!this.pitCall, dt);
         this._wrongT -= dt;
         if (me.wrong && this.bannerT <= 0) {
-          this.banner('WRONG WAY', 'Press ' + G.Settings.keyName(s.keys.reset) + ' to reset', 0.5, 'warn');
+          this.banner('WRONG WAY', 'Press ' + G.Settings.keyName(s.keys.reset) + ' to reset', 0.5, 'bad');
           if (this._wrongT <= 0 && G.Audio) {
             G.Audio.wrongWay();
             this._wrongT = 2;
@@ -911,7 +937,7 @@
         const inBox = Math.abs(ahead) <= B.hl + 6 && Math.abs(pq.lat - B.lat) <= B.hw + 2;
         t = inBox ? 'STOP HERE' : ahead > 0 ? `BOX AHEAD ▲ ${Math.round(ahead - B.hl)} m` : `BOX BEHIND ▼ ${Math.round(-ahead - B.hl)} m`;
         sub = inBox ? 'brake to a stop - you\'re in the box' : ahead > 0 ? 'keep rolling, then stop anywhere in it' : 'hold brake to reverse back into it';
-        cls += inBox ? ' on good big' : ' on warn big';
+        cls += inBox ? ' on good' : ' on warn';
         call = true;
       } else if (rs.tank <= 0) {
         t = 'OUT OF FUEL';
@@ -922,17 +948,18 @@
         const close = ahead > 0 && ahead < 450;
         t = close ? `PIT ${arrow} ${Math.round(ahead)} m` : need2 ? 'BOX THIS LAP' : 'TYRES GONE';
         sub = close ? `pit box on the ${side} · stop anywhere in it` : need2 ? `fuel for ${lapsOfFuel.toFixed(1)} laps · pit box on the ${side}` : `pit for a fresh set · box on the ${side}`;
-        cls += ' on warn' + (close ? ' big' : '');
+        cls += ' on warn';
         call = true;
-        // the first time it's time to come in: say it big, once, with a sound
+        // the first time it's time to come in: a sound, once (v5.8.1: no
+        // banner across the middle of the screen - the panel, the flashing
+        // fuel gauge and the beacon say it without covering the road)
         if (!E.called) {
           E.called = true;
-          this.banner(need2 ? 'BOX THIS LAP' : 'TYRES GONE', need2 ? `Fuel for ${lapsOfFuel.toFixed(1)} laps - the pit box is on the ${side}, follow the beacon` : `Pit for a fresh set - the box is on the ${side}`, 3.2, 'warn');
           if (G.Audio && G.Audio.notify) G.Audio.notify('warn');
         }
       } else if (rem > L * 0.3) {
         t = `FUEL ${lapsOfFuel >= 9.95 ? Math.round(lapsOfFuel) : lapsOfFuel.toFixed(1)} LAPS`;
-        sub = rs.tank >= need ? 'enough to the flag' : `${Math.max(0, need - rs.tank).toFixed(2) * 100 | 0}% short of the flag`;
+        sub = rs.tank >= need ? 'enough to the flag' : `${Math.max(1, Math.ceil((need - rs.tank) * 100))}% short of the flag`; // (v5.8.1: never "0% short")
         cls += ' on quiet';
       }
       this.set('pitT', el.pitT, t);
