@@ -434,12 +434,25 @@ body:has(#ui.scr-raceui) .hud-lights { top: calc(52px / var(--hud)); }
 .on-row.idle .on-dot { background: #d9b44a; box-shadow: none; }
 .on-row.idle .on-nm b { opacity: .75; }
 #online span.ty, #online .on-ch span.ty { color: #7fe0ff; font-style: italic; }
-/* v5.8 pit calls: bigger when it matters, green when you're in the box */
-.hud-pit.big { top: 132px; padding: 7px 20px 8px; }
-.hud-pit.big b { font-size: 24px; }
-.hud-pit.big em { font-size: 13px; color: var(--ink); }
-.hud-pit.good { border-color: var(--green); box-shadow: 0 0 22px rgba(47,224,122,.45); }
+/* v5.8.1 pit calls: a compact strip, not a box across the road - a thin
+   coloured edge, no glow, no pulsing; green when you're in the box */
+.hud-pit { top: 58px; z-index: 6; padding: 3px 11px 4px; border-width: 1.5px; border-radius: 8px; }
+/* (the top-centre stack: pit strip 58, warnings 95, slipstream badge 130 - nothing covers another, name tags stay under them) */
+.hud-draft { top: 130px; z-index: 5; }
+.hud-pit b { font-size: 14px; }
+.hud-pit em { font-size: 10px; }
+.hud-pit.warn { border-color: rgba(255,204,0,.7); box-shadow: none; }
+.hud-pit.warn b { animation: none; }
+.hud-pit.good { border-color: rgba(47,224,122,.8); }
 .hud-pit.good b { color: var(--green); }
 .gauge.fuel.call span { color: var(--yellow); animation: blink .5s steps(2) infinite; }
 .gauge.fuel.call i { background: var(--yellow); }
 @media (prefers-reduced-motion: reduce) { .gauge.fuel.call span { animation: none; } }
+/* v5.8.1 warnings: a small strip at the top instead of big red letters across the road */
+.hud-call { position: absolute; z-index: 6; left: 50%; top: 95px; transform: translate(-50%, -4px); zoom: var(--hud); display: flex; align-items: baseline; gap: 8px; padding: 3px 11px 4px 9px; border-radius: 8px; background: rgba(14,19,34,.72); border-left: 3px solid var(--yellow); opacity: 0; transition: opacity .18s, transform .18s; pointer-events: none; white-space: nowrap; font-family: var(--body); }
+.hud-call.on { opacity: 1; transform: translate(-50%, 0); }
+.hud-call b { font-family: var(--display); font-weight: 400; font-size: 13px; letter-spacing: .8px; color: var(--yellow); }
+.hud-call em { font-style: normal; font-weight: 800; font-size: 11px; color: var(--muted); }
+.hud-call.bad { border-left-color: var(--red); }
+.hud-call.bad b { color: var(--red); }
+@media (prefers-reduced-motion: reduce) { .hud-call { transition: none; } }
