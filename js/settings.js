@@ -46,6 +46,7 @@
     sttBar: true, // live captions while you talk
     sttMark: true, // 🎤 in front of spoken messages
     sttBeep: true, // a blip when it starts and stops listening
+    shareStats: true, // v5.8.4: other players can see your stats (stats.js) from the players list
     keys: { up: 'KeyW', down: 'KeyS', left: 'KeyA', right: 'KeyD', hb: 'Space', nitro: 'ShiftLeft', reset: 'KeyR', cam: 'KeyC', horn: 'KeyH', talk: 'KeyV', shiftUp: 'KeyE', shiftDown: 'KeyQ' },
   };
   const KEY_LABELS = { up: 'Throttle', down: 'Brake / reverse', left: 'Steer left', right: 'Steer right', hb: 'Handbrake', nitro: 'Nitrous', reset: 'Reset car', cam: 'Change camera', horn: 'Horn', talk: 'Speech to text', shiftUp: 'Shift up (manual cars)', shiftDown: 'Shift down (manual cars)' };

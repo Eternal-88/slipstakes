@@ -3,8 +3,16 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.8.3';
+  G.VERSION = '5.8.4';
   G.CHANGELOG = [
+    {
+      v: '5.8.4', name: 'Shift Lights', items: [
+        ['🔁', 'Resets can\'t be gamed', 'Since 5.8.2 a reset put you back rolling at a safe speed - which could be used on purpose: reset going into a corner you had overcooked and come out of it straight and quick. A reset now puts you back from a standstill, 12 m back along the road, and at most once every 3 seconds, so it always costs more than driving out of trouble (about 2 seconds even at the tightest hairpin).'],
+        ['🏆', 'Your stats', 'My stats on the main menu: races, wins, podiums, win rate, time raced, your favourite car and your best lap on every track. They are kept on this device, like your personal bests - money, cars and parts still start fresh every visit. You choose whether other players can see them; if you share them, a trophy by your name in the players list opens them.'],
+        ['🔥', 'Pops you can see', 'Every downshift puffs from the pipes, and a free-flowing exhaust spits a flame with the crack you hear. Overrun smoke and flames now show whenever the pops play - an eased lift or a lift to shift used to make the noise and show nothing.'],
+        ['✨', 'The whole update here', 'This window now lists every update of the current version - 5.8 and all its fixes since - instead of only the last two.'],
+      ],
+    },
     {
       v: '5.8.3', name: 'Shift Lights', items: [
         ['🎲', 'Fairer odds', 'The betting odds were too flat: favourites won more often than their price said - backing them paid back about $1.13 for every $1 - and with catch-up turned high the long shots paid too well. Fitted to more than 2,000 raced results: the odds now weigh how strong each racer is more heavily, and the room\'s catch-up adds a small chance of an upset. Checked at 0, 10 and 100% catch-up: no kind of bet pays back more than you put in on average. A near-certainty now pays 1.01x instead of 1.1x.'],
@@ -290,9 +298,14 @@
       ],
     },
   ];
-  // The "What's new" modal body (menu + pause menu).
+  // The "What's new" modal body (menu + pause menu). v5.8.4: every entry of
+  // the current release - 5.8 and all its .1 / .2 / .3 updates - not just the
+  // newest two, which hid the big update behind the small ones after it.
   G.newsHtml = function (n) {
-    return G.CHANGELOG.slice(0, n || 2)
+    const series = (v) => String(v).split('.').slice(0, 2).join('.');
+    let k = 0;
+    while (k < G.CHANGELOG.length && series(G.CHANGELOG[k].v) === series(G.VERSION)) k++;
+    return G.CHANGELOG.slice(0, Math.max(k, n || 2))
       .map((c, k) => `<div class="news ${k ? 'old' : ''}"><h3>v${c.v} — ${c.name}</h3>${c.items.map(([ic, t, d]) => `<div class="news-i"><span>${G.Icon ? G.Icon.fromEmoji(ic) : ic}</span><div><b>${t}</b><p>${d}</p></div></div>`).join('')}</div>`)
       .join('');
   };

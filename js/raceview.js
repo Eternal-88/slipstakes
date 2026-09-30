@@ -113,6 +113,8 @@
           const cheer = world.trackGroup && world.trackGroup.userData.cheer;
           if (cheer) cheer(0.6);
         } else if (e.type === 'lap' && e.id === meId) {
+          // (v5.8.4 stats: a lap in a room - single player records its own in main.js)
+          if (G.Stats && G.Game && G.Game.role && hud.track && G.Client.me) G.Stats.lap(hud.track.id, G.Client.me.carId, e.ms);
           // lap delta vs. the best lap we knew about before this one
           const prev = hud.bestSeen;
           const txt = e.lap != null ? 'LAP ' + U.fmtTime(e.ms) : 'TIME ' + U.fmtTime(e.ms);
@@ -127,6 +129,7 @@
           if (audio) finalLap ? audio.lastLap() : audio.lap();
           if (audio && audio.musicIntensity) audio.musicIntensity(finalLap ? 1 : 0.25 * (e.lap || 0));
         } else if (e.type === 'finish' && e.id === meId) {
+          if (G.Stats && G.Game && G.Game.role && hud.track && !hud.track.closed && G.Client.me) G.Stats.lap(hud.track.id, G.Client.me.carId, e.ms); // (a sprint's run time)
           hud.banner('FINISHED ' + U.ordinal(e.pos), U.fmtTime(e.ms), 4, e.pos === 1 ? 'best' : '');
           world.confetti(meId, e.pos <= 3 ? 110 : 30);
           const m = world.models.get(meId);

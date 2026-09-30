@@ -415,6 +415,8 @@
         me.money = Math.max(0, me.money + prize - fuel + (bet ? bet.payout : 0));
         this.host.touch();
       }
+      // v5.8.4 stats (a quick race against bots; practice and test drives aren't races)
+      if (G.Stats && !d.direct && !d.test) G.Stats.race({ carId: sim.byId.me.carId, pos: meRow.pos, total: res.length, dnf: !meRow.finished, online: false, secs: (meRow.ms || 0) / 1000 });
       d.results = {
         track: sim.track, pos: meRow.pos, finished: meRow.finished, total: res.length, prize, fuel, bet, best: meRow.bestLap, pb: this.getPB(sim.track.id, sim.byId.me.carId),
         rows: res.map((r) => ({ id: r.id, pos: r.pos, name: sim.byId[r.id].name, carId: sim.byId[r.id].carId, color: sim.byId[r.id].color, ms: r.ms, finished: r.finished, best: r.bestLap })),
@@ -542,7 +544,10 @@
       if (!d.test && !d.direct) {
         for (const e of evs) {
           if (e.id !== 'me') continue;
-          if (e.type === 'lap' || (e.type === 'finish' && !sim.track.closed)) this._checkPB(sim.track.id, sim.byId.me.carId, e.ms); // sprints: the run time
+          if (e.type === 'lap' || (e.type === 'finish' && !sim.track.closed)) {
+            this._checkPB(sim.track.id, sim.byId.me.carId, e.ms); // sprints: the run time
+            if (G.Stats) G.Stats.lap(sim.track.id, sim.byId.me.carId, e.ms); // (v5.8.4 stats)
+          }
         }
       }
       if (sim.phase === 'race') d.t += dt;

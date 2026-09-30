@@ -652,10 +652,17 @@
       }
       // exhaust: flames on backfire, puffs on gear changes and hard launches
       const gearUp = rs.gear > m.lastGear && m.lastGear > 0;
+      // (v5.8.4: a downshift blips the throttle - a puff, and a pipe that pops
+      // spits a flame with the crack you hear, audio.js's same test)
+      const gearDown = rs.gear > 0 && rs.gear < m.lastGear && speed > 4;
       m.lastGear = rs.gear;
       for (const e of m.exhaust) {
         const [ex, ey, ez] = W(e[0], e[1], e[2]);
         if (rs.backfire > 0 && Math.random() < 0.6) fx.emit('flame', ex, ey, ez, -sinH * 4, 0, -cosH * 4, 1);
+        if (gearDown) {
+          fx.emit('puff', ex, ey, ez, -sinH * 2 + rs.vx * 0.6, 0.3, -cosH * 2 + rs.vz * 0.6, 0.9, RGB.smoke);
+          if (m.od && m.od.pops > 0.3) fx.emit('flame', ex, ey, ez, -sinH * 4, 0, -cosH * 4, 0.9);
+        }
         if (gearUp) fx.emit('puff', ex, ey, ez, -sinH * 2 + rs.vx * 0.6, 0.2, -cosH * 2 + rs.vz * 0.6, 1);
         else if (rs.thr > 0.5 && speed < 8 && Math.random() < dt * 14) fx.emit('puff', ex, ey, ez, -sinH * 1.5, 0.2, -cosH * 1.5, 0.8);
       }
@@ -665,7 +672,14 @@
       // couple of seconds after the lift, like the noise does.
       const od = m.od;
       if (od && od.pops > 0) {
-        if (m.lastThr > 0.5 && rs.thr < 0.2 && rs.rpm > 0.4) m.ovT = 0;
+        // (v5.8.4: the sound's own lift test - the pedal was down within 0.4 s
+        // and is up now - so an eased lift, a pad's trigger or a lift to shift
+        // shows the pops you hear; it used to need the pedal to drop in a frame)
+        if (rs.thr > 0.5) m.downAt = this.time;
+        if (rs.thr < 0.15 && m.downAt != null && this.time - m.downAt < 0.4 && rs.rpm > 0.4) {
+          m.ovT = 0;
+          m.downAt = null;
+        }
         if (rs.thr > 0.3) m.ovT = 99;
         m.ovT += dt;
         const win = od.bang ? 2.2 : 1.2;

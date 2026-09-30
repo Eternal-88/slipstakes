@@ -192,7 +192,7 @@
           inp.n = 0;
         }
         if (frozen) inp = { s: inp.s, t: inp.t, b: 0, hb: 0 };
-        if ((c.respawnReq || inp.rs) && !frozen && !c.st.pit) this.respawn(c);
+        if ((c.respawnReq || inp.rs) && !frozen && !c.st.pit && !(this.t - (c.resetAt == null ? -99 : c.resetAt) < 3)) this.respawn(c); // (v5.8.4: at most one reset every 3 s)
         c.respawnReq = false;
         P.step(c.st, c.spec, inp, tr, dt, popts);
       }
@@ -207,8 +207,15 @@
     respawn(c) {
       const tr = this.track;
       const q = tr.query(c.st.x, c.st.z, c.st.hint, this._q);
-      let d = q.along;
-      if (!tr.closed) d = U.clamp(d, 2, tr.length - 2);
+      // v5.8.4: 12 m BACK along the road, from a standstill. The rolling
+      // reset (5.8.2) could be used on purpose - reset going into a corner
+      // you were overcooking and come out of it straight, at speed. Now a
+      // reset always costs more than driving out of trouble. (Moving back
+      // over the line on a circuit can't fake a lap: laps only count past
+      // the furthest one reached.)
+      let d = q.along - 12;
+      if (tr.closed) d = ((d % tr.length) + tr.length) % tr.length;
+      else d = U.clamp(d, Math.max(2, tr.startDist || 0), tr.length - 2);
       // never respawn inside a barrel stack: step sideways past it
       let lat = 0;
       const near = tr.OBL && tr.OBL[tr.idx(Math.round(d / tr.sp))];
@@ -221,28 +228,15 @@
       const p = tr.pointAt(d, lat);
       const st = c.st;
       st.x = p.x; st.z = p.z; st.h = p.h;
-      // v5.8.2: back on the road ROLLING, at a speed the road ahead allows
-      // (up to 80 km/h), in the gear for it - one mistake used to cost a
-      // standing start on top of everything else
-      let v0 = 22;
-      for (let dd = 0; dd <= 60; dd += 5) {
-        const k = Math.abs(tr.K[tr.idx(Math.round((d + dd) / tr.sp))]) + 1e-4;
-        v0 = Math.min(v0, Math.sqrt((c.spec.mu * 0.75 * 9.81) / k));
-      }
-      v0 = Math.max(6, v0);
-      st.vx = Math.sin(p.h) * v0;
-      st.vz = Math.cos(p.h) * v0;
-      st.w = 0;
+      st.vx = st.vz = st.w = 0;
       st.steer = 0; st.ax = st.ay = 0;
       st.fy[0] = st.fy[1] = st.fy[2] = st.fy[3] = 0;
       st.hint = p.i;
       st.ghost = 2.0;
-      let g = 1;
-      const S = c.spec;
-      if (!S.ev) while (g < S.gears.length && ((v0 / S.wheelR) * S.gears[g - 1] * S.finalDrive) / S.redlineW > 0.85) g++;
-      st.gear = st.sel = g;
+      st.gear = st.sel = 1;
       st.shiftT = 0;
       st.offT = 0;
+      c.resetAt = this.t;
       c.px = st.x; c.pz = st.z; c.ph = st.h;
       this.events.push({ type: 'respawn', id: c.id });
     }
