@@ -101,7 +101,7 @@
             const on = this.sel && this.sel.racer === p.id && this.sel.type === type;
             return sitting ? `<td class="od"><button class="odb ${on ? 'on' : ''}" data-act="pick" data-r="${p.id}" data-type="${type}">${v.toFixed(2)}x</button></td>` : `<td class="od">${v.toFixed(2)}x</td>`;
           };
-          return `<tr class="${p.id === me.id ? 'me' : ''}"><td><i class="dot" style="background:${hex(p.color)}"></i>${U.esc(p.name)}${stip.has(p.id) ? ' <em class="tag-sti" title="Sponsor stipend: poorest racers get a bonus">+$300</em>' : ''}</td><td class="muted">${Parts.CARS[p.carId].name}</td><td>${form}</td><td><div class="sc"><i style="width:${o.score * 10}%"></i></div></td>${cell('win', o.win)}${cell('podium', o.podium)}</tr>`;
+          return `<tr class="${p.id === me.id ? 'me' : ''}"><td><i class="dot" style="background:${hex(p.color)}"></i>${U.esc(p.name)}${stip.has(p.id) ? ' <em class="tag-sti" title="Sponsor stipend: poorest racers get a bonus">+' + U.fmtMoney(E().STIPEND) + '</em>' : ''}</td><td class="muted">${Parts.CARS[p.carId].name}</td><td>${form}</td><td><div class="sc"><i style="width:${o.score * 10}%"></i></div></td>${cell('win', o.win)}${cell('podium', o.podium)}</tr>`;
         })
         .join('');
       const bounty = st.bounty ? `<div class="bounty">${G.ic('target')} <b>BOUNTY ${U.fmtMoney(st.bounty.amount)}</b> on ${U.esc(st.bounty.name)} (the money leader) — paid to whoever finishes highest ahead of them.</div>` : '';
@@ -168,10 +168,12 @@
       this.fixStakes();
       const can = this.stake >= E_.BET_MIN && this.stake <= maxOk;
       const why = can ? '' : maxOk < E_.BET_MIN ? (staked ? `You've staked the ${U.fmtMoney(E_.BET_TOTAL)} limit for this race.` : `You must keep ${U.fmtMoney(E_.FLOOR)} for repairs.`) : `You can stake up to ${U.fmtMoney(maxOk)} more on this race.`;
+      // (v5.8.3: backing yourself is capped at ODDS_SELF - the slip showed the board's price)
+      const selfW = mo ? Math.min(mo.win, E_.ODDS_SELF) : 0, selfP = mo && mo.podium ? Math.min(mo.podium, E_.ODDS_SELF) : 0;
       const back = mo
         ? `<h3>Back yourself</h3><p class="muted small">Bet on your own result at the bookie's odds — paid on top of your prize.</p>
           <div class="chips">${this.chips(this.stake, 'stake', this.betChips(), maxOk)}</div>
-          <div class="side-row"><button class="btn primary small" data-act="backme" data-type="win" ${can ? '' : 'disabled'}>WIN @ ${mo.win.toFixed(2)}x → ${U.fmtMoney(this.stake * mo.win)}</button>${mo.podium ? `<button class="btn small" data-act="backme" data-type="podium" ${can ? '' : 'disabled'}>PODIUM @ ${mo.podium.toFixed(2)}x → ${U.fmtMoney(this.stake * mo.podium)}</button>` : ''}</div>
+          <div class="side-row"><button class="btn primary small" data-act="backme" data-type="win" ${can ? '' : 'disabled'}>WIN @ ${selfW.toFixed(2)}x → ${U.fmtMoney(this.stake * selfW)}</button>${mo.podium ? `<button class="btn small" data-act="backme" data-type="podium" ${can ? '' : 'disabled'}>PODIUM @ ${selfP.toFixed(2)}x → ${U.fmtMoney(this.stake * selfP)}</button>` : ''}</div>
           ${why ? `<p class="muted small">${why}</p>` : ''}
           ${myBets.map((b) => `<div class="mybet">${U.fmtMoney(b.stake)} on yourself to ${b.type} @${b.odds.toFixed(2)}x</div>`).join('')}`
         : '';

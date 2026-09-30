@@ -259,7 +259,7 @@
       const p = G.Settings.cuPct(v) == null ? 10 : G.Settings.cuPct(v);
       const pre = [[0, 'Off'], [10, 'Mild'], [25, 'Wild']];
       const on = pre.find((x) => x[0] === p);
-      return `<label class="fld cu-fld ${cls || ''}" title="Cars trailing the leader get up to this much extra power (full strength 160 m back). Mild is 10%, Wild 25% - or type any number from 0 to 100."><span>Catch-up</span><span class="cu-row"><select data-input="cuPreset">${pre.map(([n, l]) => `<option value="${n}" ${on && on[0] === n ? 'selected' : ''}>${l}</option>`).join('')}<option value="custom" ${on ? '' : 'selected'}>Custom</option></select><input class="num-in cu-num" type="number" min="0" max="100" step="1" value="${p}" data-change="catchup" aria-label="Catch-up, percent extra power"><em>%</em></span></label>`;
+      return `<label class="fld cu-fld ${cls || ''}" title="Cars that fall behind get extra power, less drag, a little grip and longer gearing until they close the gap - full strength 60 m behind the car ahead. The leader never gets it, and it can't pass anyone for you. Mild is 10%, Wild 25% - or type any number from 0 to 100."><span>Catch-up</span><span class="cu-row"><select data-input="cuPreset">${pre.map(([n, l]) => `<option value="${n}" ${on && on[0] === n ? 'selected' : ''}>${l}</option>`).join('')}<option value="custom" ${on ? '' : 'selected'}>Custom</option></select><input class="num-in cu-num" type="number" min="0" max="100" step="1" value="${p}" data-change="catchup" aria-label="Catch-up, percent extra power"><em>%</em></span></label>`;
     },
     // what the catch-up field was set to: a whole percentage, or null (and a toast)
     cuRead(el) {
