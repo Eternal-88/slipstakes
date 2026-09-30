@@ -2,6 +2,32 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.8.2 — Shift Lights
+
+Catch-up (`race.js` `assist`): `cu = setting x max(ramp(gap to the car
+ahead, 6..60 m), 0.35 x ramp(gap to the leader, 20..150 m))`. Against the
+leader alone, the whole pack got it too and a car off the back never gained
+a place. `physics.js` adds to the old power (1 + cu) and drag (1 - 0.6 cu):
+grip x (1 + 0.1 cu) and gearing / (1 + 0.2 cu), so the extra power isn't
+spent on the rev limiter. Scratchpad `cutest2.py` (six-car field, the
+leader resets and sits 5 s): 100% brings it back to 3rd-4th.
+
+Resets (`race.js` `respawn`) roll: the speed the next 60 m allows (grip x
+0.75, 6-22 m/s) in the gear that puts the revs under 0.85.
+
+Engine braking (`physics.js`, `TUNE.engBrake` 0.35 of peak torque through
+the gearing, x (0.25 + 0.75 r), x (1 + 6 x over-rev)): only off the throttle
+AND off the brake (under braking the tyres are at their limit already; on
+the driven wheels it upset rear-drive bots), half on a torque-converter
+automatic, 0.7 on a dual-clutch, none on the EV. Bots downshift under
+braking once the lower gear is below 0.86 of its revs (was 0.93).
+
+Shifts: PERFECT within 0.025 of the gear's shift point (or past it, short of
+the limiter) kicks +22% for 0.6 s; GOOD within 0.07 kicks +9% for 0.4 s
+(`car.pkM`, in CORE; PROTO 18). HUD shows GOOD in green. Sound
+(`audio.js`): a downshift blips the throttle for 0.18 s (the note flares 6%
+and settles; other cars' downshifts too), and a free-flowing pipe cracks.
+
 ## v5.8.1 — Shift Lights
 
 The manual box (`physics.js`, `s.manual`) no longer has any safety net: no
