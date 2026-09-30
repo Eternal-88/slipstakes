@@ -2,6 +2,24 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.8.3 — Shift Lights
+
+Odds (`economy.js` `computeOdds`): Plackett-Luce on `strength ** 1.5`, with
+an upset share of `0.05 x catch-up` per place (a uniform pick). Fitted by
+maximum likelihood on random six-car bot fields (random cars, Normal to
+Legend, 12 tracks; 720 racer-races at each of 0 / 10 / 100% catch-up):
+strength counted too little (a = 1.4-1.7 fits; the old model was a = 1),
+and only 100% catch-up needed an upset share (0.05). Return per $1 at the
+offered odds, by price band, is now at most 1.00 at every setting (was 1.13
+on favourites at 0%, 1.32 on long shots at 100%). Win / podium floors 1.01x
+(1.1x / 1.05x let a heavy favourite pay back up to $1.10). Settlement pays
+stake x odds (the stake is taken when the bet is placed); double or nothing
+is a fair crypto coin on the prize, capped at $1,400.
+
+Bet slip (`prerace.js`): backing yourself shows `min(odds, ODDS_SELF)` - the
+price the host actually applies; the stipend tag shows `E.STIPEND` ($220).
+Catch-up tooltip, help text and comments describe the v5.8.2 system.
+
 ## v5.8.2 — Shift Lights
 
 Catch-up (`race.js` `assist`): `cu = setting x max(ramp(gap to the car
