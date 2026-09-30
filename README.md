@@ -2,6 +2,32 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.8.4 — Shift Lights
+
+Resets (`race.js` `respawn`): from a standstill again, 12 m back along the
+road (never past a sprint's start), at most one every 3 s (`c.resetAt`). The
+5.8.2 rolling reset could be used to straighten out of an overcooked corner
+at speed; scratchpad `resettest.py` now has a reset costing ~2 s even at the
+tightest hairpins. Moving back over a circuit's line can't fake a lap (laps
+only count past `maxLap`).
+
+Stats (`js/stats.js`, new; `G.Stats`, in the boot check): races, wins,
+podiums, DNFs, online races, time raced, cars used and the best lap per track
+(a sprint's run time), kept in localStorage `ss.stats` like `ss.pb` (money,
+cars and parts still start fresh). Recorded from `main.js` (quick races, and
+laps outside test drives), `raceview.js` (laps in a room) and `lobby.js`
+(room results, once per race). `Settings.shareStats` (on by default): the
+online card carries `stx` (`Stats.summary()`, at most 16 best laps), cleaned
+on arrival (`Stats.clean`); the players list shows a trophy that opens them.
+My stats is on the main menu, with the share switch.
+
+Exhaust (`world.js`): the overrun smoke / flames use the sound's lift test (the
+pedal down within 0.4 s, up now), and a downshift puffs - with a flame when
+the exhaust pops (`od.pops > 0.3`, as `audio.js` cracks).
+
+What's new (`version.js` `newsHtml`) lists every entry of the current
+release (same major.minor as `G.VERSION`), at least two.
+
 ## v5.8.3 — Shift Lights
 
 Odds (`economy.js` `computeOdds`): Plackett-Luce on `strength ** 1.5`, with
