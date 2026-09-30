@@ -100,6 +100,14 @@
       const DRAFT_LEN = 30;
       let lead = -Infinity;
       for (const c of cs) if (!c.dnf) lead = Math.max(lead, c.raceDist);
+      // v5.8.2 catch-up works on the gap to the car AHEAD of you (plus a
+      // little on the gap to the leader). Measured only against the leader,
+      // everyone in the pack got it too, so a car that fell off the back of a
+      // field never made a place back even at 100%.
+      const ord = this._cuOrd || (this._cuOrd = []);
+      ord.length = 0;
+      for (const c of cs) if (!c.dnf) ord.push(c);
+      ord.sort((x, y) => y.raceDist - x.raceDist);
       for (const A of cs) {
         const a = A.st;
         let tgt = 0;
@@ -122,7 +130,11 @@
         a.draft += (tgt - a.draft) * Math.min(1, dt / (tgt > a.draft ? 0.35 : 0.2));
         let cu = 0;
         if (this.catchup && this.phase === 'race' && !A.finished && !A.dnf && isFinite(lead)) {
-          cu = this.catchup * U.clamp((lead - A.raceDist - 12) / 150, 0, 1);
+          // (full strength 60 m behind the next car; a third of it from the
+          // leader's gap, so a car back in the pack can still work through it)
+          const k = ord.indexOf(A);
+          const ahead = k > 0 ? ord[k - 1].raceDist - A.raceDist : 0;
+          cu = this.catchup * Math.max(U.clamp((ahead - 6) / 54, 0, 1), 0.35 * U.clamp((lead - A.raceDist - 20) / 130, 0, 1));
         }
         a.cu += (cu - a.cu) * Math.min(1, dt / 0.5);
       }
@@ -204,12 +216,27 @@
       const p = tr.pointAt(d, lat);
       const st = c.st;
       st.x = p.x; st.z = p.z; st.h = p.h;
-      st.vx = st.vz = st.w = 0;
+      // v5.8.2: back on the road ROLLING, at a speed the road ahead allows
+      // (up to 80 km/h), in the gear for it - one mistake used to cost a
+      // standing start on top of everything else
+      let v0 = 22;
+      for (let dd = 0; dd <= 60; dd += 5) {
+        const k = Math.abs(tr.K[tr.idx(Math.round((d + dd) / tr.sp))]) + 1e-4;
+        v0 = Math.min(v0, Math.sqrt((c.spec.mu * 0.75 * 9.81) / k));
+      }
+      v0 = Math.max(6, v0);
+      st.vx = Math.sin(p.h) * v0;
+      st.vz = Math.cos(p.h) * v0;
+      st.w = 0;
       st.steer = 0; st.ax = st.ay = 0;
       st.fy[0] = st.fy[1] = st.fy[2] = st.fy[3] = 0;
       st.hint = p.i;
       st.ghost = 2.0;
-      st.gear = st.sel = 1;
+      let g = 1;
+      const S = c.spec;
+      if (!S.ev) while (g < S.gears.length && ((v0 / S.wheelR) * S.gears[g - 1] * S.finalDrive) / S.redlineW > 0.85) g++;
+      st.gear = st.sel = g;
+      st.shiftT = 0;
       st.offT = 0;
       c.px = st.x; c.pz = st.z; c.ph = st.h;
       this.events.push({ type: 'respawn', id: c.id });

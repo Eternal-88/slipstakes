@@ -149,7 +149,9 @@
       }
       if (g > 1) {
         const rl = rAt(g - 1);
-        if (((out.b > 0.1 || dv < -2) && rl < 0.93) || (r < spec.downR + 0.03 && rl < 0.9)) out.gd = (st.gd + 1) & 15;
+        // (v5.8.2: not so early under braking - the engine brakes now, and a
+        // lower gear at the top of its revs snatched at the rear wheels)
+        if (((out.b > 0.1 || dv < -2) && rl < 0.86) || (r < spec.downR + 0.03 && rl < 0.9)) out.gd = (st.gd + 1) & 15;
       }
     }
 

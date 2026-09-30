@@ -3,8 +3,16 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.8.1';
+  G.VERSION = '5.8.2';
   G.CHANGELOG = [
+    {
+      v: '5.8.2', name: 'Shift Lights', items: [
+        ['🏁', 'Catch-up that catches up', 'Catch-up used to measure you against the leader only, so everyone in the pack got it too and a car that fell off the back never made a place back - even at 100%. Now it works on the gap to the car directly ahead of you (and a little on the gap to the leader), reaches full strength 60 m back instead of 160, and adds a touch of grip and longer gearing to the extra power, so it helps in the corners and doesn\'t just run into the rev limiter. Measured: a leader who crashes and sits for 5 seconds in a six-car field comes back to 3rd or 4th at 100%, back into the pack at 50%. Everyone reloads the page (Ctrl+Shift+R) for this version, host first.'],
+        ['↩', 'Resets keep you rolling', 'A reset puts you back on the road rolling - at a speed the road ahead allows, up to 80 km/h - and in the right gear, instead of from a standstill.'],
+        ['⚙', 'Engine braking, rev-matched downshifts', 'Off the throttle the engine now holds the car back through the driven wheels: harder in a low gear, so a downshift slows you, and one that over-revs snatches at the wheels. Automatics slip (half as much), dual-clutch boxes a little. Every downshift blips the throttle to match the revs - yours and everyone else\'s - and a free-flowing exhaust cracks as it falls back.'],
+        ['🕹', 'PERFECT and GOOD shifts', 'The perfect-shift window is tighter: right on the shift point, short of the limiter. Just off it is now a GOOD shift (green) with a smaller kick; early shifts get nothing.'],
+      ],
+    },
     {
       v: '5.8.1', name: 'Shift Lights', items: [
         ['🕹', 'Manual means manual', 'The Sting and the Stormer never change gear by themselves any more. Sit on the rev limiter and you stay on it until you shift up; a downshift goes in the moment you ask for it, and over-revving one costs the engine. The shift lights and a SHIFT ▲ call on the dial tell you when. A perfect shift on the blue light kicks harder than before, and the shop\'s acceleration numbers for both cars are measured shifting on the light. Everyone reloads the page (Ctrl+Shift+R) for this version, host first.'],

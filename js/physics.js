@@ -37,6 +37,7 @@
   // Live-tunable constants (exposed as G.Physics.TUNE so feel can be iterated
   // from the console). Identical on every peer — never tune per-player.
   const TUNE = {
+    engBrake: 0.35, // v5.8.2 engine braking off the throttle, as a share of peak torque (through the gearing)
     lsd: 0.6, // 0 = open diff (50/50), 1 = torque fully follows wheel load
     longGrip: 1.05, // longitudinal / lateral peak grip ratio
     hbLat: 0.22, // rear lateral grip multiplier with the handbrake on
@@ -109,11 +110,12 @@
       // box over, and s left of a perfect shift's kick
       // (gu/gd start at -1: the first input only syncs the counts)
       sel: 1, gu: -1, gd: -1, man: 0, pk: 0, limT: 0,
+      pkM: 0, // v5.8.2: how big the kick of the last good shift is (a PERFECT one kicks harder than a GOOD one)
     };
   }
 
   // Core state that must round-trip for prediction/reconciliation.
-  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit', 'revCut', 'oilT', 'mudT', 'wallT', 'sel', 'gu', 'gd', 'man', 'pk', 'limT'];
+  const CORE = ['x', 'z', 'h', 'vx', 'vz', 'w', 'steer', 'rpm', 'gear', 'shiftT', 'kickT', 'boost', 'heat', 'overheat', 'ax', 'ay', 'tyreWear', 'engineWear', 'body', 'fuel', 'odo', 'ghost', 'bt', 'draft', 'cu', 'nos', 'padT', 'tank', 'tw', 'pit', 'revCut', 'oilT', 'mudT', 'wallT', 'sel', 'gu', 'gd', 'man', 'pk', 'limT', 'pkM'];
   function copyCore(dst, src) {
     for (let i = 0; i < CORE.length; i++) dst[CORE[i]] = src[CORE[i]];
     for (let i = 0; i < 4; i++) dst.fy[i] = src.fy[i];
@@ -340,7 +342,9 @@
     // (v5: a car swapped mid-drive can be in a gear its new box doesn't have —
     // the one-speed Volt in 3rd turned every number into NaN)
     if (car.gear > nG) car.gear = nG;
-    const ratio = car.gear > 0 ? s.gears[car.gear - 1] * s.finalDrive : s.revRatio * s.finalDrive;
+    // (v5.8.2: catch-up (car.cu) lengthens the gearing a little - the extra
+    // power and the drag cut used to run straight into the rev limiter)
+    const ratio = (car.gear > 0 ? s.gears[car.gear - 1] * s.finalDrive : s.revRatio * s.finalDrive) / (1 + 0.2 * (car.cu || 0));
     // Driven wheels turn at roughly ROAD speed even when the car is sideways.
     // (Using vLong alone made a slide look like "slowing down": the box
     // downshifted to 1st, torque spiked, the rears lit up and the slide fed
@@ -379,7 +383,12 @@
       car.limT = r >= 0.995 && driveThr > 0.5 ? car.limT + dt : 0; // (the HUD's "shift up" call)
       if (car.shiftT <= 0) {
         if (car.sel > car.gear) {
-          if (r >= upAt - 0.045 && r < 1.0) car.pk = 0.6;
+          // (v5.8.2: graded - PERFECT within 0.025 of the gear's shift point
+          // (or past it, short of the limiter), GOOD within 0.07; early is
+          // nothing, and the limiter is nothing)
+          const early = upAt - r;
+          if (r < 1.0 && early <= 0.025) { car.pk = 0.6; car.pkM = 0.22; }
+          else if (r < 1.0 && early <= 0.07) { car.pk = 0.4; car.pkM = 0.09; }
           car.gear++;
           car.shiftT = s.shiftTime * 0.5;
           car.kickT = car.shiftT + 0.07;
@@ -466,11 +475,21 @@
       // (v5.8: an automatic or a dual-clutch keeps some drive through a shift)
       if (car.shiftT > 0) Fdrive *= s.shiftKeep || 0;
       // a perfect manual shift: a shove as the next gear bites
-      if (car.pk > 0 && car.shiftT <= 0) Fdrive *= 1 + 0.22 * Math.min(1, car.pk / 0.25);
+      if (car.pk > 0 && car.shiftT <= 0) Fdrive *= 1 + (car.pkM || 0.22) * Math.min(1, car.pk / 0.25);
     }
     if (car.gear === -1) Fdrive = -Math.min(Fdrive, vLong < -8 ? 0 : Fdrive);
     // Sequential box "shift shock": a brief torque spike right after an upshift.
     if (car.kickT > 0 && car.shiftT <= 0 && s.shiftKick > 1) Fdrive *= s.shiftKick;
+    // v5.8.2 engine braking: off the throttle (and off the brake - under full
+    // braking the tyres are already at their limit) the engine holds the car
+    // back through the driven wheels, harder in a low gear and at high revs,
+    // so a downshift slows you and one that over-revs snatches at them. An
+    // automatic's torque converter slips (half), a dual-clutch less so.
+    if (car.gear > 0 && car.shiftT <= 0 && !frozen && !s.ev && driveThr < 0.3 && brakeAmt < 0.1 && vLong > 1) {
+      const over = Math.max(0, r - 1);
+      const box = s.boxKind === 'auto' ? 0.5 : s.boxKind === 'dct' ? 0.7 : 1;
+      Fdrive -= ((s.peakTorque * TUNE.engBrake * box * (0.25 + 0.75 * Math.min(1, r)) * (1 + over * 6) * ratio) / s.wheelR) * (1 - driveThr / 0.3) * (1 - brakeAmt / 0.1);
+    }
     // ---- 6b. Free revving on the grid ------------------------------------
     // Off the clutch and going nowhere, the engine answers the throttle with
     // its OWN inertia: it takes a moment to wind up, falls back on its own
@@ -572,6 +591,7 @@
       if (oilK > 0) mu *= 1 - TUNE.oilGrip * oilK; // v5.6.1: oil on the tyres, wearing off
       if (mudK > 0) mu *= 1 - TUNE.mudGrip * mudK; // v5.6.1: mud in the tread
       if (!front) mu *= s.rearGrip * TUNE.rearGrip;
+      if (car.cu > 0) mu *= 1 + 0.1 * car.cu; // (v5.8.2 catch-up: a little grip too - power alone does nothing in a corner)
       // Setup multipliers (pressure, camber) differ for lateral and
       // longitudinal grip — camber helps cornering but costs braking/traction.
       const Fmax = mu * Fz * (front ? s.latF || 1 : s.latR || 1);

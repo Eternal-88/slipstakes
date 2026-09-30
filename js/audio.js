@@ -662,8 +662,17 @@
       this._ms = ms;
       const master = meta.vol == null ? 1 : meta.vol;
       const rpm = U.clamp(rs.rpm || 0.14, 0.1, 1.05);
-      const thr = rs.thr != null ? U.clamp(rs.thr, 0, 1) : 0.5;
+      let thr = rs.thr != null ? U.clamp(rs.thr, 0, 1) : 0.5;
       const speed = Math.hypot(rs.vx || 0, rs.vz || 0);
+      // v5.8.2 rev-matched downshifts: a quick stab of throttle as the lower
+      // gear goes in (0.18 s), so the note flares up to meet the new revs
+      // instead of just jumping there
+      let blip = 0;
+      if (this._blipT > 0) {
+        this._blipT -= dt;
+        blip = Math.sin(Math.PI * U.clamp(1 - this._blipT / 0.18, 0, 1));
+        thr = Math.max(thr, blip * 0.9);
+      }
       // exhaust / ECU character: distortion amount (shaper curve, rebuilt only
       // when the parts change), filter resonance, sub and lope
       const exKey = prof.rasp * ms.rasp;
@@ -678,6 +687,7 @@
       const crank = (rpm * car.redline) / 60;
       let f0 = crank * (prof.cyl / 2);
       if (prof.ev) f0 = 90 + crank * 3.2; // v5 EV: the motor's electrical order, climbing with speed
+      else if (blip > 0) f0 *= 1 + 0.06 * blip; // (the blip overshoots a touch, then settles on the new revs)
       // v4.5: a real idle hunts a little instead of sitting on one pitch
       if (rpm < 0.3) f0 *= 1 + (0.3 - rpm) * (Math.sin(this._limT * 2.3) * 0.05 + Math.sin(this._limT * 6.1) * 0.025);
       // v5.5.6 lopey cam: an idle that goes "lump-lump-lump" - the note sags
@@ -761,6 +771,9 @@
           e.amp.gain.setValueAtTime(g * 0.35, t);
           this.noiseHit(0.03, 2400, 0.08 * master, 'bandpass', 'sfx');
           if (parts.gearing === 'seq') this.noiseHit(0.05, 900, 0.18 * master, 'bandpass', 'sfx');
+        } else if (rs.gear > 0 && rs.gear < this._lastGear && speed > 4 && !prof.ev) {
+          this._blipT = 0.18; // (v5.8.2: a downshift - blip it)
+          if (ms.pops > 0.3) this.snap(master * 0.3, prof); // (and a free-flowing pipe cracks as it falls back)
         }
         this._lastGear = rs.gear;
       }
@@ -1079,7 +1092,13 @@
         v.f.frequency.setTargetAtTime((320 + rpm * 1900 * prof.cut) * (0.8 + 0.2 * dop) * oms.cut, t, 0.05);
         v.f.Q.setTargetAtTime(1.4 * (oms.q / 1.6), t, 0.1);
         v.pk.gain.setTargetAtTime(2 + oms.q, t, 0.2);
-        const thr = rs.thr ? U.clamp(rs.thr, 0.5, 1) : 0.45;
+        let thr = rs.thr ? U.clamp(rs.thr, 0.5, 1) : 0.45;
+        // (v5.8.2: their downshifts blip too)
+        if ((rs.gear || 0) > 0 && (rs.gear || 0) < v.gear && Math.hypot(rs.vx || 0, rs.vz || 0) > 4 && !prof.ev) v.blipT = 0.2;
+        if (v.blipT > 0) {
+          v.blipT -= dt;
+          thr = Math.max(thr, 0.5 + 0.5 * Math.sin(Math.PI * U.clamp(1 - v.blipT / 0.2, 0, 1)));
+        }
         // v5.4: heard from further off, and closer to your own engine's level
         // up close. At 20 m a car used to play at a sixth of yours.
         const fall = 1 / (1 + d / 17);
