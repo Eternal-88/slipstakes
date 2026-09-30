@@ -92,9 +92,14 @@
     //  * SLIPSTREAM: a car up to DRAFT_LEN ahead, roughly in line and moving
     //    with you, hides you from the wind (physics.js cuts drag up to 45%).
     //    Strongest right behind it; the pocket widens a little with distance.
-    //  * CATCH-UP: trailing the leader by more than 12 m earns up to
-    //    this.catchup extra power (full strength 160 m back). Off by default
-    //    in practice; the host picks Off / Mild / Wild for a session.
+    //  * CATCH-UP (v5.8.2): falling behind the car AHEAD of you earns up to
+    //    this.catchup of it (full strength 60 m back; a third of it from the
+    //    gap to the leader). physics.js turns it into extra power, less drag,
+    //    a little grip and longer gearing. The leader never gets it, and it
+    //    fades as you close in, so it gets you back into the fight but can't
+    //    pass anyone for you. Off in practice; 10% by default in a race.
+    //    (Measured: scratchpad cubal.py / cucompare.py - the best car on a
+    //    track still wins at every setting, and hanging back on purpose loses.)
     assist(dt) {
       const cs = this.cars;
       const DRAFT_LEN = 30;

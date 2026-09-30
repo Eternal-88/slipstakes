@@ -3,8 +3,15 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.8.2';
+  G.VERSION = '5.8.3';
   G.CHANGELOG = [
+    {
+      v: '5.8.3', name: 'Shift Lights', items: [
+        ['🎲', 'Fairer odds', 'The betting odds were too flat: favourites won more often than their price said - backing them paid back about $1.13 for every $1 - and with catch-up turned high the long shots paid too well. Fitted to more than 2,000 raced results: the odds now weigh how strong each racer is more heavily, and the room\'s catch-up adds a small chance of an upset. Checked at 0, 10 and 100% catch-up: no kind of bet pays back more than you put in on average. A near-certainty now pays 1.01x instead of 1.1x.'],
+        ['🧾', 'Bet slip fixes', 'Backing yourself is capped at 4.5x, but the slip showed the board\'s price, so a bet that said 9x paid 4.5x - it now shows what it actually pays. The sponsor stipend tag said +$300; it pays $220.'],
+        ['ℹ', 'Catch-up explained', 'The catch-up setting and the help now say how it works since 5.8.2: a car that drops back from the one ahead gets extra power, less drag, a little grip and longer gearing, at full strength 60 m back. The leader never gets it, and it fades as you close in - it gets you back into the fight but cannot pass anyone for you.'],
+      ],
+    },
     {
       v: '5.8.2', name: 'Shift Lights', items: [
         ['🏁', 'Catch-up that catches up', 'Catch-up used to measure you against the leader only, so everyone in the pack got it too and a car that fell off the back never made a place back - even at 100%. Now it works on the gap to the car directly ahead of you (and a little on the gap to the leader), reaches full strength 60 m back instead of 160, and adds a touch of grip and longer gearing to the extra power, so it helps in the corners and doesn\'t just run into the rev limiter. Measured: a leader who crashes and sits for 5 seconds in a six-car field comes back to 3rd or 4th at 100%, back into the pack at 50%. Everyone reloads the page (Ctrl+Shift+R) for this version, host first.'],

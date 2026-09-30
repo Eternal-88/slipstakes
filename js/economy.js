@@ -4,7 +4,7 @@
 // Design intent (tuned with tools/econ.js):
 //  * Pay by placement, not winner-take-all: 2nd gets 77% of 1st, 3rd 62%, last
 //    still covers a stock car's running costs — nobody is eliminated.
-//  * Catch-up is ECONOMIC only (never a speed boost): reverse-standings grid,
+//  * Catch-up here is ECONOMIC (the race's own catch-up setting is in race.js): reverse-standings grid,
 //    a bonus for positions gained from the grid, a small sponsor stipend for
 //    the two poorest racers, fuel/repair bills that scale with how extreme a
 //    car is, and betting odds that pay less on the favourite.
@@ -86,8 +86,16 @@
   // Plackett-Luce Monte Carlo: sample finishing orders proportional to
   // strength; count wins and podiums. Deterministic seed so every refresh of
   // the odds board shows the same numbers.
-  function computeOdds(racers, track, seed) {
-    const str = racers.map((p) => strength(p, track));
+  // v5.8.3, fitted to raced bot fields (720 racer-races at each of 0, 10 and
+  // 100% catch-up): strength counts SHARPER than it did - with plain strength
+  // the favourites (priced 20-35%) won 30% of races, so backing them returned
+  // $1.13 per $1 - and the room's catch-up adds a small chance of an upset
+  // that ignores strength (up to 5% of each place at 100%; nothing when off).
+  // With both, predicted and actual win rates agree in every price band.
+  const SHARP = 1.5, UPSET = 0.05;
+  function computeOdds(racers, track, seed, catchup) {
+    const up = UPSET * U.clamp(catchup || 0, 0, 1);
+    const str = racers.map((p) => Math.pow(strength(p, track), SHARP));
     const k = racers.length, N = 6000;
     const rng = U.rng(seed);
     const win = new Array(k).fill(0), pod = new Array(k).fill(0);
@@ -97,10 +105,14 @@
       let tot = str.reduce((a, b) => a + b, 0);
       let left = k;
       for (let place = 0; place < Math.min(3, k); place++) {
-        let r = rng() * tot, j = 0;
-        for (; j < left - 1; j++) {
-          r -= str[idx[j]];
-          if (r <= 0) break;
+        let j = 0;
+        if (up > 0 && rng() < up) j = Math.min(left - 1, Math.floor(rng() * left)); // an upset: anyone
+        else {
+          let r = rng() * tot;
+          for (; j < left - 1; j++) {
+            r -= str[idx[j]];
+            if (r <= 0) break;
+          }
         }
         const w = idx[j];
         if (place === 0) win[w]++;
@@ -115,8 +127,9 @@
       const pw = Math.max(win[i] / N, E.P_FLOOR), pp = Math.max(pod[i] / N, E.P_FLOOR_POD);
       out[p.id] = {
         pWin: +pw.toFixed(3), pPod: +pp.toFixed(3),
-        win: +U.clamp((1 - E.MARGIN) / pw, 1.1, E.ODDS_MAX).toFixed(2),
-        podium: k > 3 ? +U.clamp((1 - E.MARGIN) / pp, 1.05, E.ODDS_MAX_POD).toFixed(2) : null,
+        // (v5.8.3: floors 1.01x - at 1.1x a heavy favourite paid back up to $1.10 per $1)
+        win: +U.clamp((1 - E.MARGIN) / pw, 1.01, E.ODDS_MAX).toFixed(2),
+        podium: k > 3 ? +U.clamp((1 - E.MARGIN) / pp, 1.01, E.ODDS_MAX_POD).toFixed(2) : null,
         score: +perfScore(p.carId, p.garage.installed, p.garage.wear, track, p.garage.tune).toFixed(1),
         form: p.stats.form.slice(),
       };
@@ -161,7 +174,7 @@
       return this.toIntermission();
     }
     const track = G.getTrack(this.nextTrackId());
-    st.odds = computeOdds(racers, track, U.hashStr(st.code + ':' + st.raceNo));
+    st.odds = computeOdds(racers, track, U.hashStr(st.code + ':' + st.raceNo), G.Settings.cuFrac(st.settings.catchup)); // (v5.8.3: the room's catch-up)
     // Stipend goes to the two poorest racers (decided now, shown on the board).
     st.stipend = racers.length >= 4 ? racers.slice().sort((a, b) => this.netWorth(a) - this.netWorth(b)).slice(0, 2).map((p) => p.id) : [];
     // v4 BOUNTY: from race 2, a price on the richest racer's head. Whoever

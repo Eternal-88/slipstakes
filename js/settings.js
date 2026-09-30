@@ -33,7 +33,7 @@
     steerSpeed: 'normal', // slow | normal | fast (keyboard steering ramp)
     touch: 'auto', // auto (after the first screen touch) | on | off
     botLevel: 'normal', // rookie | easy | normal | hard | pro | legend (single-player bots; bot.js LEVELS)
-    catchup: 10, // % extra power at most for a car far behind (v5.5.7: any 0-100; off | mild | wild still read) - single-player quick races; the host picks for multiplayer
+    catchup: 10, // catch-up strength % (race.js / physics.js: power, drag, grip, gearing for a car behind the one ahead; v5.5.7: any 0-100; off | mild | wild still read) - single-player quick races; the host picks for multiplayer
     raceWeather: 'auto', // v5 auto (sometimes a shower mid-race) | dry | rain (single-player quick races)
     // v5.5.1 speech to text in multiplayer chat (Settings -> Voice)
     sttMode: 'ptt', // ptt (hold the talk key) | tap (tap, speak, it sends on a pause) | voice (voice activated) | off
