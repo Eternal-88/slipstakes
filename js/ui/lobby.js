@@ -246,6 +246,12 @@
       const st = G.Client.state;
       const mine = st && st.results && st.results.rows.find((r) => r.id === G.Client.meId);
       if (G.Audio && mine) mine.pos <= 3 && !mine.dnf ? G.Audio.win() : mine.payout && mine.payout.net < 0 ? G.Audio.lose() : null;
+      // v5.8.4 stats: this race, once (the results screen can mount again)
+      const key = mine && st.code + ':' + st.results.no;
+      if (mine && G.Stats && Results._counted !== key) {
+        Results._counted = key;
+        G.Stats.race({ carId: G.Client.me && G.Client.me.carId, pos: mine.pos, total: st.results.rows.length, dnf: !!mine.dnf, online: true, secs: (mine.ms || 0) / 1000 });
+      }
     },
     render() {
       const st = G.Client.state, me = G.Client.me;

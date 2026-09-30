@@ -132,7 +132,12 @@
         n: s.n || 0, max: s.max || 0, v: G.VERSION, proto: G.Net ? G.Net.PROTO : 0,
         pub: this.pub || '', dm: this.pub ? 1 : 0, at: Date.now(),
         idle: this.idle() ? 1 : 0,
+        stx: G.Stats && G.Settings.s.shareStats !== false ? G.Stats.summary() : null, // (v5.8.4: their choice)
       };
+    },
+    // stats changed or sharing switched: the card goes out with the next tick
+    statsChanged() {
+      if (this.started) setTimeout(() => this._publish(false), 50);
     },
     // the tab is in the background, or nobody has touched it for 3 minutes
     idle() {
@@ -203,6 +208,7 @@
           v: clip(o.v, 8), proto: +o.proto || 0,
           pub: typeof o.pub === 'string' && o.pub.length < 200 ? o.pub : '', dm: o.dm ? 1 : 0, at: +o.at || 0,
           idle: o.idle ? 1 : 0,
+          stx: G.Stats ? G.Stats.clean(o.stx) : null,
         };
         const old = this.cards.get(id);
         if (old && old.info.pub !== info.pub) this.akeys.delete(id); // they reloaded: new key
@@ -537,6 +543,7 @@
           this.render();
           setTimeout(() => this.$('.on-in input').focus(), 30);
         } else if (b.dataset.on === 'join') this._join(id);
+        else if (b.dataset.on === 'stats') this._stats(id);
       });
       el.addEventListener('keydown', (e) => {
         if (e.key === 'Escape') {
@@ -577,6 +584,13 @@
       inp.value = '';
       this._kAt = 0; // (a new message: the next keystroke may say "typing" again straight away)
       await this.send(this.view, v);
+    },
+
+    // v5.8.4: someone's stats, if they share them
+    _stats(id) {
+      const c = this.cards.get(id);
+      if (!c || !c.info.stx || !G.Stats) return;
+      G.UI.modal(`${c.info.name}'s stats`, G.Stats.html(c.info.stx, '', false), [{ label: 'Close', value: 1, cls: 'primary' }]);
     },
 
     _join(id) {
@@ -644,7 +658,7 @@
               const joinable = i.room && !inRoom && i.proto === (G.Net && G.Net.PROTO) && i.n < (i.max || 8);
               const by = this.blockedBy.has(i.id);
               const ty = this.isTyping(i.id);
-              return `<div class="on-row${i.idle ? ' idle' : ''}"><div class="on-who"><div class="on-nm"><i class="on-dot" title="${i.idle ? 'Away' : 'Active'}"></i><b>${U.esc(i.name)}</b>${u}</div><span class="${ty ? 'ty' : ''}">${by ? 'Blocked you' : ty ? 'typing a message to you…' : (i.idle ? 'Away · ' : '') + this.statusText(i)}</span></div>${joinable ? `<button class="btn small ghost" data-on="join" data-id="${i.id}" title="Join their room">Join</button>` : ''}${i.dm ? `<button class="btn small" data-on="msg" data-id="${i.id}" title="${by ? 'They blocked you' : 'Send a message'}">💬</button>` : ''}</div>`;
+              return `<div class="on-row${i.idle ? ' idle' : ''}"><div class="on-who"><div class="on-nm"><i class="on-dot" title="${i.idle ? 'Away' : 'Active'}"></i><b>${U.esc(i.name)}</b>${u}</div><span class="${ty ? 'ty' : ''}">${by ? 'Blocked you' : ty ? 'typing a message to you…' : (i.idle ? 'Away · ' : '') + this.statusText(i)}</span></div>${joinable ? `<button class="btn small ghost" data-on="join" data-id="${i.id}" title="Join their room">Join</button>` : ''}${i.stx && (i.stx.r || i.stx.b.length) ? `<button class="btn small ghost" data-on="stats" data-id="${i.id}" title="${U.esc(i.name)}'s stats: ${i.stx.w} win${i.stx.w === 1 ? '' : 's'} in ${i.stx.r} race${i.stx.r === 1 ? '' : 's'}">${G.ic ? G.ic('trophy') : '🏆'}</button>` : ''}${i.dm ? `<button class="btn small" data-on="msg" data-id="${i.id}" title="${by ? 'They blocked you' : 'Send a message'}">💬</button>` : ''}</div>`;
             })
             .join('')
         : `<p class="on-empty">${!this.started || !this.ms.length ? 'Looking for other players…' : this.q ? 'Nobody by that name.' : "Nobody else is on right now. When friends open the game they'll show up here."}</p>`;
