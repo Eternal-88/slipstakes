@@ -373,6 +373,7 @@
       const up = g.up || 0.975, r = U.clamp(rpm, 0, 1.03);
       const win = r >= up - 0.045; // shift now (the perfect-shift window on a manual car)
       const perfect = this._pkT > 0 ? 1 : 0;
+      const pkCol = this._pkGood ? '#2fe07a' : '#4db8ff'; // (GOOD green, PERFECT blue)
       const key = Math.round(kmh) + '|' + Math.round(r * 200) + '|' + gear + '|' + (g.sel || 0) + '|' + unit + '|' + g.dial
         + '|' + Math.round(g.v * 70) + '|' + Math.round(g.avail * 30) + '|' + (g.over ? 1 : 0) + '|' + Math.round(g.redline) + '|' + Math.round((g.nosV || 0) * 60) + '|' + (g.nosOn ? 1 : 0)
         + '|' + ((win || g.over || g.nosOn || g.hint) ? flash : 0) + '|' + Math.round((this._pkT || 0) * 20) + '|' + (g.hint || '');
@@ -416,12 +417,12 @@
       c.lineCap = 'butt';
       // hub ring
       c.lineWidth = 2;
-      c.strokeStyle = perfect ? '#4db8ff' : 'rgba(160,190,255,0.25)';
+      c.strokeStyle = perfect ? pkCol : 'rgba(160,190,255,0.25)';
       c.beginPath();
       c.arc(D.cx, D.cy, 30, 0, Math.PI * 2);
       c.stroke();
       // ---- gear, big, in the middle (a queued shift shows as a small arrow)
-      c.fillStyle = gear === -1 ? '#ff8a5c' : perfect ? '#4db8ff' : '#ffcc00';
+      c.fillStyle = gear === -1 ? '#ff8a5c' : perfect ? pkCol : '#ffcc00';
       c.font = "46px 'Russo One', Impact, sans-serif";
       c.fillText(g.ev ? 'D' : gear === -1 ? 'R' : String(gear), D.cx, D.cy + 16);
       if (g.manual && g.sel && gear > 0 && g.sel !== gear) {
@@ -468,8 +469,8 @@
       if (perfect) {
         c.globalAlpha = U.clamp(this._pkT / 0.25, 0, 1);
         c.font = "15px 'Russo One', Impact, sans-serif";
-        c.fillStyle = '#4db8ff';
-        c.fillText('PERFECT', D.tx, 52);
+        c.fillStyle = pkCol;
+        c.fillText(this._pkGood ? 'GOOD' : 'PERFECT', D.tx, 52);
         c.font = "900 8px 'Nunito', system-ui, sans-serif";
         c.fillText('SHIFT', D.tx, 64);
         c.globalAlpha = 1;
@@ -648,7 +649,10 @@
         const rs = me.rs;
         const sp = Math.hypot(rs.vx, rs.vz);
         // v5.8: a perfect manual shift lights the cluster up for a moment
-        if ((rs.pk || 0) > (this._lastPk || 0) + 0.2) this._pkT = 0.8;
+        if ((rs.pk || 0) > (this._lastPk || 0) + 0.2) {
+          this._pkT = 0.8;
+          this._pkGood = (rs.pkM || 0.22) < 0.15; // (v5.8.2: a GOOD shift, not a PERFECT one)
+        }
         this._lastPk = rs.pk || 0;
         this._pkT = Math.max(0, (this._pkT || 0) - dt);
         const man = !!me.manual;
