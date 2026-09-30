@@ -456,3 +456,17 @@ body:has(#ui.scr-raceui) .hud-lights { top: calc(52px / var(--hud)); }
 .hud-call.bad { border-left-color: var(--red); }
 .hud-call.bad b { color: var(--red); }
 @media (prefers-reduced-motion: reduce) { .hud-call { transition: none; } }
+/* v5.8.4 stats panel */
+.st-panel h3.st-name { margin: 0 0 8px; }
+.st-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+.st-t { background: rgba(255,255,255,.05); border-radius: 10px; padding: 8px 10px; text-align: center; }
+.st-t b { display: block; font-family: var(--display); font-weight: 400; font-size: 22px; color: var(--yellow); font-variant-numeric: tabular-nums; }
+.st-t span { font-size: 11px; font-weight: 800; letter-spacing: .8px; color: var(--muted); text-transform: uppercase; }
+.st-extra { margin: 0 0 8px; color: var(--muted); font-size: 13px; }
+.st-panel h4 { margin: 10px 0 6px; font-size: 13px; letter-spacing: 1px; color: var(--muted); text-transform: uppercase; }
+.st-laps { width: 100%; border-collapse: collapse; font-size: 13px; }
+.st-laps th { text-align: left; color: var(--muted); font-weight: 800; font-size: 11px; padding: 3px 6px; }
+.st-laps td { padding: 3px 6px; border-top: 1px solid rgba(255,255,255,.06); }
+.st-laps td.num { font-variant-numeric: tabular-nums; font-weight: 800; }
+.st-panel { max-height: calc(58vh / var(--uiz, 1)); overflow: auto; }
+.st-note { margin-top: 10px; }
