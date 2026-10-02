@@ -22,6 +22,47 @@
   // (v5.4: the track layout moved to the garage, where there is still time
   // to build and tune for it)
 
+  // v5.8.5: the race book's house rules in one window (entry and betting
+  // screens). Every number comes from economy.js, so it can't go stale.
+  function bookRules() {
+    const E_ = E(), m = U.fmtMoney;
+    const top = (p) => (Math.max((1 - E_.MARGIN) / p, 1.01)).toFixed(2);
+    UI.modal(
+      'How betting works',
+      `<div class="rules-doc">
+        <p>Before every race the book prices each racer. Bets are paid when the results are in, on top of any prize.</p>
+        <h4>Who can bet on what</h4>
+        <ul><li><b>Sit out</b> a race to bet on any racer.</li>
+        <li><b>Racing</b>, you can only back yourself - never another racer, so nobody can win money by losing.</li>
+        <li><b>Side bets</b> are a challenge between two racers (see below).</li></ul>
+        <h4>Bets</h4>
+        <ul><li><b>Win</b>: your pick finishes 1st.</li><li><b>Podium</b>: your pick finishes 1st, 2nd or 3rd (with 4 or more racers).</li></ul>
+        <h4>Reading the odds</h4>
+        <p>Odds show what one dollar pays back, stake included: ${m(100)} at 3.50x pays back ${m(350)} (your ${m(100)} plus ${m(250)}). The stake leaves your cash when you bet, and the price you took is fixed - it never changes after.</p>
+        <h4>How the book sets a price</h4>
+        <ul><li>It rates every racer's car on this track (its stats with the parts fitted and the wear on it) and their form over the last 3 races; for bots, their skill too.</li>
+        <li>From that it works out each racer's chance to win and to make the podium. The winner is mostly the strongest car and driver; 2nd and 3rd are much more open, because crashes, resets and traffic shuffle the rest of the field.</li>
+        <li>The price is that chance less the book's ${Math.round(E_.MARGIN * 100)}% margin. On average a bet pays back about ${Math.round((1 - E_.MARGIN) * 100)}c per ${m(1)} - that margin is the house edge, as in any casino. The longest prices are ${top(E_.P_FLOOR)}x to win and ${top(E_.P_FLOOR_POD)}x for a podium.</li>
+        <li>Backing yourself is priced at ${E_.ODDS_SELF.toFixed(2)}x at most: you know how quick you really are, and the book does not.</li></ul>
+        <h4>Limits</h4>
+        <ul><li>${m(E_.BET_MIN)} to ${m(E_.BET_MAX)} a bet, ${m(E_.BET_TOTAL)} a race in all.</li>
+        <li>One bet pays back at most ${m(E_.MAX_RETURN)}, so at long odds the biggest stake is smaller.</li>
+        <li>You always keep ${m(E_.FLOOR)} for a basic repair: you can't bet money you need to race.</li></ul>
+        <h4>Settling</h4>
+        <ul><li>Once the race starts every bet stands: a racer who doesn't finish loses the bet.</li>
+        <li>No race, no bet: a racer who leaves before the start is a non-runner, and bets on them are void - stakes back.</li></ul>
+        <h4>Side bets</h4>
+        <p>Challenge another racer for ${m(E_.SIDE_MIN)} to ${m(E_.SIDE_MAX)}. If they accept, both stakes go in and whoever finishes ahead takes both - no margin, nothing to the house. If both fail to finish, or one doesn't start, both get their stake back; a challenge nobody answers before the start is off. Bots take one up to a fifth of their cash, and not always.</p>
+        <h4>Bounty</h4>
+        <p>From the second race, the racer with the most money has a price on their head, paid by the house to whoever finishes highest ahead of them.</p>
+        <h4>Double or nothing</h4>
+        <p>On the results screen you may flip a coin once for that race's prize (up to ${m(E_.DOUBLE_MAX)}): a straight 50/50, with no house edge.</p>
+        <p class="muted">Every bet against the book loses a little on average, so racing always pays better than betting.</p>
+      </div>`,
+      [{ label: 'Close', value: 0, cls: 'primary' }]
+    );
+  }
+
   // ------------------------------------------------------------ entry
   const Entry = {
     mount(root) {
@@ -57,7 +98,7 @@
          <div class="choice ${me.entry === 'sit' ? 'on' : ''}" data-act="sit">
            <div class="ch-t">${G.ic('dices')} SIT OUT & BET</div>
            <p>No prize, no wear, no fuel. Watch live with a free camera and bet on the racers — odds come from recent form and each car's stats on <b>this</b> track.</p>
-           <p class="muted">Bets ${U.fmtMoney(E().BET_MIN)}–${U.fmtMoney(E().BET_MAX)}, max ${U.fmtMoney(E().BET_TOTAL)} per race. You always keep ${U.fmtMoney(E().FLOOR)} for repairs.</p>
+           <p class="muted">Bets ${U.fmtMoney(E().BET_MIN)}–${U.fmtMoney(E().BET_MAX)}, max ${U.fmtMoney(E().BET_TOTAL)} per race. You always keep ${U.fmtMoney(E().FLOOR)} for repairs. <button class="linkish" data-act="bookrules">How betting works</button></p>
          </div>`
       );
       const hs = Object.values(st.players).filter((p) => !p.isBot && p.connected);
@@ -70,8 +111,9 @@
       }
     },
     acts: {
-      race() { G.Client.act({ t: 'entry', v: 'race' }); },
-      sit() { G.Client.act({ t: 'entry', v: 'sit' }); },
+      race(el, e) { if (!(e && e.target.closest('.linkish'))) G.Client.act({ t: 'entry', v: 'race' }); },
+      sit(el, e) { if (!(e && e.target.closest('.linkish'))) G.Client.act({ t: 'entry', v: 'sit' }); },
+      bookrules() { bookRules(); },
     },
   };
   UI.register('entry', Entry);
@@ -141,16 +183,23 @@
       const staked = mine.reduce((a, b) => a + b.stake, 0);
       const maxOk = Math.max(0, Math.min(E_.BET_MAX, E_.BET_TOTAL - staked, me.money - E_.FLOOR));
       let pick = '<p class="muted">Pick an odds button on the board.</p>';
+      let chipMax = maxOk;
+      if (this.sel && !st.odds[this.sel.racer]) this.sel = null;
       if (this.sel) {
         const r = st.players[this.sel.racer], o = st.odds[this.sel.racer];
         const odds = this.sel.type === 'win' ? o.win : o.podium;
-        const ok = this.stake <= maxOk && this.stake >= E_.BET_MIN;
-        pick = `<div class="pick"><b>${U.esc(r.name)}</b> to ${this.sel.type === 'win' ? 'WIN' : 'finish on the PODIUM'} @ ${odds.toFixed(2)}x<br><span class="muted">Stake ${U.fmtMoney(this.stake)} → returns ${U.fmtMoney(this.stake * odds)}</span></div>
-          <button class="btn primary" data-act="place" ${ok ? '' : 'disabled'}>Place bet</button>${ok ? '' : `<p class="bad small">${this.stake > me.money - E_.FLOOR ? 'That would take you below the ' + U.fmtMoney(E_.FLOOR) + ' repair floor.' : 'Over the per-race limit.'}</p>`}`;
+        // (v5.8.5: one bet pays back at most MAX_RETURN, and the book shows
+        //  the chance it gives the pick, so a price means something)
+        const cap = E_.maxStake(odds);
+        chipMax = Math.min(maxOk, cap);
+        const ok = this.stake <= maxOk && this.stake >= E_.BET_MIN && this.stake <= cap;
+        const chance = Math.round((this.sel.type === 'win' ? o.pWin : o.pPod) * 100);
+        pick = `<div class="pick"><b>${U.esc(r ? r.name : '?')}</b> to ${this.sel.type === 'win' ? 'WIN' : 'finish on the PODIUM'} @ ${odds.toFixed(2)}x<br><span class="muted">Stake ${U.fmtMoney(this.stake)} → returns ${U.fmtMoney(this.stake * odds)} · the book gives this about a ${chance}% chance</span></div>
+          <button class="btn primary" data-act="place" ${ok ? '' : 'disabled'}>Place bet</button>${ok ? '' : `<p class="bad small">${this.stake > me.money - E_.FLOOR ? 'That would take you below the ' + U.fmtMoney(E_.FLOOR) + ' repair floor.' : this.stake > cap ? `At ${odds.toFixed(2)}x the most you can stake is ${U.fmtMoney(cap)}: one bet pays back at most ${U.fmtMoney(E_.MAX_RETURN)}.` : 'Over the per-race limit.'}</p>`}`;
       }
       this.fixStakes();
-      return `<h3>Bet slip</h3><div class="money-line">Cash <b>${U.fmtMoney(me.money)}</b> · stakeable <b>${U.fmtMoney(maxOk)}</b></div>
-        <div class="chips">${this.chips(this.stake, 'stake', this.betChips(), maxOk)}</div>${pick}
+      return `<h3>Bet slip <button class="linkish small" data-act="bookrules">How betting works</button></h3><div class="money-line">Cash <b>${U.fmtMoney(me.money)}</b> · stakeable <b>${U.fmtMoney(maxOk)}</b></div>
+        <div class="chips">${this.chips(this.stake, 'stake', this.betChips(), chipMax)}</div>${pick}
         <h3 style="margin-top:14px">Your bets</h3>${mine.length ? mine.map((b) => `<div class="mybet">${U.fmtMoney(b.stake)} · ${U.esc(b.racerName)} ${b.type} @${b.odds.toFixed(2)}x → ${U.fmtMoney(b.stake * b.odds)}</div>`).join('') : '<p class="muted small">None yet.</p>'}`;
     },
     sideHtml(st, me) {
@@ -183,7 +232,7 @@
       const botMax = tp && tp.isBot ? Math.min(E_.SIDE_MAX, Math.floor(tp.money * 0.2), tp.money - E_.FLOOR) : null;
       const sideOk = !!this.side.to && this.side.stake >= E_.SIDE_MIN && this.side.stake <= sideMax;
       const sideWhy = !this.side.to ? '' : sideMax < E_.SIDE_MIN ? `You must keep ${U.fmtMoney(E_.FLOOR)} for repairs.` : this.side.stake > sideMax ? `You can put up to ${U.fmtMoney(sideMax)}.` : botMax != null ? (botMax < E_.SIDE_MIN ? `${U.esc(tp.name)} can't cover a side bet right now.` : `Bots take side bets up to a fifth of their cash (${U.fmtMoney(botMax)} for ${U.esc(tp.name)}), and not always.`) : '';
-      return `<h3>You're racing</h3>${back}<h3 style="margin-top:12px">Side bet</h3><p class="muted small">Challenge a rival: whoever finishes ahead takes both stakes.</p>
+      return `<h3>You're racing <button class="linkish small" data-act="bookrules">How betting works</button></h3>${back}<h3 style="margin-top:12px">Side bet</h3><p class="muted small">Challenge a rival: whoever finishes ahead takes both stakes.</p>
         ${inc}
         <div class="side-row"><select data-input="sideTo">${racers.map((p) => `<option value="${p.id}" ${p.id === this.side.to ? 'selected' : ''}>${U.esc(p.name)}</option>`).join('')}</select></div>
         <div class="chips">${this.chips(this.side.stake, 'sstake', this.sideChips(), sideMax)}</div>
@@ -219,6 +268,7 @@
       accept(el) { G.Client.act({ t: 'sideReply', id: el.dataset.id, accept: true }); },
       decline(el) { G.Client.act({ t: 'sideReply', id: el.dataset.id, accept: false }); },
       ready() { G.Client.act({ t: 'ready', v: !G.Client.me.ready }); },
+      bookrules() { bookRules(); },
     },
   };
   UI.register('betting', Betting);
