@@ -1101,7 +1101,7 @@
       const sides = (R.sideBets || []).filter((s) => s.from === me || s.to === me);
       let b = '';
       if (bets.length || sides.length) {
-        b = `<div class="box"><h3>Your bets</h3>${bets.map((x) => ln(`${U.esc(x.racerName)} ${x.type} @${x.odds.toFixed(2)}x`, x.won ? U.fmtSigned(x.payout - x.stake) : U.fmtSigned(-x.stake))).join('')}${sides
+        b = `<div class="box"><h3>Your bets</h3>${bets.map((x) => ln(`${U.esc(x.racerName)} ${x.type} @${x.odds.toFixed(2)}x`, x.void ? 'void, stake back' : x.won ? U.fmtSigned(x.payout - x.stake) : U.fmtSigned(-x.stake))).join('')}${sides
           .map((s) => {
             const other = s.from === me ? s.toName : s.fromName;
             const res = s.winner == null ? 'refunded' : s.winner === me ? U.fmtSigned(s.stake) : U.fmtSigned(-s.stake);
@@ -1110,7 +1110,7 @@
           .join('')}</div>`;
       } else {
         const n = (R.bets || []).length + (R.sideBets || []).length;
-        if (n) b = `<div class="box"><h3>The book</h3>${(R.bets || []).map((x) => ln(`${U.esc(x.name)} → ${U.esc(x.racerName)}`, x.won ? 'WON ' + U.fmtMoney(x.payout) : 'lost')).join('')}</div>`;
+        if (n) b = `<div class="box"><h3>The book</h3>${(R.bets || []).map((x) => ln(`${U.esc(x.name)} → ${U.esc(x.racerName)}`, x.void ? 'void' : x.won ? 'WON ' + U.fmtMoney(x.payout) : 'lost')).join('')}</div>`;
       }
       return a + b;
     },

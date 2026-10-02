@@ -369,24 +369,31 @@
       const E = G.Econ, track = G.getTrack(trackId);
       const lvl = G.Settings.s.botLevel;
       const range = G.BotKit.level(lvl).skill, skill = (range[0] + range[1]) / 2;
-      const field = [{ id: 'me', carId: me.carId, garage: me.garage, stats: { form: [] }, isBot: false }];
+      // (v5.8.5: your form in this visit's quick races, so the book learns
+      //  how quick you are - it priced every race as if you had none)
+      const field = [{ id: 'me', carId: me.carId, garage: me.garage, stats: { form: (this._qform || []).slice(-3) }, isBot: false }];
       for (let k = 0; k < 5; k++) field.push({ id: 'b' + k, carId: this._botCar(k), garage: { installed: this._botParts(k), wear: {}, tune: {} }, stats: { form: [] }, isBot: true, botSkill: skill });
       const o = E.computeOdds(field, track, U.hashStr(trackId + lvl + me.carId)).me;
+      // v5.8.5: the same book as a room - backing yourself is capped at
+      // ODDS_SELF and stakes stay inside the bet limits (it offered the
+      // board's price, up to 9x, on a $500 stake)
+      const ow = Math.min(o.win, E.ODDS_SELF), op = Math.min(o.podium, E.ODDS_SELF);
+      const sw = Math.min(E.BET_MAX, E.maxStake(ow)), sp = Math.min(200, E.maxStake(op));
       const can = (s) => me.money - s >= E.FLOOR;
       const btns = [{ label: 'Just race', value: 0, cls: 'ghost' }];
-      if (can(250)) btns.push({ label: `$250 on a podium · ${o.podium.toFixed(2)}x`, value: 1 });
-      if (can(500)) btns.push({ label: `$500 to win · ${o.win.toFixed(2)}x`, value: 2, cls: 'primary' });
+      if (can(sp)) btns.push({ label: `$${sp} on a podium · ${op.toFixed(2)}x`, value: 1 });
+      if (can(sw)) btns.push({ label: `$${sw} to win · ${ow.toFixed(2)}x`, value: 2, cls: 'primary' });
       const r = await G.UI.modal(
         'Back yourself?',
-        `<p><b>${U.esc(track.name)}</b> <em class="fmt fmt-${track.format}">${track.format.toUpperCase()}</em>${track.def.isNew ? ' <em class="t-new">NEW</em>' : ''}</p><p class="muted small">${U.esc(track.blurb)}</p><p>The bookie rates your ${U.esc(G.Parts.CARS[me.carId].name)} against this field at <b>${o.win.toFixed(2)}x</b> to win and <b>${o.podium.toFixed(2)}x</b> for a podium. A winning bet is paid on top of your prize.</p>`,
+        `<p><b>${U.esc(track.name)}</b> <em class="fmt fmt-${track.format}">${track.format.toUpperCase()}</em>${track.def.isNew ? ' <em class="t-new">NEW</em>' : ''}</p><p class="muted small">${U.esc(track.blurb)}</p><p>The bookie rates your ${U.esc(G.Parts.CARS[me.carId].name)} against this field at <b>${ow.toFixed(2)}x</b> to win and <b>${op.toFixed(2)}x</b> for a podium. A winning bet is paid on top of your prize.</p><p class="muted small">Backing yourself is priced at ${E.ODDS_SELF.toFixed(2)}x at most, and the price shortens as you win.</p>`,
         btns
       );
       const v = r && r.value;
       if (v === 1 || v === 2) {
-        const stake = v === 1 ? 250 : 500, type = v === 1 ? 'podium' : 'win';
+        const stake = v === 1 ? sp : sw, type = v === 1 ? 'podium' : 'win';
         me.money -= stake;
         this.host.touch();
-        this._qbet = { stake, type, odds: type === 'win' ? o.win : o.podium };
+        this._qbet = { stake, type, odds: type === 'win' ? ow : op };
       }
     },
     _applyDriveWear() {
@@ -415,6 +422,7 @@
         me.money = Math.max(0, me.money + prize - fuel + (bet ? bet.payout : 0));
         this.host.touch();
       }
+      if (!d.direct && !d.test) this._qform = (this._qform || []).concat(meRow.pos).slice(-3); // (the book's form, this visit only)
       // v5.8.4 stats (a quick race against bots; practice and test drives aren't races)
       if (G.Stats && !d.direct && !d.test) G.Stats.race({ carId: sim.byId.me.carId, pos: meRow.pos, total: res.length, dnf: !meRow.finished, online: false, secs: (meRow.ms || 0) / 1000 });
       d.results = {

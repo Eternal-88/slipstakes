@@ -3,8 +3,16 @@
 // after an update.
 'use strict';
 (function (G) {
-  G.VERSION = '5.8.4';
+  G.VERSION = '5.8.5';
   G.CHANGELOG = [
+    {
+      v: '5.8.5', name: 'Shift Lights', items: [
+        ['🎲', 'Odds that mean something', 'The book was checked against hundreds of raced fields again, this time for every place on the podium. Podium prices were badly off: mid-field racers made the podium far more often than their price said (those bets paid back $1.31 for every $1), while the safest-looking ones paid back 65c. The winner is still mostly the strongest car and driver, but 2nd and 3rd are now priced as the open fight they really are - every price band pays back 80-96c per $1, the book\'s 12% margin. Outsiders are no longer all stuck at 9.00x, which paid back about 60c: prices now run to 12.57x to win and 7.33x for a podium, and like a real bookmaker one bet pays back at most $4,000, so at long odds the biggest stake is smaller. The bet slip shows the chance the book gives your pick.'],
+        ['📜', 'House rules', 'How betting works (on the race and betting screens) and full rules for blackjack and roulette at each table: every bet, payout and limit, how the prices are made, and a basic strategy card for blackjack. Two rules are new: a bet on a racer who leaves before the start is void and you get the stake back (it used to be lost), and Back yourself before a quick race uses the same book as a room - capped at 4.50x, inside the bet limits, and shorter as you keep winning.'],
+        ['🃏', 'A proper casino floor', 'Blackjack: chips stack onto your bet (the $500 chip was over the $350 table limit and did nothing), Rebet repeats your last bet, and you can Surrender a bad first two cards for half your bet back. Roulette: split, street, corner and six-line bets on the lines and corners between the numbers, Rebet, and when the 0 comes up the even-money bets lose only half (la partage). Fixed: the 2:1 at the end of the top row paid on the bottom row\'s numbers, and the other way round; and the $500 roulette chip, over the $350 a spot limit, did nothing. Everyone reloads the page (Ctrl+Shift+R) for this version, host first.'],
+        ['🌀', 'The Rotor sounds like a rotary', 'It sounded like any four-cylinder, with a four\'s burble. It now has a rotary\'s voice: a high, buzzy, nasal note with little bass, the brap-brap-brap idle, a rasp from each rotor\'s three faces as the revs rise, and it pops and crackles on the overrun even with the stock exhaust.'],
+      ],
+    },
     {
       v: '5.8.4', name: 'Shift Lights', items: [
         ['🔁', 'Resets can\'t be gamed', 'Since 5.8.2 a reset put you back rolling at a safe speed - which could be used on purpose: reset going into a corner you had overcooked and come out of it straight and quick. A reset now puts you back from a standstill, 12 m back along the road, and at most once every 3 seconds, so it always costs more than driving out of trouble (about 2 seconds even at the tightest hairpin).'],

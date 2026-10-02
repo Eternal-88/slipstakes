@@ -56,12 +56,43 @@
     // v5.4 V12 grand tourer: six firing pulses a turn - smooth, high and
     // silky, a clean scream at the top instead of a bark
     regent: { cyl: 12, types: ['sawtooth', 'sine', 'triangle'], cut: 1.55, rasp: 1.9, lope: 0.0, lopeDiv: 6, sub: 0.3, h2: 0.85, res: 520, grit: 0.55 },
-    // v5.4 two-rotor rotary: two pulses a turn like a four, but square-heavy
-    // and bright - the buzz - with the uneven "brap" at idle
-    rotor: { cyl: 4, types: ['square', 'sawtooth', 'triangle'], cut: 2.35, rasp: 5.2, lope: 0.5, lopeDiv: 2, sub: 0.18, h2: 0.7, res: 880, grit: 1.1 },
+    // v5.8.5 two-rotor rotary, redone - it sounded like a boxer four. A
+    // two-rotor fires twice a turn of the eccentric shaft, like a four, but:
+    //  * no valves: the exhaust port is uncovered all at once, so every pulse
+    //    is a sharp, hard slap - a flat, buzzy stack of harmonics ('rotary',
+    //    a narrow pulse wave) instead of a four's rounder note, ringing high
+    //    and nasal (res), with very little bass (sub);
+    //  * no crank burble: the old lope was at half the firing rate, which is
+    //    exactly a flat-four's wobble. A rotor turns once every three turns of
+    //    the shaft and each of its three faces fires a touch differently, so
+    //    the rotary's own wobble is at a SIXTH of the firing rate (lopeDiv 6):
+    //    a "brap-brap" at idle that turns into the buzzing rasp at speed;
+    //  * the idle "brap" (brap: update()) - the ports overlap, so at low revs
+    //    the charge lights unevenly in lumps a few times a second;
+    //  * unburnt fuel: rotaries pop on the overrun even with a stock pipe
+    //    (pops, through modSound, so the smoke and flames follow).
+    rotor: { cyl: 4, types: ['rotary', 'triangle', 'sawtooth'], cut: 1.75, rasp: 4.2, lope: 0.3, lopeDiv: 6, sub: 0.05, h2: 0.5, res: 1050, grit: 1.2, pops: 0.35, brap: 1 },
     // electric: no combustion — a motor tone and an inverter whine
     volt: { cyl: 8, types: ['triangle', 'sine', 'sine'], cut: 3.0, rasp: 0.2, lope: 0.0, lopeDiv: 4, sub: 0.04, h2: 1.4, res: 1800, grit: 0, ev: 1 },
   };
+  // v5.8.5 the rotary's exhaust pulse as a custom wave: a narrow pulse (7%
+  // of the cycle) whose harmonics 2-9 come out nearly as strong as the
+  // fundamental - the buzz - with the fundamental itself held back (the
+  // nasal, not bassy, note). Its harmonics are spread in phase (Schroeder
+  // phases) so the engine's distortion stage can't simply clip the spike off:
+  // through that stage a square keeps only odd harmonics (the even ones come
+  // out 20-30 dB down) and a sawtooth mostly even ones, while this keeps both
+  // (scratchpad wavetest.py). Not normalised: about a sawtooth's level.
+  function rotaryWave(ctx) {
+    const N = 64, re = new Float32Array(N), im = new Float32Array(N);
+    for (let n = 1; n < N; n++) {
+      const x = Math.PI * n * 0.07, ph = (Math.PI * n * n) / N;
+      const a = 0.72 * (Math.abs(Math.sin(x) / x) * Math.pow(n, -0.4) + 0.12 / n) * (n === 1 ? 0.75 : 1);
+      re[n] = a * Math.sin(ph);
+      im[n] = a * Math.cos(ph);
+    }
+    return ctx.createPeriodicWave(re, im, { disableNormalization: true });
+  }
   const _curves = new Map(); // waveshaper curves by amount (shared)
   const curveFor = (k) => {
     const key = Math.round(k * 10) / 10;
@@ -129,7 +160,7 @@
     else if (L.tone === 'rasp') { rasp *= 2.3; sub *= 0.5; cutK = 1.6; resK = 1.75; resG = 3; gritK = 1.8; noiseK = 1.4; }
     else if (L.tone === 'loud') { loud *= 1.45; rasp *= 1.15; sub *= 1.2; cutK = 1.18; resG = 2; gritK = 1.3; }
 
-    let pops = Math.max(G.Parts.opt('exhaust', p.exhaust).pops || 0, p.ecu === 'stage2' ? 0.5 : 0);
+    let pops = Math.max(G.Parts.opt('exhaust', p.exhaust).pops || 0, p.ecu === 'stage2' ? 0.5 : 0, prof.pops || 0); // (v5.8.5: a rotary pops even stock)
     let bang = 0, burble = 0, crackle = 0;
     // A crackle tune is a DENSER, longer burst of small cracks, not simply
     // "more pops" - as a level it did nothing at all on a straight pipe,
@@ -322,9 +353,14 @@
     // ------------------------------------------------------------ building
     _osc(type, f) {
       const o = this.ctx.createOscillator();
-      o.type = type;
+      this._wave(o, type);
       o.frequency.value = f || 100;
       return o;
+    },
+    // a built-in waveform, or one of ours ('rotary')
+    _wave(o, type) {
+      if (type === 'rotary') o.setPeriodicWave(this._rotWave || (this._rotWave = rotaryWave(this.ctx)));
+      else o.type = type;
     },
     _gain(v) {
       const g = this.ctx.createGain();
@@ -595,9 +631,9 @@
       if (v.prof === prof) return;
       v.prof = prof;
       const ty = prof.types || ['sawtooth', 'square', 'sawtooth'];
-      v.o1.type = ty[0];
-      v.o2.type = ty[1];
-      v.o3.type = ty[2];
+      this._wave(v.o1, ty[0]);
+      this._wave(v.o2, ty[1]);
+      this._wave(v.o3, ty[2]);
       v.sh.curve = curveFor(prof.ev ? 0 : prof.rasp * 0.8);
       const t = this.ctx.currentTime;
       v.pk.frequency.setValueAtTime(prof.res || 400, t);
@@ -706,6 +742,22 @@
         const dip = this._lopePh < 0.6 ? Math.sin((this._lopePh / 0.6) * Math.PI) : 0;
         chop = 1 - w * dip * (1 - (this._lopeK || 0.4));
         f0 *= 1 - w * dip * 0.08;
+      }
+      // v5.8.5 the rotary's idle: "brap... brap... brap". At low revs the
+      // ports overlap and the charge lights in uneven lumps - a hard bark and
+      // a pitch kick, then a near-silent gap, a few times a second, never two
+      // quite alike - fading out as the revs come up or the pedal goes down.
+      if (prof.brap && rpm < 0.42 && thr < 0.45) {
+        this._brPh = (this._brPh || 0) + dt * (crank / 3.5) * (this._brR || 1);
+        if (this._brPh >= 1) {
+          this._brPh %= 1;
+          this._brK = 0.5 + Math.random() * 0.5; // how hard this one lights
+          this._brR = 0.75 + Math.random() * 0.5; // and how soon the next comes
+        }
+        const w = U.clamp((0.42 - rpm) / 0.16, 0, 1) * U.clamp(1 - thr / 0.45, 0, 1) * prof.brap;
+        const ph = this._brPh, bark = ph < 0.45 ? Math.pow(Math.sin((ph / 0.45) * Math.PI), 0.6) : 0;
+        chop *= 1 - w * 0.85 * (1 - bark * (this._brK || 0.8));
+        f0 *= 1 + w * 0.06 * bark;
       }
       // v5.5.6 rev limiter, soft and hard now different things (they were the
       // same 15 Hz wobble at two depths):

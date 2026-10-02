@@ -5,15 +5,18 @@
 //   blackjack pays 3:2; double on any first two cards incl. after split;
 //   split equal-value pairs up to 4 hands; split aces get one card each;
 //   dealer peeks for blackjack with an Ace or ten up; insurance pays 2:1;
-//   ties push; 21 on a split hand is not a blackjack. House edge ≈ 0.4% with
-//   perfect basic strategy, ~2% for typical play.
+//   ties push; 21 on a split hand is not a blackjack; v5.8.5 late surrender
+//   (half the bet back, first two cards, not after a split). House edge
+//   about 0.3% with perfect basic strategy, ~2% for typical play.
 // Roulette: European single-zero wheel (house edge 2.70%). Straight 35:1,
-//   dozens/columns 2:1, red/black/odd/even/low/high 1:1, zero loses outside bets.
+//   v5.8.5 split 17:1, street 11:1, corner 8:1, six line 5:1, dozens/columns
+//   2:1, red/black/odd/even/low/high 1:1. Zero: dozens and columns lose, and
+//   the even-money bets lose half (la partage, so 1.35% on those).
 //
 // Why grinding it is worse than racing: every casino bet has negative
-// expected value, stakes are capped ($500/hand, $1,500/spin), the tables are
-// only open during the intermission, and the repair FLOOR means you can never
-// bet the money you need to keep racing. Racing pays $500–$2,600 per race.
+// expected value, stakes are capped ($350 a hand, $1,000 a spin), the tables
+// are only open during the intermission, and the repair FLOOR means you can
+// never bet the money you need to keep racing.
 //
 // Fairness: shuffles and spins use crypto.getRandomValues on the host. The
 // shoe AND the dealer's hole card live in host-only fields that publicState()
@@ -120,6 +123,13 @@
     if (i < 0 || bj.phase !== 'betting' || !this.casinoOpen()) return;
     const s = bj.seats[i];
     const amt = Math.round(+m.amount);
+    if (amt === 0) {
+      // v5.8.5: chips stack onto the bet, and Clear takes them all back
+      p.money += s.bet;
+      s.bet = 0;
+      this.touch();
+      return;
+    }
     if (!(amt >= C.BJ.min && amt <= C.BJ.max)) return this.toast(p.id, `Table limits ${U.fmtMoney(C.BJ.min)}–${U.fmtMoney(C.BJ.max)}.`, 'bad');
     p.money += s.bet; // replacing an earlier bet
     const prev = s.bet;
@@ -277,6 +287,12 @@
       h.cards.push(this._bjDraw());
       h.done = true;
       if (total(h.cards).t > 21) h.result = 'bust';
+    } else if (a === 'surrender') {
+      // v5.8.5 late surrender: give up a fresh hand for half the bet back
+      // (after the dealer's blackjack check; never on a split hand)
+      if (h.cards.length !== 2 || h.fromSplit || s.hands.length !== 1) return;
+      h.result = 'surrender';
+      h.done = true;
     } else if (a === 'split') {
       if (h.cards.length !== 2 || cardVal(h.cards[0]) !== cardVal(h.cards[1]) || s.hands.length >= 4 || h.splitAces) return;
       if (!p || !this._stake(p, h.bet, 'split')) return;
@@ -310,7 +326,8 @@
       for (const h of s.hands) {
         const t = total(h.cards).t;
         const nat = natural(h);
-        if (t > 21) { h.result = 'bust'; h.payout = 0; }
+        if (h.result === 'surrender') h.payout = h.bet / 2;
+        else if (t > 21) { h.result = 'bust'; h.payout = 0; }
         else if (nat && !dNat) { h.result = 'blackjack'; h.payout = h.bet * 2.5; }
         else if (nat && dNat) { h.result = 'push'; h.payout = h.bet; }
         else if (dNat) { h.result = 'lose'; h.payout = 0; }
@@ -361,13 +378,35 @@
   };
   // Dealer only draws if some hand is still alive (not bust, not a natural).
   HS._bjAnyLive = function () {
-    return this.casino().bj.seats.some((s) => s && s.hands.some((h) => total(h.cards).t <= 21 && !natural(h)));
+    return this.casino().bj.seats.some((s) => s && s.hands.some((h) => total(h.cards).t <= 21 && !natural(h) && h.result !== 'surrender'));
   };
 
   // ========================================================= ROULETTE
-  const RL_TYPES = { straight: 35, red: 1, black: 1, odd: 1, even: 1, low: 1, high: 1, dozen: 2, column: 2 };
+  const RL_TYPES = { straight: 35, split: 17, street: 11, corner: 8, line: 5, red: 1, black: 1, odd: 1, even: 1, low: 1, high: 1, dozen: 2, column: 2 };
+  const EVEN_MONEY = { red: 1, black: 1, odd: 1, even: 1, low: 1, high: 1 };
+  // v5.8.5 inside bets: the numbers a bet covers, or null if it is not a
+  // spot on the layout. A split is named a * 37 + b (two neighbours, a < b,
+  // including 0 with 1, 2 or 3); a street, corner or six line by its lowest
+  // number. (On this board the numbers run left to right in threes, so a
+  // street is a column of three and a six line two of them side by side.)
+  function rlNums(type, n) {
+    switch (type) {
+      case 'straight': return n >= 0 && n <= 36 ? [n] : null;
+      case 'split': {
+        const a = Math.floor(n / 37), b = n % 37;
+        if (a === 0) return b >= 1 && b <= 3 ? [0, b] : null;
+        if (b > 36 || !(b === a + 3 || (b === a + 1 && a % 3 !== 0))) return null;
+        return [a, b];
+      }
+      case 'street': return n >= 1 && n <= 34 && n % 3 === 1 ? [n, n + 1, n + 2] : null;
+      case 'corner': return n >= 1 && n <= 32 && n % 3 !== 0 ? [n, n + 1, n + 3, n + 4] : null;
+      case 'line': return n >= 1 && n <= 31 && n % 3 === 1 ? [n, n + 1, n + 2, n + 3, n + 4, n + 5] : null;
+    }
+    return null;
+  }
   function rlWins(type, n, r) {
-    if (type === 'straight') return r === n;
+    const nums = rlNums(type, n);
+    if (nums) return nums.includes(r);
     if (r === 0) return false;
     switch (type) {
       case 'red': return REDSET.has(r);
@@ -387,13 +426,14 @@
     const rl = this.casino().rl;
     if (rl.phase !== 'betting') return this.toast(p.id, 'No more bets — wait for the next spin.', 'bad');
     const type = String(m.type);
-    if (!(type in RL_TYPES)) return;
+    if (!Object.prototype.hasOwnProperty.call(RL_TYPES, type)) return;
     let n = Math.round(+m.n || 0);
-    if (type === 'straight' && !(n >= 0 && n <= 36)) return;
-    if ((type === 'dozen' || type === 'column') && !(n >= 1 && n <= 3)) return;
-    if (type !== 'straight' && type !== 'dozen' && type !== 'column') n = 0;
+    if (type === 'dozen' || type === 'column') {
+      if (!(n >= 1 && n <= 3)) return;
+    } else if (EVEN_MONEY[type]) n = 0;
+    else if (!rlNums(type, n)) return;
     const stake = Math.round(+m.stake);
-    if (!(stake >= C.RL.min && stake <= C.RL.max)) return;
+    if (!(stake >= C.RL.min && stake <= C.RL.max)) return this.toast(p.id, `Table limits ${U.fmtMoney(C.RL.min)}–${U.fmtMoney(C.RL.max)} a spot.`, 'bad');
     const mine = rl.bets.filter((b) => b.pid === p.id);
     const spot = mine.find((b) => b.type === type && b.n === n);
     if ((spot ? spot.stake : 0) + stake > C.RL.max) return this.toast(p.id, `Max ${U.fmtMoney(C.RL.max)} on one spot.`, 'bad');
@@ -431,7 +471,8 @@
     const per = {};
     for (const b of rl.bets) {
       const won = rlWins(b.type, b.n, r);
-      const pay = won ? b.stake * (RL_TYPES[b.type] + 1) : 0;
+      // (v5.8.5 la partage: on a zero the even-money bets lose only half)
+      const pay = won ? b.stake * (RL_TYPES[b.type] + 1) : r === 0 && EVEN_MONEY[b.type] ? Math.floor(b.stake / 2) : 0;
       const p = this.player(b.pid);
       if (p) {
         p.money += pay;
@@ -499,5 +540,5 @@
     this.touch();
   };
 
-  G.Casino = { C, total, cardVal, rank, natural, rlWins, RL_TYPES, REDSET, newShoe };
+  G.Casino = { C, total, cardVal, rank, natural, rlWins, rlNums, RL_TYPES, EVEN_MONEY, REDSET, newShoe };
 })(window.G);

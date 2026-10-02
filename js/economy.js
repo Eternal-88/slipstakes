@@ -33,9 +33,17 @@
     // to what a race pays: a win is 1,800 early on, so a best-case betting
     // race is now about 3,600 instead of 42,000.
     BET_MIN: 50, BET_MAX: 400, BET_TOTAL: 800,
-    ODDS_MAX: 9, ODDS_MAX_POD: 4, // was 30x and 12x
+    // v5.8.5: no flat caps on the prices any more (they were 9x and 4x, so
+    // every outsider showed the same 9.00x and paid back about 60c per $1 -
+    // the worst bet on the board). Like a real book, the price is the price,
+    // and what is limited is the most one bet can pay back: at long odds the
+    // biggest stake allowed comes down (maxStake).
+    MAX_RETURN: 4000,
     ODDS_SELF: 4.5, // backing yourself: you know things the book does not
-    P_FLOOR: 0.05, P_FLOOR_POD: 0.09, // never price off Monte-Carlo noise
+    // The longest prices: anyone the model rates as a long shot still won
+    // about 6.6% of raced fields, so nobody is priced below 7% to win (12.57x)
+    // or 12% for a podium (7.33x).
+    P_FLOOR: 0.07, P_FLOOR_POD: 0.12,
     SIDE_MIN: 100, SIDE_MAX: 700,
     MARGIN: 0.12, // bookmaker margin on odds
     FLOOR: Parts.BASIC_REPAIR,
@@ -49,6 +57,8 @@
   E.mult = (raceNo) => Math.min(3.2, 1 + E.GROWTH * (raceNo - 1));
   E.prize = (pos, dnf, raceNo) => Math.round(((dnf ? E.DNF_PAY : E.PRIZES[pos - 1] || 400) * E.mult(raceNo)) / 10) * 10;
   E.canStake = (p, amount) => p.money - amount >= E.FLOOR;
+  // the biggest stake a price allows (stake x odds <= MAX_RETURN), in $10s
+  E.maxStake = (odds) => Math.min(E.BET_MAX, Math.floor(E.MAX_RETURN / Math.max(1, odds) / 10) * 10);
 
   // --------------------------------------------------------------- odds
   // Performance score 0..10 of a car on a specific track: weights depend on
@@ -83,53 +93,52 @@
     return Math.exp(0.42 * sc + 1.7 * formAdj + skill);
   }
 
-  // Plackett-Luce Monte Carlo: sample finishing orders proportional to
-  // strength; count wins and podiums. Deterministic seed so every refresh of
-  // the odds board shows the same numbers.
+  // Plackett-Luce: the finishing order is drawn place by place, each racer
+  // in proportion to their strength.
   // v5.8.3, fitted to raced bot fields (720 racer-races at each of 0, 10 and
   // 100% catch-up): strength counts SHARPER than it did - with plain strength
   // the favourites (priced 20-35%) won 30% of races, so backing them returned
   // $1.13 per $1 - and the room's catch-up adds a small chance of an upset
-  // that ignores strength (up to 5% of each place at 100%; nothing when off).
-  // With both, predicted and actual win rates agree in every price band.
-  const SHARP = 1.5, UPSET = 0.05;
+  // that ignores strength.
+  // v5.8.5, refitted on the whole top three of the same races, not only the
+  // winner: strength decides who WINS (power 1.6), but second and third are
+  // far more open (power 0.5) - crashes, resets and traffic shuffle the rest
+  // of the podium. One power for every place made the favourites' podium
+  // chances far too high and everyone else's too low: racers priced 15-30%
+  // for a podium made one 37% of the time, so those bets paid back $1.31 per
+  // $1, and the "certain" ones paid back 65c. Upsets: up to 7% of each place
+  // at 100% catch-up, none when it is off. Worked out exactly (no sampling):
+  // every price band now pays back 80-96c per $1 (scratchpad podcal.py).
+  const A_WIN = 1.6, A_REST = 0.5, UPSET = 0.07;
   function computeOdds(racers, track, seed, catchup) {
     const up = UPSET * U.clamp(catchup || 0, 0, 1);
-    const str = racers.map((p) => Math.pow(strength(p, track), SHARP));
-    const k = racers.length, N = 6000;
-    const rng = U.rng(seed);
+    const base = racers.map((p) => strength(p, track));
+    const s1 = base.map((x) => Math.pow(x, A_WIN)), s2 = base.map((x) => Math.pow(x, A_REST));
+    const k = racers.length;
+    const T1 = s1.reduce((a, b) => a + b, 0), T2 = s2.reduce((a, b) => a + b, 0);
+    // chance that racer j takes the next place from `left` racers whose
+    // strengths add up to tot
+    const take = (s, tot, left, j) => (1 - up) * (tot > 0 ? s[j] / tot : 1 / left) + up / left;
     const win = new Array(k).fill(0), pod = new Array(k).fill(0);
-    const idx = new Array(k);
-    for (let n = 0; n < N; n++) {
-      for (let i = 0; i < k; i++) idx[i] = i;
-      let tot = str.reduce((a, b) => a + b, 0);
-      let left = k;
-      for (let place = 0; place < Math.min(3, k); place++) {
-        let j = 0;
-        if (up > 0 && rng() < up) j = Math.min(left - 1, Math.floor(rng() * left)); // an upset: anyone
-        else {
-          let r = rng() * tot;
-          for (; j < left - 1; j++) {
-            r -= str[idx[j]];
-            if (r <= 0) break;
-          }
-        }
-        const w = idx[j];
-        if (place === 0) win[w]++;
-        pod[w]++;
-        tot -= str[w];
-        idx[j] = idx[left - 1];
-        left--;
+    for (let i = 0; i < k; i++) {
+      const p1 = take(s1, T1, k, i);
+      win[i] += p1;
+      pod[i] += p1;
+      for (let j = 0; j < k; j++) {
+        if (j === i) continue;
+        const p2 = p1 * take(s2, T2 - s2[i], k - 1, j);
+        pod[j] += p2;
+        for (let m = 0; m < k; m++) if (m !== i && m !== j) pod[m] += p2 * take(s2, T2 - s2[i] - s2[j], k - 2, m);
       }
     }
     const out = {};
     racers.forEach((p, i) => {
-      const pw = Math.max(win[i] / N, E.P_FLOOR), pp = Math.max(pod[i] / N, E.P_FLOOR_POD);
+      const pw = Math.max(win[i], E.P_FLOOR), pp = Math.max(Math.min(1, pod[i]), E.P_FLOOR_POD);
       out[p.id] = {
         pWin: +pw.toFixed(3), pPod: +pp.toFixed(3),
         // (v5.8.3: floors 1.01x - at 1.1x a heavy favourite paid back up to $1.10 per $1)
-        win: +U.clamp((1 - E.MARGIN) / pw, 1.01, E.ODDS_MAX).toFixed(2),
-        podium: k > 3 ? +U.clamp((1 - E.MARGIN) / pp, 1.01, E.ODDS_MAX_POD).toFixed(2) : null,
+        win: +Math.max((1 - E.MARGIN) / pw, 1.01).toFixed(2),
+        podium: k > 3 ? +Math.max((1 - E.MARGIN) / pp, 1.01).toFixed(2) : null,
         score: +perfScore(p.carId, p.garage.installed, p.garage.wear, track, p.garage.tune).toFixed(1),
         form: p.stats.form.slice(),
       };
@@ -206,6 +215,7 @@
     if (m.racer === p.id) odds = Math.min(odds, E.ODDS_SELF);
     const stake = Math.round(+m.stake);
     if (!(stake >= E.BET_MIN && stake <= E.BET_MAX)) return this.toast(p.id, `Bets are ${U.fmtMoney(E.BET_MIN)}–${U.fmtMoney(E.BET_MAX)}.`, 'bad');
+    if (stake > E.maxStake(odds)) return this.toast(p.id, `At ${odds.toFixed(2)}x the most you can stake is ${U.fmtMoney(E.maxStake(odds))}: one bet pays back at most ${U.fmtMoney(E.MAX_RETURN)}.`, 'bad');
     const mine = st.bets.filter((b) => b.pid === p.id).reduce((a, b) => a + b.stake, 0);
     if (mine + stake > E.BET_TOTAL) return this.toast(p.id, `Max ${U.fmtMoney(E.BET_TOTAL)} in bets per race.`, 'bad');
     if (!E.canStake(p, stake)) return this.toast(p.id, `You must keep ${U.fmtMoney(E.FLOOR)} for a basic repair.`, 'bad');
@@ -339,9 +349,16 @@
     st.bounty = null;
     R.bets = (st.bets || []).map((b) => {
       const r = pos[b.racer];
-      const won = r && !r.dnf && (b.type === 'win' ? r.pos === 1 : r.pos <= 3);
-      const payout = won ? Math.round(b.stake * b.odds) : 0;
       const p = this.player(b.pid);
+      // v5.8.5 "no race, no bet": a racer who left before the start never
+      // ran, so a bet on them is void and the stake comes back (it used to
+      // be lost). Once the race starts every bet stands - a DNF loses.
+      if (!r) {
+        if (p) p.money += b.stake;
+        return Object.assign({}, b, { won: false, void: true, payout: b.stake });
+      }
+      const won = !r.dnf && (b.type === 'win' ? r.pos === 1 : r.pos <= 3);
+      const payout = won ? Math.round(b.stake * b.odds) : 0;
       if (p) {
         p.money += payout;
         p.stats.bets += payout - b.stake;
