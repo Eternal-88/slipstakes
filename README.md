@@ -2,6 +2,47 @@
 
 A browser multiplayer arcade racer for up to 8 players: race short tracks, win money, spend it on parts, setups and paint that change how your car drives and looks, and gamble at a side casino. Everything is session-scoped. A session of 8 races lasts roughly 50–60 minutes.
 
+## v5.8.5 — Shift Lights
+
+**PROTO 19** (blackjack surrender and roulette inside bets: a 5.8.4 host would
+play a surrender as a stand).
+
+The race book (`economy.js`), checked against the saved raced fields
+(scratchpad `betreview.py`, `podfit.py`, `podcal.py`: 360 six-car bot races at
+0, 10 and 100% catch-up). `computeOdds` is now exact Plackett-Luce over the
+top three instead of Monte Carlo: place 1 drawn on strength^1.6 (`A_WIN`),
+places 2-3 on strength^0.5 (`A_REST`), each place with an upset share of
+0.07 x catch-up. The single 1.5 power made podium prices badly calibrated
+(racers priced 15-30% placed 37%: $1.31 back per $1; the 75%+ band placed 58%:
+65c). Every win and podium band now returns 0.80-0.96 per $1. The flat caps
+(`ODDS_MAX` 9x, `ODDS_MAX_POD` 4x) are gone: 22% of racers sat on 9.00x and
+those bets returned ~60c. Floors `P_FLOOR` 0.07 / `P_FLOOR_POD` 0.12 (raced
+long shots won ~6.6% whatever the model said) give the longest prices,
+12.57x / 7.33x; `MAX_RETURN` $4,000 a bet with `E.maxStake(odds)` like a real
+book's payout limit (host refuses, slip greys the chips). Bets on a racer
+missing from the results (left before the start) are void and refunded
+(`b.void`). The quick-race self bet (`main.js _offerQuickBet`) is capped at
+`ODDS_SELF` with stakes inside the limits and uses this visit's quick-race form
+(`_qform`). House rules windows: `prerace.js bookRules()`, `casino.js (UI)
+rulesHtml(tab)` (styles `.rules-doc`, `.rules-pay` in casino.css).
+
+Casino (`casino.js`): blackjack late surrender (`a: 'surrender'`, half back,
+first two cards of an unsplit hand; the dealer doesn't draw for it), `bjBet`
+amount 0 clears (the UI's chips stack: it sends the new total). Roulette
+`rlNums(type, n)`: split (n = a*37+b, neighbours incl. 0-1/2/3), street,
+corner, six line (by lowest number), paying 17/11/8/5:1; la partage on the
+even-money bets (half back on 0). The 2:1 row bets were rendered swapped
+(`4 - row`): the top one paid on 1, 4 ... 34. Chips over the table limits
+($500) removed. Rebet on both tables (client-side). test_ui u10 covers it.
+
+Rotor sound (`audio.js`): a custom `rotaryWave` (narrow pulse, Schroeder
+phases so the waveshaper keeps the even harmonics; scratchpad `wavetest.py`),
+lope at f0/6 (rotor face rate) instead of f0/2 (a flat four's), an idle `brap`
+chop, little sub, a ring at 1,050 Hz and base `pops` 0.35 (through
+`modSound`, so the overrun smoke and downshift flames follow). soundlab: pull
+brightness 441 -> 757 Hz, bass share 0.60 -> 0.30, idle lumpiness 0.35 ->
+0.81.
+
 ## v5.8.4 — Shift Lights
 
 Resets (`race.js` `respawn`): from a standstill again, 12 m back along the
